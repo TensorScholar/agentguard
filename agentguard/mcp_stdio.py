@@ -9,8 +9,9 @@ from dataclasses import dataclass
 from typing import BinaryIO
 
 from .audit import AuditLedger
-from .models import AuditEvent, Decision, PolicyDecision, ToolCall
+from .models import AuditEvent, Decision, PolicyDecision, ToolCall, ToolInventoryItem
 from .policy import Policy
+from .risk import classify_tool_definition
 from .secrets import redact_value
 
 
@@ -43,6 +44,7 @@ class MCPMessageProcessor:
         self.agent_id = agent_id
         self.source = source
         self._pending_calls: dict[str, ToolCall] = {}
+        self._pending_tool_lists: set[str] = set()
 
     def handle_client_line(self, raw_line: bytes) -> ProxyAction:
         message = _decode_json_rpc(raw_line)
@@ -50,6 +52,10 @@ class MCPMessageProcessor:
             return ProxyAction(to_client=_jsonrpc_error(None, PARSE_ERROR, "Parse error"))
         if not isinstance(message, dict):
             return ProxyAction(to_client=_jsonrpc_error(None, INVALID_REQUEST, "Invalid request"))
+
+        if message.get("method") == "tools/list" and message.get("id") is not None:
+            self._pending_tool_lists.add(_request_key(message.get("id")))
+            return ProxyAction(to_server=_ensure_newline(raw_line))
 
         if message.get("method") != "tools/call":
             return ProxyAction(to_server=_ensure_newline(raw_line))
@@ -130,6 +136,10 @@ class MCPMessageProcessor:
             return ProxyAction(to_client=_encode_json_rpc(redacted))
 
         call = self._pending_calls.pop(_request_key(request_id), None)
+        if call is None and _request_key(request_id) in self._pending_tool_lists:
+            self._pending_tool_lists.remove(_request_key(request_id))
+            self._record_tool_inventory(message)
+            return ProxyAction(to_client=_encode_json_rpc(redacted))
         if call is not None and redacted != message:
             self._record(
                 AuditEvent.from_decision(
@@ -147,6 +157,38 @@ class MCPMessageProcessor:
     def _record(self, event: AuditEvent) -> None:
         if self.ledger is not None:
             self.ledger.record(event)
+
+    def _record_tool_inventory(self, message: dict[str, object]) -> None:
+        if self.ledger is None:
+            return
+        result = message.get("result")
+        if not isinstance(result, dict):
+            return
+        tools = result.get("tools")
+        if not isinstance(tools, list):
+            return
+        inventory: list[ToolInventoryItem] = []
+        for tool in tools:
+            if not isinstance(tool, dict) or not isinstance(tool.get("name"), str):
+                continue
+            input_schema = tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {}
+            output_schema = tool.get("outputSchema") if isinstance(tool.get("outputSchema"), dict) else {}
+            redacted_input = redact_value(input_schema)
+            redacted_output = redact_value(output_schema)
+            capabilities, risk, reasons = classify_tool_definition(tool)
+            inventory.append(
+                ToolInventoryItem(
+                    source=self.source,
+                    name=str(tool["name"]),
+                    description=str(tool["description"]) if tool.get("description") is not None else None,
+                    input_schema=redacted_input if isinstance(redacted_input, dict) else {},
+                    output_schema=redacted_output if isinstance(redacted_output, dict) else {},
+                    capabilities=capabilities,
+                    risk_level=risk,
+                    reasons=reasons,
+                )
+            )
+        self.ledger.upsert_tool_inventory(inventory)
 
 
 class MCPStdioProxy:

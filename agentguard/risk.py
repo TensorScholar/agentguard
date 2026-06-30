@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import json
+from typing import Any
 
 from .models import Capability, RiskLevel
 
@@ -79,6 +81,58 @@ def classify_tool_name(tool_name: str) -> tuple[Capability, ...]:
     if "secret" in lowered or "credential" in lowered:
         caps.add(Capability.CREDENTIAL_ACCESS)
     return tuple(sorted(caps or {Capability.UNKNOWN}, key=lambda item: item.value))
+
+
+def classify_tool_definition(tool: dict[str, Any]) -> tuple[tuple[Capability, ...], RiskLevel, tuple[str, ...]]:
+    caps: set[Capability] = set(classify_tool_name(str(tool.get("name", ""))))
+    if Capability.UNKNOWN in caps:
+        caps.remove(Capability.UNKNOWN)
+
+    text_parts = [
+        str(tool.get("name", "")),
+        str(tool.get("description", "")),
+        _schema_text(tool.get("inputSchema")),
+        _schema_text(tool.get("outputSchema")),
+    ]
+    lowered = " ".join(text_parts).lower()
+    reasons: list[str] = []
+
+    if any(keyword in lowered for keyword in FILESYSTEM_KEYWORDS):
+        caps.add(Capability.FILESYSTEM_READ)
+        reasons.append("tool metadata mentions filesystem or path access")
+    if any(keyword in lowered for keyword in WRITE_KEYWORDS):
+        caps.add(Capability.FILESYSTEM_WRITE)
+        reasons.append("tool metadata mentions write or mutation behavior")
+    if "shell" in lowered or "command" in lowered or "terminal" in lowered:
+        caps.add(Capability.SHELL_EXECUTION)
+        reasons.append("tool metadata mentions shell or command execution")
+    if any(keyword in lowered for keyword in NETWORK_KEYWORDS):
+        caps.add(Capability.NETWORK_ACCESS)
+        reasons.append("tool metadata mentions network or browser access")
+    if any(keyword in lowered for keyword in DATABASE_KEYWORDS):
+        caps.add(Capability.DATABASE_ACCESS)
+        reasons.append("tool metadata mentions database access")
+    if "deploy" in lowered or "production" in lowered:
+        caps.add(Capability.PRODUCTION_MUTATION)
+        reasons.append("tool metadata mentions deployment or production mutation")
+    if "secret" in lowered or "credential" in lowered or "token" in lowered or "api key" in lowered:
+        caps.add(Capability.CREDENTIAL_ACCESS)
+        reasons.append("tool metadata mentions credentials or secrets")
+
+    if not caps:
+        caps.add(Capability.UNKNOWN)
+        reasons.append("capability cannot be inferred from tool metadata")
+
+    return tuple(sorted(caps, key=lambda item: item.value)), _risk_for_capabilities(caps), tuple(reasons)
+
+
+def _schema_text(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        return json.dumps(value, sort_keys=True)
+    except TypeError:
+        return str(value)
 
 
 def _risk_for_capabilities(capabilities: set[Capability]) -> RiskLevel:

@@ -68,6 +68,19 @@ class ServerFinding:
 
 
 @dataclass(frozen=True)
+class ToolInventoryItem:
+    source: str
+    name: str
+    description: str | None = None
+    input_schema: dict[str, Any] = field(default_factory=dict)
+    output_schema: dict[str, Any] = field(default_factory=dict)
+    capabilities: tuple[Capability, ...] = ()
+    risk_level: RiskLevel = RiskLevel.LOW
+    reasons: tuple[str, ...] = ()
+    discovered_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass(frozen=True)
 class ScanReport:
     generated_at: datetime
     findings: tuple[ServerFinding, ...]

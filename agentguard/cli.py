@@ -123,7 +123,8 @@ def _cmd_proxy(args: argparse.Namespace) -> int:
 def _cmd_report(args: argparse.Namespace) -> int:
     ledger = AuditLedger(Path(args.ledger))
     events = ledger.list_events()
-    output = to_json(events) if args.format == "json" else render_audit_markdown(events)
+    tools = ledger.list_tool_inventory()
+    output = to_json({"events": events, "tools": tools}) if args.format == "json" else render_audit_markdown(events, tools)
     sys.stdout.write(output)
     if not output.endswith("\n"):
         sys.stdout.write("\n")

@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from .models import AuditEvent, ScanReport
+from .models import AuditEvent, ScanReport, ToolInventoryItem
 
 
 def to_json(data: object) -> str:
@@ -33,7 +33,7 @@ def render_scan_markdown(report: ScanReport) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_audit_markdown(events: list[AuditEvent]) -> str:
+def render_audit_markdown(events: list[AuditEvent], tools: list[ToolInventoryItem] | None = None) -> str:
     decisions = Counter(event.decision.value for event in events)
     lines = [
         "# AgentGuard Audit Report",
@@ -61,6 +61,24 @@ def render_audit_markdown(events: list[AuditEvent]) -> str:
             )
             + " |"
         )
+    if tools is not None:
+        lines.extend(
+            [
+                "",
+                "## Discovered Tools",
+                "",
+                "| Source | Tool | Risk | Capabilities | Reasons |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+        )
+        if not tools:
+            lines.append("| None | None | low | None | No tools discovered from MCP traffic |")
+        for tool in tools:
+            capabilities = ", ".join(capability.value for capability in tool.capabilities)
+            reasons = "<br>".join(reason.replace("|", "\\|") for reason in tool.reasons)
+            lines.append(
+                f"| {tool.source} | {tool.name} | {tool.risk_level.value} | {capabilities} | {reasons} |"
+            )
     return "\n".join(lines) + "\n"
 
 

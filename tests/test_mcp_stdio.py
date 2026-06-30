@@ -28,6 +28,26 @@ def test_tools_list_passes_through() -> None:
     assert action.to_client is None
 
 
+def test_tools_list_response_records_inventory(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+
+    processor.handle_client_line(b'{"jsonrpc":"2.0","id":11,"method":"tools/list","params":{}}\n')
+    action = processor.handle_server_line(
+        b'{"jsonrpc":"2.0","id":11,"result":{"tools":[{"name":"write_file",'
+        b'"description":"Write content to a path","inputSchema":{"type":"object",'
+        b'"properties":{"path":{"type":"string"}}}}]}}\n'
+    )
+    response = _loads(action.to_client or b"{}")
+    tools = ledger.list_tool_inventory()
+
+    assert response["result"]["tools"][0]["name"] == "write_file"
+    assert len(tools) == 1
+    assert tools[0].name == "write_file"
+    assert tools[0].risk_level.value == "high"
+    assert "filesystem_write" in [capability.value for capability in tools[0].capabilities]
+
+
 def test_denied_tool_call_returns_error_and_does_not_forward(tmp_path: Path) -> None:
     ledger = AuditLedger(tmp_path / "audit.sqlite")
     processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)

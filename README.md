@@ -24,8 +24,8 @@ python -m agentguard.cli report --ledger .agentguard/audit.sqlite --format markd
 
 `proxy` reads newline-delimited JSON tool-call envelopes from stdin and emits a policy decision for
 each call. `mcp-proxy` is the Phase 1 production-shaped path: it launches a real MCP stdio server,
-forwards JSON-RPC messages, intercepts `tools/call`, applies policy before forwarding, redacts
-secret-like server output, and records audit events.
+forwards JSON-RPC messages, captures `tools/list` inventory, intercepts `tools/call`, applies
+policy before forwarding, redacts secret-like server output, and records audit events.
 
 Example envelope:
 
@@ -44,6 +44,12 @@ python -m agentguard.cli mcp-proxy \
 ```
 
 The command after `--` is passed as argv directly. AgentGuard never uses `shell=True`.
+
+Audit reports include both runtime decisions and discovered MCP tools:
+
+```bash
+python -m agentguard.cli report --ledger .agentguard/audit.sqlite --format markdown
+```
 
 ## Product Boundary
 
