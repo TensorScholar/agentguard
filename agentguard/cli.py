@@ -44,6 +44,12 @@ def main(argv: list[str] | None = None) -> int:
         default=1_000_000,
         help="Maximum JSON-RPC line size accepted from either side",
     )
+    mcp_parser.add_argument(
+        "--shutdown-timeout-seconds",
+        type=float,
+        default=2.0,
+        help="Grace period before terminating a server that ignores stdin close",
+    )
     mcp_parser.add_argument("server_command", nargs=argparse.REMAINDER, help="-- MCP server command")
 
     report_parser = subparsers.add_parser("report", help="Render an audit report")
@@ -146,6 +152,7 @@ def _cmd_mcp_proxy(args: argparse.Namespace) -> int:
         ledger=ledger,
         agent_id=args.agent_id,
         max_message_bytes=args.max_message_bytes,
+        shutdown_timeout_seconds=args.shutdown_timeout_seconds,
     )
     return proxy.run()
 

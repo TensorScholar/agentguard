@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
 import subprocess
 import sys
 import threading
@@ -225,12 +227,18 @@ class MCPStdioProxy:
         ledger: AuditLedger,
         agent_id: str = "mcp-client",
         max_message_bytes: int = 1_000_000,
+        shutdown_timeout_seconds: float = 2.0,
     ) -> None:
         if not server_command:
             raise ValueError("server command is required")
+        if max_message_bytes < 1:
+            raise ValueError("max_message_bytes must be greater than zero")
+        if shutdown_timeout_seconds < 0:
+            raise ValueError("shutdown_timeout_seconds cannot be negative")
         self.server_command = server_command
         self.processor = MCPMessageProcessor(policy=policy, ledger=ledger, agent_id=agent_id)
         self.max_message_bytes = max_message_bytes
+        self.shutdown_timeout_seconds = shutdown_timeout_seconds
 
     def run(self) -> int:
         process = subprocess.Popen(  # noqa: S603 - explicit argv, never shell=True.
@@ -238,6 +246,7 @@ class MCPStdioProxy:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=None,
+            start_new_session=True,
         )
         if process.stdin is None or process.stdout is None:
             raise RuntimeError("failed to open MCP server stdio pipes")
@@ -255,9 +264,26 @@ class MCPStdioProxy:
         server_thread.start()
         client_thread.start()
         client_thread.join()
-        process.wait()
+        self._wait_or_stop_server(process)
         server_thread.join(timeout=1.0)
         return process.returncode if process.returncode is not None else 1
+
+    def _wait_or_stop_server(self, process: subprocess.Popen[bytes]) -> None:
+        try:
+            process.wait(timeout=self.shutdown_timeout_seconds)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+
+        _terminate_process_group(process)
+        try:
+            process.wait(timeout=self.shutdown_timeout_seconds)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+
+        _kill_process_group(process)
+        process.wait()
 
     def _relay_client_to_server(
         self,
@@ -364,3 +390,27 @@ def _ensure_newline(raw_line: bytes) -> bytes:
 
 def _request_key(request_id: object) -> str:
     return json.dumps(request_id, sort_keys=True, separators=(",", ":"))
+
+
+def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        return
+
+
+def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except ProcessLookupError:
+        return

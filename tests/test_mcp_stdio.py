@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from agentguard.audit import AuditLedger
@@ -170,3 +172,116 @@ def test_bounded_line_reader_rejects_newline_terminated_oversized_line() -> None
     lines = list(_iter_bounded_lines(stream, max_bytes=3))
 
     assert lines == [None, b"ok\n"]
+
+
+def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    ledger_path = tmp_path / "audit.sqlite"
+    fake_server = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
+    policy_path.write_text(
+        "\n".join(
+            [
+                "denied_capabilities:",
+                "  - credential_access",
+                "require_approval_capabilities:",
+                "  - shell_execution",
+                "  - production_mutation",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    payload = "\n".join(
+        [
+            json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}),
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "echo",
+                        "arguments": {
+                            "text": "OPENAI_API_KEY=sk-integrationtestabcdefghijklmnopqrstuvwxyz"
+                        },
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "read_secret", "arguments": {}},
+                }
+            ),
+            "",
+        ]
+    ).encode("utf-8")
+
+    process = subprocess.run(  # noqa: S603 - test uses explicit argv only.
+        [
+            sys.executable,
+            "-m",
+            "agentguard.cli",
+            "mcp-proxy",
+            "--policy",
+            str(policy_path),
+            "--ledger",
+            str(ledger_path),
+            "--shutdown-timeout-seconds",
+            "0.5",
+            "--",
+            sys.executable,
+            str(fake_server),
+        ],
+        input=payload,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=5,
+        check=False,
+    )
+    responses = [json.loads(line) for line in process.stdout.decode("utf-8").splitlines()]
+    ledger = AuditLedger(ledger_path)
+
+    assert process.returncode == 0, process.stderr.decode("utf-8")
+    assert [response["id"] for response in responses] == [1, 2, 3]
+    assert responses[0]["result"]["tools"][1]["name"] == "read_secret"
+    assert responses[1]["result"]["content"][0]["text"] == "OPENAI_API_KEY=[REDACTED:openai_key]"
+    assert responses[2]["error"]["code"] == POLICY_DENIED
+    assert responses[2]["error"]["data"]["rule_id"] == "capability.denied"
+    assert {tool.name for tool in ledger.list_tool_inventory()} == {"echo", "read_secret"}
+    assert [event.decision for event in ledger.list_events()] == [
+        Decision.ALLOW,
+        Decision.REDACT,
+        Decision.DENY,
+    ]
+
+
+def test_mcp_proxy_terminates_server_that_ignores_stdin_eof(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "audit.sqlite"
+    fake_server = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
+
+    process = subprocess.run(  # noqa: S603 - test uses explicit argv only.
+        [
+            sys.executable,
+            "-m",
+            "agentguard.cli",
+            "mcp-proxy",
+            "--ledger",
+            str(ledger_path),
+            "--shutdown-timeout-seconds",
+            "0.1",
+            "--",
+            sys.executable,
+            str(fake_server),
+            "--ignore-eof",
+        ],
+        input=b"",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=5,
+        check=False,
+    )
+
+    assert process.returncode != 0
+    assert process.stdout == b""

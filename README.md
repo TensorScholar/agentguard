@@ -26,6 +26,8 @@ python -m agentguard.cli report --ledger .agentguard/audit.sqlite --format markd
 each call. `mcp-proxy` is the Phase 1 production-shaped path: it launches a real MCP stdio server,
 forwards JSON-RPC messages, captures `tools/list` inventory, intercepts `tools/call`, applies
 policy before forwarding, redacts secret-like server output, and records audit events.
+It also uses bounded shutdown handling so a server that ignores stdin close cannot leave the proxy
+hung indefinitely.
 
 Example envelope:
 
@@ -39,6 +41,7 @@ MCP stdio proxy example:
 python -m agentguard.cli mcp-proxy \
   --policy examples/policy.yaml \
   --ledger .agentguard/audit.sqlite \
+  --shutdown-timeout-seconds 2 \
   -- \
   npx -y @modelcontextprotocol/server-filesystem .
 ```

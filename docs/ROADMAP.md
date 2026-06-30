@@ -62,12 +62,14 @@ Deliverables:
 - Safe error responses for denied calls. (implemented)
 - Audit record linking request, decision, and redaction events. (implemented)
 - Capability-aware enforcement from discovered inventory. (implemented)
+- Deterministic MCP stdio integration fixture covering inventory, enforcement, redaction, and audit. (implemented)
+- Bounded shutdown handling for MCP servers that ignore stdin close. (implemented)
 
 Remaining hardening:
 
-- Integration tests against at least one real MCP server.
+- Compatibility smoke test against a pinned common MCP server.
 - Optional human approval workflow instead of fail-closed `require_approval` responses.
-- Backpressure and shutdown behavior tests under long-running server processes.
+- Backpressure behavior under high-volume server output.
 - Inventory freshness/expiry controls for long-running tool servers.
 
 Non-goals:
