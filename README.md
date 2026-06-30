@@ -45,6 +45,17 @@ python -m agentguard.cli mcp-proxy \
 
 The command after `--` is passed as argv directly. AgentGuard never uses `shell=True`.
 
+After `tools/list` inventory is captured, policy can deny or require approval by capability:
+
+```yaml
+denied_capabilities:
+  - credential_access
+
+require_approval_capabilities:
+  - shell_execution
+  - production_mutation
+```
+
 Audit reports include both runtime decisions and discovered MCP tools:
 
 ```bash

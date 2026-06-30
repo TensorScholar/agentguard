@@ -125,6 +125,31 @@ class AuditLedger:
             for row in rows
         ]
 
+    def get_tool_inventory(self, source: str, name: str) -> ToolInventoryItem | None:
+        with sqlite3.connect(self.path) as conn:
+            row = conn.execute(
+                """
+                SELECT source, name, description, input_schema_json, output_schema_json,
+                       capabilities_json, risk_level, reasons_json, discovered_at
+                FROM tool_inventory
+                WHERE source = ? AND name = ?
+                """,
+                (source, name),
+            ).fetchone()
+        if row is None:
+            return None
+        return ToolInventoryItem(
+            source=row[0],
+            name=row[1],
+            description=row[2],
+            input_schema=json.loads(row[3]),
+            output_schema=json.loads(row[4]),
+            capabilities=tuple(Capability(value) for value in json.loads(row[5])),
+            risk_level=RiskLevel(row[6]),
+            reasons=tuple(json.loads(row[7])),
+            discovered_at=datetime.fromisoformat(row[8]),
+        )
+
     def _init_schema(self) -> None:
         with sqlite3.connect(self.path) as conn:
             conn.execute(

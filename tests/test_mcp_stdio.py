@@ -10,7 +10,7 @@ from agentguard.mcp_stdio import (
     MCPMessageProcessor,
     _iter_bounded_lines,
 )
-from agentguard.models import Decision
+from agentguard.models import Capability, Decision, RiskLevel, ToolInventoryItem
 from agentguard.policy import Policy
 
 
@@ -98,6 +98,50 @@ def test_allowed_call_is_correlated_and_response_is_redacted(tmp_path: Path) -> 
     assert "sk-abcdefghijklmnopqrstuvwxyz" not in json.dumps(response)
     assert response["result"]["content"][0]["text"] == "OPENAI_API_KEY=[REDACTED:openai_key]"
     assert [event.decision for event in events] == [Decision.ALLOW, Decision.REDACT]
+
+
+def test_discovered_capability_can_deny_tool_call(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="read_secret",
+                capabilities=(Capability.CREDENTIAL_ACCESS,),
+                risk_level=RiskLevel.CRITICAL,
+                reasons=("tool reads credentials",),
+            )
+        ]
+    )
+    processor = MCPMessageProcessor(
+        policy=Policy(denied_capabilities=(Capability.CREDENTIAL_ACCESS,)),
+        ledger=ledger,
+    )
+    line = (
+        b'{"jsonrpc":"2.0","id":12,"method":"tools/call",'
+        b'"params":{"name":"read_secret","arguments":{}}}\n'
+    )
+
+    action = processor.handle_client_line(line)
+    response = _loads(action.to_client or b"{}")
+
+    assert action.to_server is None
+    assert response["error"]["code"] == POLICY_DENIED
+    assert response["error"]["data"]["rule_id"] == "capability.denied"
+
+
+def test_unknown_inventory_falls_back_to_tool_name_classification() -> None:
+    processor = MCPMessageProcessor(policy=Policy())
+    line = (
+        b'{"jsonrpc":"2.0","id":13,"method":"tools/call",'
+        b'"params":{"name":"run_command","arguments":{"command":"pwd"}}}\n'
+    )
+
+    action = processor.handle_client_line(line)
+    response = _loads(action.to_client or b"{}")
+
+    assert action.to_server is None
+    assert response["error"]["code"] == APPROVAL_REQUIRED
 
 
 def test_malformed_client_message_fails_closed() -> None:

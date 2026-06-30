@@ -61,13 +61,14 @@ Deliverables:
 - Tool-call enforcement for `tools/call`. (implemented)
 - Safe error responses for denied calls. (implemented)
 - Audit record linking request, decision, and redaction events. (implemented)
+- Capability-aware enforcement from discovered inventory. (implemented)
 
 Remaining hardening:
 
 - Integration tests against at least one real MCP server.
 - Optional human approval workflow instead of fail-closed `require_approval` responses.
 - Backpressure and shutdown behavior tests under long-running server processes.
-- Policy rules that can deny by discovered capability, not only per-call arguments.
+- Inventory freshness/expiry controls for long-running tool servers.
 
 Non-goals:
 

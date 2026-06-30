@@ -38,13 +38,16 @@ class MCPMessageProcessor:
         ledger: AuditLedger | None = None,
         agent_id: str = "mcp-client",
         source: str = "mcp_stdio",
+        inventory_wait_timeout_seconds: float = 0.25,
     ) -> None:
         self.policy = policy
         self.ledger = ledger
         self.agent_id = agent_id
         self.source = source
+        self.inventory_wait_timeout_seconds = inventory_wait_timeout_seconds
         self._pending_calls: dict[str, ToolCall] = {}
         self._pending_tool_lists: set[str] = set()
+        self._condition = threading.Condition()
 
     def handle_client_line(self, raw_line: bytes) -> ProxyAction:
         message = _decode_json_rpc(raw_line)
@@ -54,7 +57,8 @@ class MCPMessageProcessor:
             return ProxyAction(to_client=_jsonrpc_error(None, INVALID_REQUEST, "Invalid request"))
 
         if message.get("method") == "tools/list" and message.get("id") is not None:
-            self._pending_tool_lists.add(_request_key(message.get("id")))
+            with self._condition:
+                self._pending_tool_lists.add(_request_key(message.get("id")))
             return ProxyAction(to_server=_ensure_newline(raw_line))
 
         if message.get("method") != "tools/call":
@@ -96,7 +100,10 @@ class MCPMessageProcessor:
             source=self.source,
             call_id=_request_key(request_id),
         )
-        decision = self.policy.evaluate(call)
+        self._wait_for_pending_tool_inventory()
+        known_tool = self.ledger.get_tool_inventory(self.source, tool_name) if self.ledger else None
+        known_capabilities = known_tool.capabilities if known_tool is not None else None
+        decision = self.policy.evaluate(call, known_capabilities=known_capabilities)
         self._record(AuditEvent.from_decision(call, decision))
 
         if decision.decision == Decision.DENY:
@@ -136,9 +143,9 @@ class MCPMessageProcessor:
             return ProxyAction(to_client=_encode_json_rpc(redacted))
 
         call = self._pending_calls.pop(_request_key(request_id), None)
-        if call is None and _request_key(request_id) in self._pending_tool_lists:
-            self._pending_tool_lists.remove(_request_key(request_id))
+        if call is None and self._is_pending_tool_list(request_id):
             self._record_tool_inventory(message)
+            self._notify_inventory_updated()
             return ProxyAction(to_client=_encode_json_rpc(redacted))
         if call is not None and redacted != message:
             self._record(
@@ -189,6 +196,25 @@ class MCPMessageProcessor:
                 )
             )
         self.ledger.upsert_tool_inventory(inventory)
+
+    def _is_pending_tool_list(self, request_id: object) -> bool:
+        with self._condition:
+            key = _request_key(request_id)
+            if key not in self._pending_tool_lists:
+                return False
+            self._pending_tool_lists.remove(key)
+            return True
+
+    def _notify_inventory_updated(self) -> None:
+        with self._condition:
+            self._condition.notify_all()
+
+    def _wait_for_pending_tool_inventory(self) -> None:
+        if self.inventory_wait_timeout_seconds <= 0:
+            return
+        with self._condition:
+            if self._pending_tool_lists:
+                self._condition.wait(timeout=self.inventory_wait_timeout_seconds)
 
 
 class MCPStdioProxy:

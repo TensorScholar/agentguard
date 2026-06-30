@@ -27,14 +27,17 @@ class Policy:
     )
     blocked_env_names: tuple[str, ...] = ()
     blocked_network_hosts: tuple[str, ...] = ("169.254.169.254", "metadata.google.internal")
+    denied_capabilities: tuple[Capability, ...] = ()
     require_approval_capabilities: tuple[Capability, ...] = (
         Capability.SHELL_EXECUTION,
         Capability.PRODUCTION_MUTATION,
     )
 
-    def evaluate(self, call: ToolCall) -> PolicyDecision:
+    def evaluate(
+        self, call: ToolCall, known_capabilities: tuple[Capability, ...] | None = None
+    ) -> PolicyDecision:
         tool_name = call.tool_name.lower()
-        capabilities = classify_tool_name(call.tool_name)
+        capabilities = known_capabilities or classify_tool_name(call.tool_name)
 
         if self.allowed_tools and tool_name not in {item.lower() for item in self.allowed_tools}:
             return PolicyDecision(
@@ -76,6 +79,18 @@ class Policy:
                 decision=Decision.DENY,
                 reason=f"blocked network destination: {blocked_host}",
                 rule_id="network.blocked_host",
+                capabilities=capabilities,
+            )
+
+        denied_capability = next(
+            (capability for capability in capabilities if capability in self.denied_capabilities),
+            None,
+        )
+        if denied_capability:
+            return PolicyDecision(
+                decision=Decision.DENY,
+                reason=f"capability is denied: {denied_capability.value}",
+                rule_id="capability.denied",
                 capabilities=capabilities,
             )
 
@@ -122,6 +137,9 @@ def load_policy(path: str | None) -> Policy:
         blocked_env_names=tuple(_as_string_list(raw.get("blocked_env_names", []))),
         blocked_network_hosts=tuple(_as_string_list(raw.get("blocked_network_hosts", [])))
         or Policy().blocked_network_hosts,
+        denied_capabilities=tuple(
+            Capability(item) for item in _as_string_list(raw.get("denied_capabilities", []))
+        ),
         require_approval_capabilities=tuple(
             Capability(item) for item in _as_string_list(raw.get("require_approval_capabilities", []))
         )

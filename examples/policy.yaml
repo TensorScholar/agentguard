@@ -22,6 +22,9 @@ blocked_network_hosts:
   - 169.254.169.254
   - metadata.google.internal
 
+denied_capabilities:
+  - credential_access
+
 require_approval_capabilities:
   - shell_execution
   - production_mutation

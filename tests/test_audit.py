@@ -42,3 +42,9 @@ def test_tool_inventory_round_trip(tmp_path: Path) -> None:
     assert tools[0].name == "write_file"
     assert tools[0].capabilities == (Capability.FILESYSTEM_WRITE,)
     assert tools[0].risk_level == RiskLevel.HIGH
+
+    loaded = ledger.get_tool_inventory("mcp_stdio", "write_file")
+
+    assert loaded is not None
+    assert loaded.name == "write_file"
+    assert loaded.capabilities == (Capability.FILESYSTEM_WRITE,)
