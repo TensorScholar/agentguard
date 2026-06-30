@@ -8,6 +8,7 @@ from typing import Any
 
 from .audit import AuditLedger
 from .discovery import discover_config_paths, scan_configs
+from .mcp_stdio import MCPStdioProxy
 from .models import AuditEvent, ToolCall
 from .policy import load_policy
 from .render import render_audit_markdown, render_scan_markdown, to_json
@@ -33,6 +34,18 @@ def main(argv: list[str] | None = None) -> int:
     proxy_parser.add_argument("--policy", help="Path to policy.yaml")
     proxy_parser.add_argument("--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path")
 
+    mcp_parser = subparsers.add_parser("mcp-proxy", help="Proxy an MCP stdio server with policy")
+    mcp_parser.add_argument("--policy", help="Path to policy.yaml")
+    mcp_parser.add_argument("--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path")
+    mcp_parser.add_argument("--agent-id", default="mcp-client", help="Agent/client label for audit logs")
+    mcp_parser.add_argument(
+        "--max-message-bytes",
+        type=int,
+        default=1_000_000,
+        help="Maximum JSON-RPC line size accepted from either side",
+    )
+    mcp_parser.add_argument("server_command", nargs=argparse.REMAINDER, help="-- MCP server command")
+
     report_parser = subparsers.add_parser("report", help="Render an audit report")
     report_parser.add_argument("--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path")
     report_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
@@ -44,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_check_call(args)
     if args.command == "proxy":
         return _cmd_proxy(args)
+    if args.command == "mcp-proxy":
+        return _cmd_mcp_proxy(args)
     if args.command == "report":
         return _cmd_report(args)
     parser.error("unknown command")
@@ -113,6 +128,25 @@ def _cmd_report(args: argparse.Namespace) -> int:
     if not output.endswith("\n"):
         sys.stdout.write("\n")
     return 0
+
+
+def _cmd_mcp_proxy(args: argparse.Namespace) -> int:
+    server_command = list(args.server_command)
+    if server_command and server_command[0] == "--":
+        server_command = server_command[1:]
+    if not server_command:
+        raise SystemExit("mcp-proxy requires a server command after --")
+
+    policy = load_policy(args.policy)
+    ledger = AuditLedger(Path(args.ledger))
+    proxy = MCPStdioProxy(
+        server_command=server_command,
+        policy=policy,
+        ledger=ledger,
+        agent_id=args.agent_id,
+        max_message_bytes=args.max_message_bytes,
+    )
+    return proxy.run()
 
 
 def _parse_args(items: list[str]) -> dict[str, Any]:

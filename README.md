@@ -18,18 +18,32 @@ LLM router. It is the runtime control layer between agents and tools.
 python -m agentguard.cli scan --config examples/mcp_config.json --format markdown
 python -m agentguard.cli check-call --policy examples/policy.yaml --tool read_file --arg path=.env
 python -m agentguard.cli proxy --policy examples/policy.yaml --ledger .agentguard/audit.sqlite
+python -m agentguard.cli mcp-proxy --policy examples/policy.yaml -- --real-mcp-server --flag value
 python -m agentguard.cli report --ledger .agentguard/audit.sqlite --format markdown
 ```
 
 `proxy` reads newline-delimited JSON tool-call envelopes from stdin and emits a policy decision for
-each call. This is the first enforcement primitive; a true MCP transport adapter can wrap the same
-policy engine later.
+each call. `mcp-proxy` is the Phase 1 production-shaped path: it launches a real MCP stdio server,
+forwards JSON-RPC messages, intercepts `tools/call`, applies policy before forwarding, redacts
+secret-like server output, and records audit events.
 
 Example envelope:
 
 ```json
 {"agent_id":"codex","tool_name":"read_file","arguments":{"path":".env"}}
 ```
+
+MCP stdio proxy example:
+
+```bash
+python -m agentguard.cli mcp-proxy \
+  --policy examples/policy.yaml \
+  --ledger .agentguard/audit.sqlite \
+  -- \
+  npx -y @modelcontextprotocol/server-filesystem .
+```
+
+The command after `--` is passed as argv directly. AgentGuard never uses `shell=True`.
 
 ## Product Boundary
 

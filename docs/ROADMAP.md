@@ -55,12 +55,19 @@ Goal: support real MCP clients and servers without changing policy semantics.
 
 Deliverables:
 
-- MCP stdio proxy adapter.
-- JSON-RPC request/response correlation.
-- Tool-list discovery from MCP `tools/list`.
-- Tool-call enforcement for `tools/call`.
-- Safe error responses for denied calls.
-- Audit record linking request, decision, and response.
+- MCP stdio proxy adapter. (implemented)
+- JSON-RPC request/response correlation. (implemented for `tools/call`)
+- Tool-list pass-through from MCP `tools/list`. (implemented)
+- Tool-call enforcement for `tools/call`. (implemented)
+- Safe error responses for denied calls. (implemented)
+- Audit record linking request, decision, and redaction events. (implemented)
+
+Remaining hardening:
+
+- Tool schema risk enrichment from `tools/list` responses.
+- Integration tests against at least one real MCP server.
+- Optional human approval workflow instead of fail-closed `require_approval` responses.
+- Backpressure and shutdown behavior tests under long-running server processes.
 
 Non-goals:
 
