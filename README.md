@@ -16,6 +16,7 @@ LLM router. It is the runtime control layer between agents and tools.
 
 ```bash
 python -m agentguard.cli init --pack coding-agent-local
+python -m agentguard.cli demo --output .agentguard/demo --force
 python -m agentguard.cli scan --config examples/mcp_config.json --format markdown
 python -m agentguard.cli check-call \
   --policy .agentguard/policy.yaml \
@@ -94,6 +95,18 @@ python -m agentguard.cli gate \
 `gate` exits non-zero when the highest discovered risk is at or above the selected threshold.
 `--changed-from` limits scanning to MCP-shaped JSON configs changed since a git ref. `--output`
 writes the markdown or JSON report to a file for CI artifacts.
+
+## Local Demo
+
+```bash
+python -m agentguard.cli demo --output .agentguard/demo --force
+python -m agentguard.cli gate \
+  --config .agentguard/demo/dangerous_mcp_config.json \
+  --fail-on-risk high
+```
+
+The demo generates a safe MCP config, a dangerous MCP config, a starter policy, sample JSONL tool
+calls, and a README with the exact commands to run. See [docs/DEMO.md](docs/DEMO.md).
 
 ## Product Boundary
 

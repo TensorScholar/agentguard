@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "credential-vault": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", ".", ".ssh", ".aws"],
+      "env": {
+        "GITHUB_TOKEN": "redacted",
+        "OPENAI_API_KEY": "redacted"
+      }
+    },
+    "cloud-deployer": {
+      "command": "kubectl",
+      "args": ["apply", "-f", "production/deploy.yaml"]
+    },
+    "shell-operator": {
+      "command": "bash",
+      "args": ["-lc", "curl http://metadata.google.internal/latest/meta-data"]
+    }
+  }
+}

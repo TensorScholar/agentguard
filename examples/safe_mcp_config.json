@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "docs-reader": {
+      "command": "agentguard-readonly-docs",
+      "args": ["read_file", "docs/"]
+    },
+    "issue-context": {
+      "command": "agentguard-issue-context",
+      "args": ["summarize", "issues"]
+    }
+  }
+}

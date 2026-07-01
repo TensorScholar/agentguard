@@ -1,0 +1,3 @@
+{"tool_name":"read_file","arguments":{"path":".env"}}
+{"tool_name":"run_command","arguments":{"command":"git status"}}
+{"tool_name":"read_file","arguments":{"path":"README.md"}}

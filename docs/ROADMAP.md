@@ -40,6 +40,7 @@ Must ship:
 - SQLite audit ledger.
 - Secret redaction for common token/private-key patterns.
 - Unit tests for scanner, policy, secrets, and audit ledger.
+- Repeatable local demo with safe and dangerous MCP configs. (implemented)
 
 Acceptance demo:
 

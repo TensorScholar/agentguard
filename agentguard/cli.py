@@ -8,6 +8,7 @@ from typing import Any
 
 from .audit import AuditLedger
 from .changed import ChangedConfigError, changed_config_paths
+from .demo import write_demo
 from .discovery import discover_config_paths, scan_configs
 from .gate import scan_report_fails_gate
 from .mcp_stdio import MCPStdioProxy
@@ -35,6 +36,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Policy file path to create",
     )
     init_parser.add_argument("--force", action="store_true", help="Overwrite an existing policy")
+
+    demo_parser = subparsers.add_parser("demo", help="Create a self-contained local demo")
+    demo_parser.add_argument(
+        "--output",
+        default=".agentguard/demo",
+        help="Directory where demo files will be written",
+    )
+    demo_parser.add_argument("--force", action="store_true", help="Overwrite an existing demo")
 
     scan_parser = subparsers.add_parser("scan", help="Scan MCP/tool configs")
     scan_parser.add_argument(
@@ -113,6 +122,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "init":
         return _cmd_init(args)
+    if args.command == "demo":
+        return _cmd_demo(args)
     if args.command == "scan":
         return _cmd_scan(args)
     if args.command == "gate":
@@ -143,6 +154,23 @@ def _cmd_init(args: argparse.Namespace) -> int:
         "Next: run agentguard mcp-proxy --policy "
         f"{output_path} -- --your-mcp-server-command\n"
     )
+    return 0
+
+
+def _cmd_demo(args: argparse.Namespace) -> int:
+    output_path = Path(args.output)
+    try:
+        written = write_demo(output_path, force=args.force)
+    except FileExistsError as exc:
+        sys.stderr.write(f"{exc}\n")
+        sys.stderr.write("Use --force to replace it.\n")
+        return 1
+
+    sys.stdout.write(f"Wrote AgentGuard demo to {output_path}\n")
+    for path in written:
+        sys.stdout.write(f"- {path}\n")
+    sys.stdout.write("Next: python -m agentguard.cli gate ")
+    sys.stdout.write(f"--config {output_path / 'dangerous_mcp_config.json'} --fail-on-risk high\n")
     return 0
 
 
