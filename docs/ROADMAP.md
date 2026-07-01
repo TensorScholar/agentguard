@@ -62,7 +62,8 @@ Deliverables:
 - Safe error responses for denied calls. (implemented)
 - Audit record linking request, decision, and redaction events. (implemented)
 - Capability-aware enforcement from discovered inventory. (implemented)
-- Deterministic MCP stdio integration fixture covering inventory, enforcement, redaction, and audit. (implemented)
+- Deterministic MCP stdio integration fixture covering inventory, enforcement, redaction, and
+  audit. (implemented)
 - Bounded shutdown handling for MCP servers that ignore stdin close. (implemented)
 
 Remaining hardening:
@@ -83,14 +84,14 @@ Goal: make AgentGuard easy to use in repos and CI.
 
 Deliverables:
 
-- GitHub Action.
-- `agentguard init` to generate starter policy.
-- PR diff scanner for new or changed MCP/tool configs.
+- `agentguard init` to generate starter policy. (implemented)
 - Policy packs:
-  - coding-agent-local;
-  - ci-agent;
+  - coding-agent-local; (implemented)
+  - ci-agent; (implemented)
   - repo-maintainer;
   - production-operator.
+- GitHub Action.
+- PR diff scanner for new or changed MCP/tool configs.
 - Markdown/PDF security report export.
 
 ## Phase 3: Team Product

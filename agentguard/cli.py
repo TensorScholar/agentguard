@@ -11,6 +11,7 @@ from .discovery import discover_config_paths, scan_configs
 from .mcp_stdio import MCPStdioProxy
 from .models import AuditEvent, ToolCall
 from .policy import load_policy
+from .policy_packs import available_policy_packs, render_policy_pack
 from .render import render_audit_markdown, render_scan_markdown, to_json
 from .secrets import redact_value
 
@@ -18,6 +19,20 @@ from .secrets import redact_value
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agentguard")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = subparsers.add_parser("init", help="Create a starter AgentGuard policy")
+    init_parser.add_argument(
+        "--pack",
+        choices=available_policy_packs(),
+        default="coding-agent-local",
+        help="Policy pack to write",
+    )
+    init_parser.add_argument(
+        "--output",
+        default=".agentguard/policy.yaml",
+        help="Policy file path to create",
+    )
+    init_parser.add_argument("--force", action="store_true", help="Overwrite an existing policy")
 
     scan_parser = subparsers.add_parser("scan", help="Scan MCP/tool configs")
     scan_parser.add_argument("--config", action="append", default=[], help="Path to MCP JSON config")
@@ -57,6 +72,8 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
 
     args = parser.parse_args(argv)
+    if args.command == "init":
+        return _cmd_init(args)
     if args.command == "scan":
         return _cmd_scan(args)
     if args.command == "check-call":
@@ -69,6 +86,23 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_report(args)
     parser.error("unknown command")
     return 2
+
+
+def _cmd_init(args: argparse.Namespace) -> int:
+    output_path = Path(args.output)
+    if output_path.exists() and not args.force:
+        sys.stderr.write(f"Refusing to overwrite existing policy: {output_path}\n")
+        sys.stderr.write("Use --force to replace it.\n")
+        return 1
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(render_policy_pack(args.pack), encoding="utf-8")
+    sys.stdout.write(f"Wrote {args.pack} policy to {output_path}\n")
+    sys.stdout.write(
+        "Next: run agentguard mcp-proxy --policy "
+        f"{output_path} -- --your-mcp-server-command\n"
+    )
+    return 0
 
 
 def _cmd_scan(args: argparse.Namespace) -> int:

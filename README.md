@@ -15,12 +15,27 @@ LLM router. It is the runtime control layer between agents and tools.
 ## MVP Commands
 
 ```bash
+python -m agentguard.cli init --pack coding-agent-local
 python -m agentguard.cli scan --config examples/mcp_config.json --format markdown
-python -m agentguard.cli check-call --policy examples/policy.yaml --tool read_file --arg path=.env
-python -m agentguard.cli proxy --policy examples/policy.yaml --ledger .agentguard/audit.sqlite
-python -m agentguard.cli mcp-proxy --policy examples/policy.yaml -- --real-mcp-server --flag value
+python -m agentguard.cli check-call \
+  --policy .agentguard/policy.yaml \
+  --tool read_file \
+  --arg path=.env
+python -m agentguard.cli proxy --policy .agentguard/policy.yaml --ledger .agentguard/audit.sqlite
+python -m agentguard.cli mcp-proxy \
+  --policy .agentguard/policy.yaml \
+  -- \
+  --real-mcp-server --flag value
 python -m agentguard.cli report --ledger .agentguard/audit.sqlite --format markdown
 ```
+
+`init` creates a starter policy from a built-in policy pack and refuses to overwrite an existing
+policy unless `--force` is provided. Current packs:
+
+- `coding-agent-local`: allow normal repo work, block credential access, gate
+  shell/cloud/database/production actions.
+- `ci-agent`: block credential/cloud/production access, gate file mutation, shell, and database
+  actions.
 
 `proxy` reads newline-delimited JSON tool-call envelopes from stdin and emits a policy decision for
 each call. `mcp-proxy` is the Phase 1 production-shaped path: it launches a real MCP stdio server,
@@ -39,7 +54,7 @@ MCP stdio proxy example:
 
 ```bash
 python -m agentguard.cli mcp-proxy \
-  --policy examples/policy.yaml \
+  --policy .agentguard/policy.yaml \
   --ledger .agentguard/audit.sqlite \
   --shutdown-timeout-seconds 2 \
   -- \
