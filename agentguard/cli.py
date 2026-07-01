@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from .audit import AuditLedger
+from .changed import ChangedConfigError, changed_config_paths
 from .discovery import discover_config_paths, scan_configs
+from .gate import scan_report_fails_gate
 from .mcp_stdio import MCPStdioProxy
-from .models import AuditEvent, ToolCall
+from .models import AuditEvent, RiskLevel, ToolCall
 from .policy import load_policy
 from .policy_packs import available_policy_packs, render_policy_pack
 from .render import render_audit_markdown, render_scan_markdown, to_json
@@ -35,8 +37,32 @@ def main(argv: list[str] | None = None) -> int:
     init_parser.add_argument("--force", action="store_true", help="Overwrite an existing policy")
 
     scan_parser = subparsers.add_parser("scan", help="Scan MCP/tool configs")
-    scan_parser.add_argument("--config", action="append", default=[], help="Path to MCP JSON config")
+    scan_parser.add_argument(
+        "--config", action="append", default=[], help="Path to MCP JSON config"
+    )
+    scan_parser.add_argument("--changed-from", help="Scan MCP configs changed since this git ref")
+    scan_parser.add_argument("--head-ref", default="HEAD", help="Git head ref for --changed-from")
     scan_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+    scan_parser.add_argument("--output", help="Write report to this path instead of stdout")
+
+    gate_parser = subparsers.add_parser(
+        "gate", help="Fail CI when MCP/tool config risk is too high"
+    )
+    gate_parser.add_argument(
+        "--config", action="append", default=[], help="Path to MCP JSON config"
+    )
+    gate_parser.add_argument(
+        "--changed-from", help="Gate only MCP configs changed since this git ref"
+    )
+    gate_parser.add_argument("--head-ref", default="HEAD", help="Git head ref for --changed-from")
+    gate_parser.add_argument(
+        "--fail-on-risk",
+        choices=[risk.value for risk in RiskLevel],
+        default=RiskLevel.HIGH.value,
+        help="Fail when highest discovered risk is at or above this level",
+    )
+    gate_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+    gate_parser.add_argument("--output", help="Write report to this path")
 
     check_parser = subparsers.add_parser("check-call", help="Evaluate one tool call")
     check_parser.add_argument("--policy", help="Path to policy.yaml")
@@ -45,14 +71,22 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument("--agent-id", default="local")
     check_parser.add_argument("--format", choices=["json", "markdown"], default="json")
 
-    proxy_parser = subparsers.add_parser("proxy", help="Enforce policy on JSONL tool calls from stdin")
+    proxy_parser = subparsers.add_parser(
+        "proxy", help="Enforce policy on JSONL tool calls from stdin"
+    )
     proxy_parser.add_argument("--policy", help="Path to policy.yaml")
-    proxy_parser.add_argument("--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path")
+    proxy_parser.add_argument(
+        "--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path"
+    )
 
     mcp_parser = subparsers.add_parser("mcp-proxy", help="Proxy an MCP stdio server with policy")
     mcp_parser.add_argument("--policy", help="Path to policy.yaml")
-    mcp_parser.add_argument("--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path")
-    mcp_parser.add_argument("--agent-id", default="mcp-client", help="Agent/client label for audit logs")
+    mcp_parser.add_argument(
+        "--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path"
+    )
+    mcp_parser.add_argument(
+        "--agent-id", default="mcp-client", help="Agent/client label for audit logs"
+    )
     mcp_parser.add_argument(
         "--max-message-bytes",
         type=int,
@@ -65,17 +99,24 @@ def main(argv: list[str] | None = None) -> int:
         default=2.0,
         help="Grace period before terminating a server that ignores stdin close",
     )
-    mcp_parser.add_argument("server_command", nargs=argparse.REMAINDER, help="-- MCP server command")
+    mcp_parser.add_argument(
+        "server_command", nargs=argparse.REMAINDER, help="-- MCP server command"
+    )
 
     report_parser = subparsers.add_parser("report", help="Render an audit report")
-    report_parser.add_argument("--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path")
+    report_parser.add_argument(
+        "--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path"
+    )
     report_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+    report_parser.add_argument("--output", help="Write report to this path instead of stdout")
 
     args = parser.parse_args(argv)
     if args.command == "init":
         return _cmd_init(args)
     if args.command == "scan":
         return _cmd_scan(args)
+    if args.command == "gate":
+        return _cmd_gate(args)
     if args.command == "check-call":
         return _cmd_check_call(args)
     if args.command == "proxy":
@@ -106,13 +147,35 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 
 def _cmd_scan(args: argparse.Namespace) -> int:
-    explicit = [Path(path) for path in args.config]
-    paths = discover_config_paths(explicit or None)
+    try:
+        paths = _config_paths_from_args(args)
+    except ChangedConfigError as exc:
+        sys.stderr.write(f"Failed to inspect changed configs: {exc}\n")
+        return 2
     report = scan_configs(paths)
     output = to_json(report) if args.format == "json" else render_scan_markdown(report)
-    sys.stdout.write(output)
-    if not output.endswith("\n"):
-        sys.stdout.write("\n")
+    _write_output(output, args.output)
+    return 0
+
+
+def _cmd_gate(args: argparse.Namespace) -> int:
+    try:
+        paths = _config_paths_from_args(args)
+    except ChangedConfigError as exc:
+        sys.stderr.write(f"Failed to inspect changed configs: {exc}\n")
+        return 2
+
+    report = scan_configs(paths)
+    output = to_json(report) if args.format == "json" else render_scan_markdown(report)
+    _write_output(output, args.output)
+
+    threshold = RiskLevel(args.fail_on_risk)
+    if scan_report_fails_gate(report, threshold):
+        sys.stderr.write(
+            f"AgentGuard gate failed: highest risk {report.highest_risk.value} "
+            f"is at or above {threshold.value}\n"
+        )
+        return 1
     return 0
 
 
@@ -164,10 +227,12 @@ def _cmd_report(args: argparse.Namespace) -> int:
     ledger = AuditLedger(Path(args.ledger))
     events = ledger.list_events()
     tools = ledger.list_tool_inventory()
-    output = to_json({"events": events, "tools": tools}) if args.format == "json" else render_audit_markdown(events, tools)
-    sys.stdout.write(output)
-    if not output.endswith("\n"):
-        sys.stdout.write("\n")
+    output = (
+        to_json({"events": events, "tools": tools})
+        if args.format == "json"
+        else render_audit_markdown(events, tools)
+    )
+    _write_output(output, args.output)
     return 0
 
 
@@ -199,6 +264,25 @@ def _parse_args(items: list[str]) -> dict[str, Any]:
         key, value = item.split("=", 1)
         output[key] = redact_value(value)
     return output
+
+
+def _config_paths_from_args(args: argparse.Namespace) -> list[Path]:
+    explicit = [Path(path) for path in args.config]
+    if args.changed_from:
+        changed = changed_config_paths(args.changed_from, args.head_ref)
+        return discover_config_paths(explicit) + changed if explicit else changed
+    return discover_config_paths(explicit or None)
+
+
+def _write_output(output: str, path: str | None) -> None:
+    if path:
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(output if output.endswith("\n") else output + "\n", encoding="utf-8")
+        return
+    sys.stdout.write(output)
+    if not output.endswith("\n"):
+        sys.stdout.write("\n")
 
 
 if __name__ == "__main__":

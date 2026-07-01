@@ -26,6 +26,7 @@ python -m agentguard.cli mcp-proxy \
   --policy .agentguard/policy.yaml \
   -- \
   --real-mcp-server --flag value
+python -m agentguard.cli gate --config examples/mcp_config.json --fail-on-risk high
 python -m agentguard.cli report --ledger .agentguard/audit.sqlite --format markdown
 ```
 
@@ -79,6 +80,20 @@ Audit reports include both runtime decisions and discovered MCP tools:
 ```bash
 python -m agentguard.cli report --ledger .agentguard/audit.sqlite --format markdown
 ```
+
+CI gate example:
+
+```bash
+python -m agentguard.cli gate \
+  --changed-from origin/main \
+  --fail-on-risk high \
+  --format markdown \
+  --output agentguard-scan.md
+```
+
+`gate` exits non-zero when the highest discovered risk is at or above the selected threshold.
+`--changed-from` limits scanning to MCP-shaped JSON configs changed since a git ref. `--output`
+writes the markdown or JSON report to a file for CI artifacts.
 
 ## Product Boundary
 

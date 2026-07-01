@@ -91,7 +91,8 @@ def test_allowed_call_is_correlated_and_response_is_redacted(tmp_path: Path) -> 
 
     call_action = processor.handle_client_line(call_line)
     response_action = processor.handle_server_line(
-        b'{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz"}]}}\n'
+        b'{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text",'
+        b'"text":"OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz"}]}}\n'
     )
     response = _loads(response_action.to_client or b"{}")
     events = ledger.list_events()
@@ -244,11 +245,15 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
     ledger = AuditLedger(ledger_path)
 
     assert process.returncode == 0, process.stderr.decode("utf-8")
-    assert [response["id"] for response in responses] == [1, 2, 3]
-    assert responses[0]["result"]["tools"][1]["name"] == "read_secret"
-    assert responses[1]["result"]["content"][0]["text"] == "OPENAI_API_KEY=[REDACTED:openai_key]"
-    assert responses[2]["error"]["code"] == POLICY_DENIED
-    assert responses[2]["error"]["data"]["rule_id"] == "capability.denied"
+    responses_by_id = {response["id"]: response for response in responses}
+    assert set(responses_by_id) == {1, 2, 3}
+    assert responses_by_id[1]["result"]["tools"][1]["name"] == "read_secret"
+    assert (
+        responses_by_id[2]["result"]["content"][0]["text"]
+        == "OPENAI_API_KEY=[REDACTED:openai_key]"
+    )
+    assert responses_by_id[3]["error"]["code"] == POLICY_DENIED
+    assert responses_by_id[3]["error"]["data"]["rule_id"] == "capability.denied"
     assert {tool.name for tool in ledger.list_tool_inventory()} == {"echo", "read_secret"}
     assert [event.decision for event in ledger.list_events()] == [
         Decision.ALLOW,

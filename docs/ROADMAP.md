@@ -90,9 +90,10 @@ Deliverables:
   - ci-agent; (implemented)
   - repo-maintainer;
   - production-operator.
-- GitHub Action.
-- PR diff scanner for new or changed MCP/tool configs.
-- Markdown/PDF security report export.
+- GitHub Action. (implemented)
+- PR diff scanner for new or changed MCP/tool configs. (implemented for MCP-shaped JSON configs)
+- Markdown/JSON security report export. (implemented)
+- PDF security report export.
 
 ## Phase 3: Team Product
 

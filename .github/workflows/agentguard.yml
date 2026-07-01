@@ -1,0 +1,57 @@
+name: AgentGuard
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  mcp-security-gate:
+    name: MCP security gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install AgentGuard
+        run: python -m pip install -e .
+
+      - name: Run changed-config gate
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_REF="${{ github.event.before }}"
+          fi
+
+          if [[ "$BASE_REF" =~ ^0+$ ]]; then
+            python -m agentguard.cli scan \
+              --format markdown \
+              --output agentguard-scan.md
+          else
+            python -m agentguard.cli gate \
+              --changed-from "$BASE_REF" \
+              --fail-on-risk high \
+              --format markdown \
+              --output agentguard-scan.md
+          fi
+
+      - name: Upload AgentGuard report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: agentguard-scan
+          path: agentguard-scan.md
