@@ -94,6 +94,7 @@ Deliverables:
 - GitHub Action. (implemented)
 - PR diff scanner for new or changed MCP/tool configs. (implemented for MCP-shaped JSON configs)
 - Markdown/JSON security report export. (implemented)
+- Install/runtime diagnostics via `agentguard doctor`. (implemented)
 - PDF security report export.
 
 ## Phase 3: Team Product

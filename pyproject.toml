@@ -5,8 +5,24 @@ description = "Local-first security gateway for AI agents, MCP tools, and tool-c
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Mohammad Atashi" }]
-license = { text = "MIT" }
+license = "MIT"
+keywords = ["ai-agents", "mcp", "security", "tool-calling", "audit"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = []
+
+[project.urls]
+Repository = "https://github.com/TensorScholar/agentguard"
+Issues = "https://github.com/TensorScholar/agentguard/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -32,3 +48,6 @@ strict = true
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["agentguard*"]

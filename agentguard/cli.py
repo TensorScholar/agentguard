@@ -6,10 +6,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from ._meta import package_version
 from .audit import AuditLedger
 from .changed import ChangedConfigError, changed_config_paths
 from .demo import write_demo
 from .discovery import discover_config_paths, scan_configs
+from .doctor import render_doctor_markdown, run_doctor
 from .gate import scan_report_fails_gate
 from .mcp_stdio import MCPStdioProxy
 from .models import AuditEvent, RiskLevel, ToolCall
@@ -21,6 +23,7 @@ from .secrets import redact_value
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agentguard")
+    parser.add_argument("--version", action="version", version=f"agentguard {package_version()}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser("init", help="Create a starter AgentGuard policy")
@@ -44,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Directory where demo files will be written",
     )
     demo_parser.add_argument("--force", action="store_true", help="Overwrite an existing demo")
+
+    doctor_parser = subparsers.add_parser("doctor", help="Check local AgentGuard environment")
+    doctor_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+    doctor_parser.add_argument("--workdir", help="Directory to check for local output writes")
 
     scan_parser = subparsers.add_parser("scan", help="Scan MCP/tool configs")
     scan_parser.add_argument(
@@ -124,6 +131,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_init(args)
     if args.command == "demo":
         return _cmd_demo(args)
+    if args.command == "doctor":
+        return _cmd_doctor(args)
     if args.command == "scan":
         return _cmd_scan(args)
     if args.command == "gate":
@@ -172,6 +181,13 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     sys.stdout.write("Next: python -m agentguard.cli gate ")
     sys.stdout.write(f"--config {output_path / 'dangerous_mcp_config.json'} --fail-on-risk high\n")
     return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    report = run_doctor(Path(args.workdir) if args.workdir else None)
+    output = to_json(report) if args.format == "json" else render_doctor_markdown(report)
+    _write_output(output, None)
+    return 0 if report.ok else 1
 
 
 def _cmd_scan(args: argparse.Namespace) -> int:

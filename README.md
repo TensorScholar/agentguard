@@ -15,6 +15,8 @@ LLM router. It is the runtime control layer between agents and tools.
 ## MVP Commands
 
 ```bash
+python -m agentguard --version
+python -m agentguard.cli doctor
 python -m agentguard.cli init --pack coding-agent-local
 python -m agentguard.cli demo --output .agentguard/demo --force
 python -m agentguard.cli scan --config examples/mcp_config.json --format markdown
@@ -30,6 +32,10 @@ python -m agentguard.cli mcp-proxy \
 python -m agentguard.cli gate --config examples/mcp_config.json --fail-on-risk high
 python -m agentguard.cli report --ledger .agentguard/audit.sqlite --format markdown
 ```
+
+`python -m agentguard` is supported for installed-package and source-checkout usage. `doctor`
+checks the local runtime basics: Python version, SQLite, git availability, package version, and
+local output writability.
 
 `init` creates a starter policy from a built-in policy pack and refuses to overwrite an existing
 policy unless `--force` is provided. Current packs:
