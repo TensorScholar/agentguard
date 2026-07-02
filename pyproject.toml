@@ -23,6 +23,8 @@ dependencies = []
 [project.urls]
 Repository = "https://github.com/TensorScholar/agentguard"
 Issues = "https://github.com/TensorScholar/agentguard/issues"
+Changelog = "https://github.com/TensorScholar/agentguard/blob/main/CHANGELOG.md"
+Security = "https://github.com/TensorScholar/agentguard/blob/main/SECURITY.md"
 
 [project.optional-dependencies]
 dev = [

@@ -143,3 +143,11 @@ internal MCP servers.
 ## Roadmap
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Project Trust
+
+- License: [MIT](LICENSE)
+- Changelog: [CHANGELOG.md](CHANGELOG.md)
+- Security policy: [SECURITY.md](SECURITY.md)
+- Contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Release checklist: [docs/RELEASE.md](docs/RELEASE.md)
