@@ -19,6 +19,7 @@ The project follows a pragmatic pre-1.0 format until public releases begin.
 - GitHub Actions workflow for changed MCP config risk gating.
 - Repeatable local demo with safe and dangerous MCP configurations.
 - Package entrypoints for both `agentguard` and `python -m agentguard`.
+- Stable `findings-json` scan output and compact CI summary output.
 
 ### Security
 

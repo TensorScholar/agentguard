@@ -20,6 +20,9 @@ PYTHONPATH=. python -m agentguard --version
 PYTHONPATH=. python -m agentguard doctor --workdir /tmp
 PYTHONPATH=. python -m agentguard gate \
   --config examples/dangerous_mcp_config.json \
+  --format findings-json \
+  --output /tmp/agentguard-findings.json \
+  --summary-output /tmp/agentguard-summary.md \
   --fail-on-risk high
 ```
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from pytest import CaptureFixture, MonkeyPatch
@@ -90,3 +91,36 @@ def test_scan_writes_report_output_file(tmp_path: Path, capsys: CaptureFixture[s
     assert exit_code == 0
     assert captured.out == ""
     assert "AgentGuard Scan Report" in report.read_text(encoding="utf-8")
+
+
+def test_gate_writes_findings_json_and_summary(tmp_path: Path) -> None:
+    config = tmp_path / "mcp.json"
+    findings = tmp_path / "agentguard-findings.json"
+    summary = tmp_path / "agentguard-summary.md"
+    config.write_text(
+        '{"mcpServers":{"github":{"command":"docker","args":["run","github"],'
+        '"env":{"GITHUB_TOKEN":"redacted"}}}}',
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "gate",
+            "--config",
+            str(config),
+            "--fail-on-risk",
+            "high",
+            "--format",
+            "findings-json",
+            "--output",
+            str(findings),
+            "--summary-output",
+            str(summary),
+        ]
+    )
+    payload = json.loads(findings.read_text(encoding="utf-8"))
+
+    assert exit_code == 1
+    assert payload["schema_version"] == "agentguard.findings.v1"
+    assert payload["summary"]["highest_risk"] == "critical"
+    assert "# AgentGuard CI Summary" in summary.read_text(encoding="utf-8")

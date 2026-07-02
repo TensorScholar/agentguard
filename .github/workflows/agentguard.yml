@@ -31,6 +31,7 @@ jobs:
       - name: Run changed-config gate
         shell: bash
         run: |
+          set +e
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_REF="${{ github.event.pull_request.base.sha }}"
           else
@@ -39,19 +40,31 @@ jobs:
 
           if [[ "$BASE_REF" =~ ^0+$ ]]; then
             python -m agentguard.cli scan \
-              --format markdown \
-              --output agentguard-scan.md
+              --format findings-json \
+              --output agentguard-findings.json \
+              --summary-output agentguard-summary.md
+            STATUS=$?
           else
             python -m agentguard.cli gate \
               --changed-from "$BASE_REF" \
               --fail-on-risk high \
-              --format markdown \
-              --output agentguard-scan.md
+              --format findings-json \
+              --output agentguard-findings.json \
+              --summary-output agentguard-summary.md
+            STATUS=$?
           fi
+
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f agentguard-summary.md ]; then
+            cat agentguard-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          exit "$STATUS"
 
       - name: Upload AgentGuard report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: agentguard-scan
-          path: agentguard-scan.md
+          path: |
+            agentguard-findings.json
+            agentguard-summary.md

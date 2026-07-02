@@ -38,3 +38,13 @@ def test_project_urls_expose_trust_documents() -> None:
     assert urls["Repository"].endswith("/TensorScholar/agentguard")
     assert urls["Changelog"].endswith("/CHANGELOG.md")
     assert urls["Security"].endswith("/SECURITY.md")
+
+
+def test_github_action_uploads_findings_and_summary() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "agentguard.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "agentguard-findings.json" in workflow
+    assert "agentguard-summary.md" in workflow
+    assert "GITHUB_STEP_SUMMARY" in workflow

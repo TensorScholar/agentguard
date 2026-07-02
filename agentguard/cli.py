@@ -14,10 +14,16 @@ from .discovery import discover_config_paths, scan_configs
 from .doctor import render_doctor_markdown, run_doctor
 from .gate import scan_report_fails_gate
 from .mcp_stdio import MCPStdioProxy
-from .models import AuditEvent, RiskLevel, ToolCall
+from .models import AuditEvent, RiskLevel, ScanReport, ToolCall
 from .policy import load_policy
 from .policy_packs import available_policy_packs, render_policy_pack
-from .render import render_audit_markdown, render_scan_markdown, to_json
+from .render import (
+    render_audit_markdown,
+    render_findings_summary_markdown,
+    render_scan_markdown,
+    scan_report_to_findings,
+    to_json,
+)
 from .secrets import redact_value
 
 
@@ -58,8 +64,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     scan_parser.add_argument("--changed-from", help="Scan MCP configs changed since this git ref")
     scan_parser.add_argument("--head-ref", default="HEAD", help="Git head ref for --changed-from")
-    scan_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+    scan_parser.add_argument(
+        "--format", choices=["json", "markdown", "findings-json"], default="markdown"
+    )
     scan_parser.add_argument("--output", help="Write report to this path instead of stdout")
+    scan_parser.add_argument("--summary-output", help="Write concise markdown summary to this path")
 
     gate_parser = subparsers.add_parser(
         "gate", help="Fail CI when MCP/tool config risk is too high"
@@ -77,8 +86,11 @@ def main(argv: list[str] | None = None) -> int:
         default=RiskLevel.HIGH.value,
         help="Fail when highest discovered risk is at or above this level",
     )
-    gate_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+    gate_parser.add_argument(
+        "--format", choices=["json", "markdown", "findings-json"], default="markdown"
+    )
     gate_parser.add_argument("--output", help="Write report to this path")
+    gate_parser.add_argument("--summary-output", help="Write concise markdown summary to this path")
 
     check_parser = subparsers.add_parser("check-call", help="Evaluate one tool call")
     check_parser.add_argument("--policy", help="Path to policy.yaml")
@@ -197,8 +209,9 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         sys.stderr.write(f"Failed to inspect changed configs: {exc}\n")
         return 2
     report = scan_configs(paths)
-    output = to_json(report) if args.format == "json" else render_scan_markdown(report)
+    output = _render_scan_report(report, args.format)
     _write_output(output, args.output)
+    _write_summary_output(report, args.summary_output)
     return 0
 
 
@@ -210,8 +223,9 @@ def _cmd_gate(args: argparse.Namespace) -> int:
         return 2
 
     report = scan_configs(paths)
-    output = to_json(report) if args.format == "json" else render_scan_markdown(report)
+    output = _render_scan_report(report, args.format)
     _write_output(output, args.output)
+    _write_summary_output(report, args.summary_output)
 
     threshold = RiskLevel(args.fail_on_risk)
     if scan_report_fails_gate(report, threshold):
@@ -327,6 +341,19 @@ def _write_output(output: str, path: str | None) -> None:
     sys.stdout.write(output)
     if not output.endswith("\n"):
         sys.stdout.write("\n")
+
+
+def _render_scan_report(report: ScanReport, output_format: str) -> str:
+    if output_format == "json":
+        return to_json(report)
+    if output_format == "findings-json":
+        return to_json(scan_report_to_findings(report))
+    return render_scan_markdown(report)
+
+
+def _write_summary_output(report: ScanReport, path: str | None) -> None:
+    if path:
+        _write_output(render_findings_summary_markdown(report), path)
 
 
 if __name__ == "__main__":

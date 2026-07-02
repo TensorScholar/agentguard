@@ -94,13 +94,15 @@ CI gate example:
 python -m agentguard.cli gate \
   --changed-from origin/main \
   --fail-on-risk high \
-  --format markdown \
-  --output agentguard-scan.md
+  --format findings-json \
+  --output agentguard-findings.json \
+  --summary-output agentguard-summary.md
 ```
 
 `gate` exits non-zero when the highest discovered risk is at or above the selected threshold.
 `--changed-from` limits scanning to MCP-shaped JSON configs changed since a git ref. `--output`
-writes the markdown or JSON report to a file for CI artifacts.
+writes the markdown, dataclass JSON, or stable `findings-json` report to a file for CI artifacts.
+`--summary-output` writes a compact markdown summary suitable for GitHub Actions step summaries.
 
 ## Local Demo
 
