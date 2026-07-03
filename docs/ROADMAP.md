@@ -66,10 +66,10 @@ Deliverables:
 - Deterministic MCP stdio integration fixture covering inventory, enforcement, redaction, and
   audit. (implemented)
 - Bounded shutdown handling for MCP servers that ignore stdin close. (implemented)
+- Compatibility smoke test against pinned `@modelcontextprotocol/server-filesystem`. (implemented)
 
 Remaining hardening:
 
-- Compatibility smoke test against a pinned common MCP server.
 - Optional human approval workflow instead of fail-closed `require_approval` responses.
 - Backpressure behavior under high-volume server output.
 - Inventory freshness/expiry controls for long-running tool servers.

@@ -21,6 +21,7 @@ The project follows a pragmatic pre-1.0 format until public releases begin.
 - Package entrypoints for both `agentguard` and `python -m agentguard`.
 - Stable `findings-json` scan output and compact CI summary output.
 - Scoped approval exceptions with expiry, reason, and approver metadata.
+- Opt-in real MCP compatibility smoke for pinned filesystem server enforcement.
 
 ### Security
 

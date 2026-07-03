@@ -28,6 +28,19 @@ PYTHONPATH=. python -m agentguard gate \
 
 The final gate command should fail because the dangerous demo config is intentionally critical.
 
+Optional real MCP compatibility smoke:
+
+```bash
+AGENTGUARD_RUN_REAL_MCP_SMOKE=1 \
+PYTHONDONTWRITEBYTECODE=1 \
+PYTHONPATH=. \
+python -m pytest -q -p no:cacheprovider tests/test_mcp_real_server_smoke.py
+```
+
+This installs pinned `@modelcontextprotocol/server-filesystem@2026.1.14` into a temporary npm
+prefix and verifies AgentGuard can capture real `tools/list` inventory, allow a read-only tool
+call, and block a write-capable tool call. It requires Node.js and npm and is intentionally opt-in.
+
 ## Install Smoke
 
 ```bash

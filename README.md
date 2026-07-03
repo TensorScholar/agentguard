@@ -71,6 +71,19 @@ python -m agentguard.cli mcp-proxy \
 
 The command after `--` is passed as argv directly. AgentGuard never uses `shell=True`.
 
+For compatibility verification against a real pinned MCP server, run the opt-in smoke:
+
+```bash
+AGENTGUARD_RUN_REAL_MCP_SMOKE=1 \
+PYTHONDONTWRITEBYTECODE=1 \
+PYTHONPATH=. \
+python -m pytest -q -p no:cacheprovider tests/test_mcp_real_server_smoke.py
+```
+
+The smoke installs `@modelcontextprotocol/server-filesystem@2026.1.14` into pytest's temporary
+directory, runs its Node entrypoint directly, captures `tools/list`, allows a read-only call, and
+blocks a write-capable call through policy.
+
 After `tools/list` inventory is captured, policy can deny or require approval by capability:
 
 ```yaml
