@@ -96,6 +96,7 @@ Deliverables:
 - Markdown/JSON security report export. (implemented)
 - Stable findings JSON and compact CI step summaries. (implemented)
 - Install/runtime diagnostics via `agentguard doctor`. (implemented)
+- Policy exceptions with expiry and approval metadata for approval-required calls. (implemented)
 - PDF security report export.
 
 ## Phase 3: Team Product
@@ -108,7 +109,7 @@ Deliverables:
 - Team audit export.
 - SSO-ready hosted dashboard or self-hosted API.
 - Slack/Jira notifications for blocked high-risk actions.
-- Policy exceptions with expiry and approval metadata.
+- Centralized exception review and fleet-wide exception reporting.
 - Fleet reports across developer machines and CI runners.
 
 ## Phase 4: Enterprise Controls

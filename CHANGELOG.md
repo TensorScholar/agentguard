@@ -20,10 +20,12 @@ The project follows a pragmatic pre-1.0 format until public releases begin.
 - Repeatable local demo with safe and dangerous MCP configurations.
 - Package entrypoints for both `agentguard` and `python -m agentguard`.
 - Stable `findings-json` scan output and compact CI summary output.
+- Scoped approval exceptions with expiry, reason, and approver metadata.
 
 ### Security
 
 - Redacts common secret-like values before persisting audit output.
 - Avoids shell invocation for MCP subprocess execution.
 - Fails closed for denied and approval-required tool calls.
+- Keeps approval exceptions below hard-deny rules and requires capability scope.
 - Adds responsible disclosure guidance.

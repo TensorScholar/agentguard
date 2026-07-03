@@ -1,0 +1,35 @@
+default_action: allow
+redact_secret_outputs: true
+
+blocked_path_patterns:
+  - ".env"
+  - "**/.env"
+  - ".ssh/**"
+  - "**/id_rsa"
+  - ".aws/**"
+  - ".npmrc"
+
+blocked_env_names:
+  - GITHUB_TOKEN
+  - OPENAI_API_KEY
+  - AWS_SECRET_ACCESS_KEY
+
+blocked_network_hosts:
+  - 169.254.169.254
+  - metadata.google.internal
+
+denied_capabilities:
+  - credential_access
+
+require_approval_capabilities:
+  - shell_execution
+  - production_mutation
+
+approval_exceptions:
+  - id: local-git-status
+    reason: Allow local repository status checks during onboarding demo
+    approved_by: security
+    expires_at: 2099-01-01
+    tool: run_*
+    capabilities:
+      - shell_execution

@@ -82,6 +82,23 @@ require_approval_capabilities:
   - production_mutation
 ```
 
+Teams can also add temporary approval exceptions for known-safe workflows. Exceptions are scoped by
+capability, can be narrowed by tool name pattern, expire on a specific date, and never override hard
+denies for sensitive paths, credentials, blocked hosts, denied tools, or denied capabilities:
+
+```yaml
+approval_exceptions:
+  - id: local-git-status
+    reason: Allow local repository status checks during onboarding demo
+    approved_by: security
+    expires_at: 2099-01-01
+    tool: run_*
+    capabilities:
+      - shell_execution
+```
+
+See [examples/policy_with_exception.yaml](examples/policy_with_exception.yaml).
+
 Audit reports include both runtime decisions and discovered MCP tools:
 
 ```bash
