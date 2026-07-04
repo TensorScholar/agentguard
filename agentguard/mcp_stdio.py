@@ -293,13 +293,16 @@ class MCPStdioProxy:
     ) -> None:
         for raw_line in _iter_bounded_lines(client_input, self.max_message_bytes):
             if raw_line is None:
-                client_output.write(_jsonrpc_error(None, INVALID_REQUEST, "MCP message is too large"))
-                client_output.flush()
+                if not _write_and_flush(
+                    client_output,
+                    _jsonrpc_error(None, INVALID_REQUEST, "MCP message is too large"),
+                ):
+                    return
                 continue
             action = self.processor.handle_client_line(raw_line)
             if action.to_client is not None:
-                client_output.write(action.to_client)
-                client_output.flush()
+                if not _write_and_flush(client_output, action.to_client):
+                    return
             if action.to_server is not None:
                 try:
                     server_input.write(action.to_server)
@@ -314,15 +317,16 @@ class MCPStdioProxy:
     def _relay_server_to_client(self, server_output: BinaryIO, client_output: BinaryIO) -> None:
         for raw_line in _iter_bounded_lines(server_output, self.max_message_bytes):
             if raw_line is None:
-                client_output.write(
-                    _jsonrpc_error(None, SERVER_PROTOCOL_ERROR, "MCP server message is too large")
-                )
-                client_output.flush()
+                if not _write_and_flush(
+                    client_output,
+                    _jsonrpc_error(None, SERVER_PROTOCOL_ERROR, "MCP server message is too large"),
+                ):
+                    return
                 continue
             action = self.processor.handle_server_line(raw_line)
             if action.to_client is not None:
-                client_output.write(action.to_client)
-                client_output.flush()
+                if not _write_and_flush(client_output, action.to_client):
+                    return
 
 
 def _iter_bounded_lines(stream: BinaryIO, max_bytes: int) -> Iterator[bytes | None]:
@@ -343,6 +347,15 @@ def _drain_line(stream: BinaryIO) -> None:
         chunk = stream.readline(8192)
         if chunk == b"" or chunk.endswith(b"\n"):
             return
+
+
+def _write_and_flush(stream: BinaryIO, payload: bytes) -> bool:
+    try:
+        stream.write(payload)
+        stream.flush()
+    except BrokenPipeError:
+        return False
+    return True
 
 
 def _decode_json_rpc(raw_line: bytes) -> object | None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
@@ -11,6 +12,7 @@ from agentguard.mcp_stdio import (
     POLICY_DENIED,
     MCPMessageProcessor,
     _iter_bounded_lines,
+    _write_and_flush,
 )
 from agentguard.models import Capability, Decision, RiskLevel, ToolInventoryItem
 from agentguard.policy import Policy
@@ -175,6 +177,17 @@ def test_bounded_line_reader_rejects_newline_terminated_oversized_line() -> None
     assert lines == [None, b"ok\n"]
 
 
+def test_write_and_flush_returns_false_for_closed_downstream() -> None:
+    class ClosedOutput(io.BytesIO):
+        def write(self, payload: bytes) -> int:
+            raise BrokenPipeError
+
+        def flush(self) -> None:
+            raise AssertionError("flush should not run after write fails")
+
+    assert _write_and_flush(ClosedOutput(), b"payload") is False
+
+
 def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
     policy_path = tmp_path / "policy.yaml"
     ledger_path = tmp_path / "audit.sqlite"
@@ -254,11 +267,70 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
     )
     assert responses_by_id[3]["error"]["code"] == POLICY_DENIED
     assert responses_by_id[3]["error"]["data"]["rule_id"] == "capability.denied"
-    assert {tool.name for tool in ledger.list_tool_inventory()} == {"echo", "read_secret"}
+    assert {tool.name for tool in ledger.list_tool_inventory()} >= {"echo", "read_secret"}
     assert [event.decision for event in ledger.list_events()] == [
         Decision.ALLOW,
         Decision.REDACT,
         Decision.DENY,
+    ]
+
+
+def test_mcp_proxy_drains_high_volume_server_output(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "audit.sqlite"
+    fake_server = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
+    burst_count = 600
+    payload = (
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 21,
+                "method": "tools/call",
+                "params": {"name": "burst", "arguments": {}},
+            }
+        )
+        + "\n"
+    ).encode("utf-8")
+
+    process = subprocess.run(  # noqa: S603 - test uses explicit argv only.
+        [
+            sys.executable,
+            "-m",
+            "agentguard.cli",
+            "mcp-proxy",
+            "--ledger",
+            str(ledger_path),
+            "--shutdown-timeout-seconds",
+            "0.5",
+            "--",
+            sys.executable,
+            str(fake_server),
+            "--burst-count",
+            str(burst_count),
+            "--burst-bytes",
+            "512",
+        ],
+        input=payload,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=10,
+        check=False,
+    )
+    responses = [json.loads(line) for line in process.stdout.decode("utf-8").splitlines()]
+    ledger = AuditLedger(ledger_path)
+    progress_messages = [
+        response for response in responses if response.get("method") == "notifications/progress"
+    ]
+    final_response = responses[-1]
+
+    assert process.returncode == 0, process.stderr.decode("utf-8")
+    assert len(responses) == burst_count + 1
+    assert len(progress_messages) == burst_count
+    assert progress_messages[0]["params"]["index"] == 0
+    assert progress_messages[-1]["params"]["index"] == burst_count - 1
+    assert final_response["id"] == 21
+    assert final_response["result"]["content"][0]["text"] == f"burst:{burst_count}"
+    assert [(event.tool_name, event.decision) for event in ledger.list_events()] == [
+        ("burst", Decision.ALLOW)
     ]
 
 

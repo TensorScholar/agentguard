@@ -84,6 +84,11 @@ The smoke installs `@modelcontextprotocol/server-filesystem@2026.1.14` into pyte
 directory, runs its Node entrypoint directly, captures `tools/list`, allows a read-only call, and
 blocks a write-capable call through policy.
 
+MCP stdio output is streamed line-by-line with a bounded message size. AgentGuard does not buffer
+unbounded server output in memory; if the downstream client stops reading, backpressure propagates
+through the pipe. Closed downstream pipes are handled as relay termination instead of uncaught
+thread failures.
+
 After `tools/list` inventory is captured, policy can deny or require approval by capability:
 
 ```yaml

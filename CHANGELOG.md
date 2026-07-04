@@ -22,6 +22,7 @@ The project follows a pragmatic pre-1.0 format until public releases begin.
 - Stable `findings-json` scan output and compact CI summary output.
 - Scoped approval exceptions with expiry, reason, and approver metadata.
 - Opt-in real MCP compatibility smoke for pinned filesystem server enforcement.
+- High-volume MCP stdio regression coverage for bounded streaming behavior.
 
 ### Security
 
@@ -29,4 +30,5 @@ The project follows a pragmatic pre-1.0 format until public releases begin.
 - Avoids shell invocation for MCP subprocess execution.
 - Fails closed for denied and approval-required tool calls.
 - Keeps approval exceptions below hard-deny rules and requires capability scope.
+- Handles downstream MCP stdio pipe closure without uncaught relay-thread failures.
 - Adds responsible disclosure guidance.

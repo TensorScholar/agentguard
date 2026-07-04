@@ -67,11 +67,11 @@ Deliverables:
   audit. (implemented)
 - Bounded shutdown handling for MCP servers that ignore stdin close. (implemented)
 - Compatibility smoke test against pinned `@modelcontextprotocol/server-filesystem`. (implemented)
+- High-volume server output regression covering bounded streaming/backpressure. (implemented)
 
 Remaining hardening:
 
 - Optional human approval workflow instead of fail-closed `require_approval` responses.
-- Backpressure behavior under high-volume server output.
 - Inventory freshness/expiry controls for long-running tool servers.
 
 Non-goals:
