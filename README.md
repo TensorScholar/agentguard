@@ -64,6 +64,7 @@ MCP stdio proxy example:
 python -m agentguard.cli mcp-proxy \
   --policy .agentguard/policy.yaml \
   --ledger .agentguard/audit.sqlite \
+  --inventory-ttl-seconds 300 \
   --shutdown-timeout-seconds 2 \
   -- \
   npx -y @modelcontextprotocol/server-filesystem .
@@ -88,6 +89,11 @@ MCP stdio output is streamed line-by-line with a bounded message size. AgentGuar
 unbounded server output in memory; if the downstream client stops reading, backpressure propagates
 through the pipe. Closed downstream pipes are handled as relay termination instead of uncaught
 thread failures.
+
+Discovered `tools/list` inventory is trusted for a bounded time window. By default, cached MCP tool
+metadata expires after 300 seconds. If a known tool is called after its cached inventory is stale,
+AgentGuard requires approval unless fallback policy already denies or requires approval. Set
+`--inventory-ttl-seconds 0` only when a deployment intentionally wants non-expiring local inventory.
 
 After `tools/list` inventory is captured, policy can deny or require approval by capability:
 

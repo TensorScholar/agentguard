@@ -8,6 +8,7 @@ import sys
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import BinaryIO
 
 from .audit import AuditLedger
@@ -23,6 +24,7 @@ INVALID_REQUEST = -32600
 POLICY_DENIED = -32001
 APPROVAL_REQUIRED = -32002
 SERVER_PROTOCOL_ERROR = -32003
+DEFAULT_INVENTORY_TTL_SECONDS = 300.0
 
 
 @dataclass(frozen=True)
@@ -41,12 +43,16 @@ class MCPMessageProcessor:
         agent_id: str = "mcp-client",
         source: str = "mcp_stdio",
         inventory_wait_timeout_seconds: float = 0.25,
+        inventory_ttl_seconds: float = DEFAULT_INVENTORY_TTL_SECONDS,
     ) -> None:
+        if inventory_ttl_seconds < 0:
+            raise ValueError("inventory_ttl_seconds cannot be negative")
         self.policy = policy
         self.ledger = ledger
         self.agent_id = agent_id
         self.source = source
         self.inventory_wait_timeout_seconds = inventory_wait_timeout_seconds
+        self.inventory_ttl_seconds = inventory_ttl_seconds
         self._pending_calls: dict[str, ToolCall] = {}
         self._pending_tool_lists: set[str] = set()
         self._condition = threading.Condition()
@@ -72,21 +78,32 @@ class MCPMessageProcessor:
                 to_client=_jsonrpc_error(
                     None,
                     INVALID_REQUEST,
-                    "AgentGuard blocks tools/call notifications because they cannot be audited safely",
+                    (
+                        "AgentGuard blocks tools/call notifications because they cannot be "
+                        "audited safely"
+                    ),
                 )
             )
 
         params = message.get("params")
         if not isinstance(params, dict):
             return ProxyAction(
-                to_client=_jsonrpc_error(request_id, INVALID_REQUEST, "tools/call params must be an object")
+                to_client=_jsonrpc_error(
+                    request_id,
+                    INVALID_REQUEST,
+                    "tools/call params must be an object",
+                )
             )
 
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
         if not isinstance(tool_name, str) or not tool_name:
             return ProxyAction(
-                to_client=_jsonrpc_error(request_id, INVALID_REQUEST, "tools/call params.name is required")
+                to_client=_jsonrpc_error(
+                    request_id,
+                    INVALID_REQUEST,
+                    "tools/call params.name is required",
+                )
             )
         if not isinstance(arguments, dict):
             return ProxyAction(
@@ -104,8 +121,7 @@ class MCPMessageProcessor:
         )
         self._wait_for_pending_tool_inventory()
         known_tool = self.ledger.get_tool_inventory(self.source, tool_name) if self.ledger else None
-        known_capabilities = known_tool.capabilities if known_tool is not None else None
-        decision = self.policy.evaluate(call, known_capabilities=known_capabilities)
+        decision = self._evaluate_call(call, known_tool)
         self._record(AuditEvent.from_decision(call, decision))
 
         if decision.decision == Decision.DENY:
@@ -134,7 +150,11 @@ class MCPMessageProcessor:
         message = _decode_json_rpc(raw_line)
         if message is None:
             return ProxyAction(
-                to_client=_jsonrpc_error(None, SERVER_PROTOCOL_ERROR, "Invalid JSON-RPC from MCP server")
+                to_client=_jsonrpc_error(
+                    None,
+                    SERVER_PROTOCOL_ERROR,
+                    "Invalid JSON-RPC from MCP server",
+                )
             )
         if not isinstance(message, dict):
             return ProxyAction(to_client=_ensure_newline(raw_line))
@@ -180,16 +200,21 @@ class MCPMessageProcessor:
         for tool in tools:
             if not isinstance(tool, dict) or not isinstance(tool.get("name"), str):
                 continue
-            input_schema = tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {}
-            output_schema = tool.get("outputSchema") if isinstance(tool.get("outputSchema"), dict) else {}
+            input_schema = (
+                tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {}
+            )
+            output_schema = (
+                tool.get("outputSchema") if isinstance(tool.get("outputSchema"), dict) else {}
+            )
             redacted_input = redact_value(input_schema)
             redacted_output = redact_value(output_schema)
             capabilities, risk, reasons = classify_tool_definition(tool)
+            description = str(tool["description"]) if tool.get("description") is not None else None
             inventory.append(
                 ToolInventoryItem(
                     source=self.source,
                     name=str(tool["name"]),
-                    description=str(tool["description"]) if tool.get("description") is not None else None,
+                    description=description,
                     input_schema=redacted_input if isinstance(redacted_input, dict) else {},
                     output_schema=redacted_output if isinstance(redacted_output, dict) else {},
                     capabilities=capabilities,
@@ -197,7 +222,31 @@ class MCPMessageProcessor:
                     reasons=reasons,
                 )
             )
-        self.ledger.upsert_tool_inventory(inventory)
+        self.ledger.replace_tool_inventory(self.source, inventory)
+
+    def _evaluate_call(
+        self,
+        call: ToolCall,
+        known_tool: ToolInventoryItem | None,
+    ) -> PolicyDecision:
+        if known_tool is None or not _inventory_expired(known_tool, self.inventory_ttl_seconds):
+            known_capabilities = known_tool.capabilities if known_tool is not None else None
+            return self.policy.evaluate(call, known_capabilities=known_capabilities)
+
+        fallback_decision = self.policy.evaluate(call)
+        if fallback_decision.decision != Decision.ALLOW:
+            return fallback_decision
+
+        return PolicyDecision(
+            decision=Decision.REQUIRE_APPROVAL,
+            reason=(
+                "cached MCP tool inventory is stale; refresh tools/list before calling "
+                f"'{call.tool_name}'"
+            ),
+            rule_id="inventory.stale",
+            capabilities=known_tool.capabilities,
+            redacted_arguments=redact_value(call.arguments),
+        )
 
     def _is_pending_tool_list(self, request_id: object) -> bool:
         with self._condition:
@@ -228,6 +277,7 @@ class MCPStdioProxy:
         agent_id: str = "mcp-client",
         max_message_bytes: int = 1_000_000,
         shutdown_timeout_seconds: float = 2.0,
+        inventory_ttl_seconds: float = DEFAULT_INVENTORY_TTL_SECONDS,
     ) -> None:
         if not server_command:
             raise ValueError("server command is required")
@@ -235,8 +285,15 @@ class MCPStdioProxy:
             raise ValueError("max_message_bytes must be greater than zero")
         if shutdown_timeout_seconds < 0:
             raise ValueError("shutdown_timeout_seconds cannot be negative")
+        if inventory_ttl_seconds < 0:
+            raise ValueError("inventory_ttl_seconds cannot be negative")
         self.server_command = server_command
-        self.processor = MCPMessageProcessor(policy=policy, ledger=ledger, agent_id=agent_id)
+        self.processor = MCPMessageProcessor(
+            policy=policy,
+            ledger=ledger,
+            agent_id=agent_id,
+            inventory_ttl_seconds=inventory_ttl_seconds,
+        )
         self.max_message_bytes = max_message_bytes
         self.shutdown_timeout_seconds = shutdown_timeout_seconds
 
@@ -356,6 +413,15 @@ def _write_and_flush(stream: BinaryIO, payload: bytes) -> bool:
     except BrokenPipeError:
         return False
     return True
+
+
+def _inventory_expired(tool: ToolInventoryItem, ttl_seconds: float) -> bool:
+    if ttl_seconds <= 0:
+        return False
+    discovered_at = tool.discovered_at
+    if discovered_at.tzinfo is None:
+        discovered_at = discovered_at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - discovered_at > timedelta(seconds=ttl_seconds)
 
 
 def _decode_json_rpc(raw_line: bytes) -> object | None:

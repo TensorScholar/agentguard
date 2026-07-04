@@ -48,3 +48,30 @@ def test_tool_inventory_round_trip(tmp_path: Path) -> None:
     assert loaded is not None
     assert loaded.name == "write_file"
     assert loaded.capabilities == (Capability.FILESYSTEM_WRITE,)
+
+
+def test_replace_tool_inventory_removes_tools_missing_from_latest_list(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(source="mcp_stdio", name="old_tool"),
+            ToolInventoryItem(source="mcp_stdio", name="kept_tool"),
+            ToolInventoryItem(source="other_source", name="old_tool"),
+        ]
+    )
+
+    ledger.replace_tool_inventory(
+        "mcp_stdio",
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="kept_tool",
+                capabilities=(Capability.FILESYSTEM_READ,),
+            )
+        ],
+    )
+
+    assert {(tool.source, tool.name) for tool in ledger.list_tool_inventory()} == {
+        ("mcp_stdio", "kept_tool"),
+        ("other_source", "old_tool"),
+    }

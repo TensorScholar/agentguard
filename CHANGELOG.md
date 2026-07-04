@@ -23,6 +23,7 @@ The project follows a pragmatic pre-1.0 format until public releases begin.
 - Scoped approval exceptions with expiry, reason, and approver metadata.
 - Opt-in real MCP compatibility smoke for pinned filesystem server enforcement.
 - High-volume MCP stdio regression coverage for bounded streaming behavior.
+- MCP tool inventory freshness controls with configurable TTL.
 
 ### Security
 
@@ -31,4 +32,5 @@ The project follows a pragmatic pre-1.0 format until public releases begin.
 - Fails closed for denied and approval-required tool calls.
 - Keeps approval exceptions below hard-deny rules and requires capability scope.
 - Handles downstream MCP stdio pipe closure without uncaught relay-thread failures.
+- Requires approval for stale known MCP tool inventory instead of trusting expired metadata.
 - Adds responsible disclosure guidance.

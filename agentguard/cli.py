@@ -13,7 +13,7 @@ from .demo import write_demo
 from .discovery import discover_config_paths, scan_configs
 from .doctor import render_doctor_markdown, run_doctor
 from .gate import scan_report_fails_gate
-from .mcp_stdio import MCPStdioProxy
+from .mcp_stdio import DEFAULT_INVENTORY_TTL_SECONDS, MCPStdioProxy
 from .models import AuditEvent, RiskLevel, ScanReport, ToolCall
 from .policy import load_policy
 from .policy_packs import available_policy_packs, render_policy_pack
@@ -126,6 +126,12 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=2.0,
         help="Grace period before terminating a server that ignores stdin close",
+    )
+    mcp_parser.add_argument(
+        "--inventory-ttl-seconds",
+        type=float,
+        default=DEFAULT_INVENTORY_TTL_SECONDS,
+        help="Seconds to trust cached MCP tools/list inventory; 0 disables expiry",
     )
     mcp_parser.add_argument(
         "server_command", nargs=argparse.REMAINDER, help="-- MCP server command"
@@ -310,6 +316,7 @@ def _cmd_mcp_proxy(args: argparse.Namespace) -> int:
         agent_id=args.agent_id,
         max_message_bytes=args.max_message_bytes,
         shutdown_timeout_seconds=args.shutdown_timeout_seconds,
+        inventory_ttl_seconds=args.inventory_ttl_seconds,
     )
     return proxy.run()
 

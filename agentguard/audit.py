@@ -68,37 +68,12 @@ class AuditLedger:
         if not tools:
             return
         with sqlite3.connect(self.path) as conn:
-            conn.executemany(
-                """
-                INSERT INTO tool_inventory (
-                    source, name, description, input_schema_json, output_schema_json,
-                    capabilities_json, risk_level, reasons_json, discovered_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(source, name) DO UPDATE SET
-                    description = excluded.description,
-                    input_schema_json = excluded.input_schema_json,
-                    output_schema_json = excluded.output_schema_json,
-                    capabilities_json = excluded.capabilities_json,
-                    risk_level = excluded.risk_level,
-                    reasons_json = excluded.reasons_json,
-                    discovered_at = excluded.discovered_at
-                """,
-                [
-                    (
-                        tool.source,
-                        tool.name,
-                        tool.description,
-                        json.dumps(tool.input_schema, sort_keys=True),
-                        json.dumps(tool.output_schema, sort_keys=True),
-                        json.dumps([capability.value for capability in tool.capabilities]),
-                        tool.risk_level.value,
-                        json.dumps(list(tool.reasons)),
-                        tool.discovered_at.isoformat(),
-                    )
-                    for tool in tools
-                ],
-            )
+            _upsert_tool_inventory(conn, tools)
+
+    def replace_tool_inventory(self, source: str, tools: list[ToolInventoryItem]) -> None:
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("DELETE FROM tool_inventory WHERE source = ?", (source,))
+            _upsert_tool_inventory(conn, tools)
 
     def list_tool_inventory(self) -> list[ToolInventoryItem]:
         with sqlite3.connect(self.path) as conn:
@@ -196,3 +171,39 @@ class AuditLedger:
                 ON tool_inventory(risk_level)
                 """
             )
+
+
+def _upsert_tool_inventory(conn: sqlite3.Connection, tools: list[ToolInventoryItem]) -> None:
+    if not tools:
+        return
+    conn.executemany(
+        """
+        INSERT INTO tool_inventory (
+            source, name, description, input_schema_json, output_schema_json,
+            capabilities_json, risk_level, reasons_json, discovered_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source, name) DO UPDATE SET
+            description = excluded.description,
+            input_schema_json = excluded.input_schema_json,
+            output_schema_json = excluded.output_schema_json,
+            capabilities_json = excluded.capabilities_json,
+            risk_level = excluded.risk_level,
+            reasons_json = excluded.reasons_json,
+            discovered_at = excluded.discovered_at
+        """,
+        [
+            (
+                tool.source,
+                tool.name,
+                tool.description,
+                json.dumps(tool.input_schema, sort_keys=True),
+                json.dumps(tool.output_schema, sort_keys=True),
+                json.dumps([capability.value for capability in tool.capabilities]),
+                tool.risk_level.value,
+                json.dumps(list(tool.reasons)),
+                tool.discovered_at.isoformat(),
+            )
+            for tool in tools
+        ],
+    )

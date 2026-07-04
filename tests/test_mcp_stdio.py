@@ -4,6 +4,7 @@ import io
 import json
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from agentguard.audit import AuditLedger
@@ -34,6 +35,7 @@ def test_tools_list_passes_through() -> None:
 
 def test_tools_list_response_records_inventory(tmp_path: Path) -> None:
     ledger = AuditLedger(tmp_path / "audit.sqlite")
+    ledger.upsert_tool_inventory([ToolInventoryItem(source="mcp_stdio", name="old_tool")])
     processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
 
     processor.handle_client_line(b'{"jsonrpc":"2.0","id":11,"method":"tools/list","params":{}}\n')
@@ -125,6 +127,101 @@ def test_discovered_capability_can_deny_tool_call(tmp_path: Path) -> None:
     line = (
         b'{"jsonrpc":"2.0","id":12,"method":"tools/call",'
         b'"params":{"name":"read_secret","arguments":{}}}\n'
+    )
+
+    action = processor.handle_client_line(line)
+    response = _loads(action.to_client or b"{}")
+
+    assert action.to_server is None
+    assert response["error"]["code"] == POLICY_DENIED
+    assert response["error"]["data"]["rule_id"] == "capability.denied"
+
+
+def test_stale_inventory_requires_approval_for_vague_tool_name(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="invoke",
+                capabilities=(Capability.DATABASE_ACCESS,),
+                risk_level=RiskLevel.HIGH,
+                reasons=("tool metadata mentions database access",),
+                discovered_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+            )
+        ]
+    )
+    processor = MCPMessageProcessor(
+        policy=Policy(),
+        ledger=ledger,
+        inventory_ttl_seconds=1,
+    )
+    line = (
+        b'{"jsonrpc":"2.0","id":14,"method":"tools/call",'
+        b'"params":{"name":"invoke","arguments":{}}}\n'
+    )
+
+    action = processor.handle_client_line(line)
+    response = _loads(action.to_client or b"{}")
+    events = ledger.list_events()
+
+    assert action.to_server is None
+    assert response["error"]["code"] == APPROVAL_REQUIRED
+    assert response["error"]["data"]["rule_id"] == "inventory.stale"
+    assert response["error"]["data"]["capabilities"] == ["database_access"]
+    assert [(event.decision, event.rule_id) for event in events] == [
+        (Decision.REQUIRE_APPROVAL, "inventory.stale")
+    ]
+
+
+def test_stale_inventory_preserves_fallback_hard_deny(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="read_file",
+                capabilities=(Capability.FILESYSTEM_READ,),
+                discovered_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+            )
+        ]
+    )
+    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger, inventory_ttl_seconds=1)
+    line = (
+        b'{"jsonrpc":"2.0","id":15,"method":"tools/call",'
+        b'"params":{"name":"read_file","arguments":{"path":".env"}}}\n'
+    )
+
+    action = processor.handle_client_line(line)
+    response = _loads(action.to_client or b"{}")
+
+    assert action.to_server is None
+    assert response["error"]["code"] == POLICY_DENIED
+    assert response["error"]["data"]["rule_id"] == "path.sensitive"
+
+
+def test_inventory_ttl_zero_disables_expiry(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="invoke",
+                capabilities=(Capability.CREDENTIAL_ACCESS,),
+                risk_level=RiskLevel.CRITICAL,
+                reasons=("tool metadata mentions credentials",),
+                discovered_at=datetime.now(timezone.utc) - timedelta(days=365),
+            )
+        ]
+    )
+    processor = MCPMessageProcessor(
+        policy=Policy(denied_capabilities=(Capability.CREDENTIAL_ACCESS,)),
+        ledger=ledger,
+        inventory_ttl_seconds=0,
+    )
+    line = (
+        b'{"jsonrpc":"2.0","id":16,"method":"tools/call",'
+        b'"params":{"name":"invoke","arguments":{}}}\n'
     )
 
     action = processor.handle_client_line(line)
