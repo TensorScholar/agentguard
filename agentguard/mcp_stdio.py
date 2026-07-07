@@ -122,6 +122,7 @@ class MCPMessageProcessor:
         self._wait_for_pending_tool_inventory()
         known_tool = self.ledger.get_tool_inventory(self.source, tool_name) if self.ledger else None
         decision = self._evaluate_call(call, known_tool)
+        decision = self._apply_approval_grant(call, decision)
         self._record(AuditEvent.from_decision(call, decision))
 
         if decision.decision == Decision.DENY:
@@ -245,6 +246,20 @@ class MCPMessageProcessor:
             ),
             rule_id="inventory.stale",
             capabilities=known_tool.capabilities,
+            redacted_arguments=redact_value(call.arguments),
+        )
+
+    def _apply_approval_grant(self, call: ToolCall, decision: PolicyDecision) -> PolicyDecision:
+        if self.ledger is None or decision.decision != Decision.REQUIRE_APPROVAL:
+            return decision
+        grant = self.ledger.consume_approval_grant(call)
+        if grant is None:
+            return decision
+        return PolicyDecision(
+            decision=Decision.ALLOW,
+            reason=f"approved by {grant.approved_by}: {grant.reason}",
+            rule_id=f"approval.grant.{grant.grant_id}",
+            capabilities=decision.capabilities,
             redacted_arguments=redact_value(call.arguments),
         )
 

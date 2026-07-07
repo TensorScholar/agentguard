@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from agentguard.audit import AuditLedger
-from agentguard.models import AuditEvent, Capability, RiskLevel, ToolCall, ToolInventoryItem
+from agentguard.audit import AuditLedger, hash_tool_arguments
+from agentguard.models import (
+    ApprovalGrant,
+    AuditEvent,
+    Capability,
+    RiskLevel,
+    ToolCall,
+    ToolInventoryItem,
+)
 from agentguard.policy import Policy
 
 
@@ -75,3 +83,91 @@ def test_replace_tool_inventory_removes_tools_missing_from_latest_list(tmp_path:
         ("mcp_stdio", "kept_tool"),
         ("other_source", "old_tool"),
     }
+
+
+def test_approval_grant_round_trip_and_consumption(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    call = ToolCall(
+        tool_name="run_command",
+        arguments={"command": "git status"},
+        agent_id="mcp-client",
+        source="mcp_stdio",
+    )
+    now = datetime.now(timezone.utc)
+    grant = ApprovalGrant(
+        agent_id=call.agent_id,
+        source=call.source,
+        tool_name=call.tool_name,
+        arguments_hash=hash_tool_arguments(call.arguments),
+        approved_by="security",
+        reason="local status check",
+        created_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+
+    ledger.add_approval_grant(grant)
+
+    active = ledger.list_approval_grants()
+    consumed = ledger.consume_approval_grant(call)
+
+    assert len(active) == 1
+    assert active[0].grant_id == grant.grant_id
+    assert consumed is not None
+    assert consumed.grant_id == grant.grant_id
+    assert consumed.used_count == 1
+    assert ledger.consume_approval_grant(call) is None
+
+
+def test_expired_approval_grant_is_not_consumed(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    call = ToolCall(
+        tool_name="run_command",
+        arguments={"command": "git status"},
+        agent_id="mcp-client",
+        source="mcp_stdio",
+    )
+    created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+    ledger.add_approval_grant(
+        ApprovalGrant(
+            agent_id=call.agent_id,
+            source=call.source,
+            tool_name=call.tool_name,
+            arguments_hash=hash_tool_arguments(call.arguments),
+            approved_by="security",
+            reason="expired",
+            created_at=created_at,
+            expires_at=created_at + timedelta(minutes=1),
+        )
+    )
+
+    assert ledger.list_approval_grants() == []
+    assert ledger.consume_approval_grant(call) is None
+
+
+def test_approval_grant_requires_exact_argument_hash(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    now = datetime.now(timezone.utc)
+    ledger.add_approval_grant(
+        ApprovalGrant(
+            agent_id="mcp-client",
+            source="mcp_stdio",
+            tool_name="run_command",
+            arguments_hash=hash_tool_arguments({"command": "git status"}),
+            approved_by="security",
+            reason="local status check",
+            created_at=now,
+            expires_at=now + timedelta(minutes=5),
+        )
+    )
+
+    assert (
+        ledger.consume_approval_grant(
+            ToolCall(
+                tool_name="run_command",
+                arguments={"command": "git push"},
+                agent_id="mcp-client",
+                source="mcp_stdio",
+            )
+        )
+        is None
+    )

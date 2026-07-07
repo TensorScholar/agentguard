@@ -25,6 +25,12 @@ python -m agentguard.cli check-call \
   --tool read_file \
   --arg path=.env
 python -m agentguard.cli proxy --policy .agentguard/policy.yaml --ledger .agentguard/audit.sqlite
+python -m agentguard.cli approve-call \
+  --ledger .agentguard/audit.sqlite \
+  --tool run_command \
+  --arg "command=git status" \
+  --approved-by security \
+  --reason "one local status check"
 python -m agentguard.cli mcp-proxy \
   --policy .agentguard/policy.yaml \
   -- \
@@ -104,6 +110,28 @@ denied_capabilities:
 require_approval_capabilities:
   - shell_execution
   - production_mutation
+```
+
+Approval-required calls fail closed unless an exact local approval grant exists. Grants are scoped
+to agent, source, tool name, and a SHA-256 hash of the exact JSON arguments; they expire and are
+one-use by default. They do not override denies:
+
+```bash
+python -m agentguard.cli approve-call \
+  --ledger .agentguard/audit.sqlite \
+  --source mcp_stdio \
+  --agent-id mcp-client \
+  --tool run_command \
+  --arg "command=git status" \
+  --approved-by security \
+  --reason "one local repository status check" \
+  --ttl-seconds 300
+```
+
+List active grants:
+
+```bash
+python -m agentguard.cli approvals --ledger .agentguard/audit.sqlite
 ```
 
 Teams can also add temporary approval exceptions for known-safe workflows. Exceptions are scoped by

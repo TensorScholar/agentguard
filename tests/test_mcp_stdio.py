@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from agentguard.audit import AuditLedger
+from agentguard.audit import AuditLedger, hash_tool_arguments
 from agentguard.mcp_stdio import (
     APPROVAL_REQUIRED,
     POLICY_DENIED,
@@ -15,7 +15,7 @@ from agentguard.mcp_stdio import (
     _iter_bounded_lines,
     _write_and_flush,
 )
-from agentguard.models import Capability, Decision, RiskLevel, ToolInventoryItem
+from agentguard.models import ApprovalGrant, Capability, Decision, RiskLevel, ToolInventoryItem
 from agentguard.policy import Policy
 
 
@@ -83,6 +83,70 @@ def test_approval_required_tool_call_returns_error() -> None:
 
     assert action.to_server is None
     assert response["error"]["code"] == APPROVAL_REQUIRED
+
+
+def test_approval_grant_allows_matching_approval_required_call(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    arguments = {"command": "git status"}
+    now = datetime.now(timezone.utc)
+    ledger.add_approval_grant(
+        ApprovalGrant(
+            agent_id="mcp-client",
+            source="mcp_stdio",
+            tool_name="run_command",
+            arguments_hash=hash_tool_arguments(arguments),
+            approved_by="security",
+            reason="local repository status",
+            created_at=now,
+            expires_at=now + timedelta(minutes=5),
+        )
+    )
+    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    line = (
+        b'{"jsonrpc":"2.0","id":17,"method":"tools/call",'
+        b'"params":{"name":"run_command","arguments":{"command":"git status"}}}\n'
+    )
+
+    action = processor.handle_client_line(line)
+    events = ledger.list_events()
+
+    assert action.to_server == line
+    assert action.to_client is None
+    assert [(event.decision, event.rule_id) for event in events] == [
+        (Decision.ALLOW, f"approval.grant.{ledger.list_approval_grants(True)[0].grant_id}")
+    ]
+    assert ledger.list_approval_grants() == []
+
+
+def test_approval_grant_does_not_override_deny(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    arguments = {"path": ".env"}
+    now = datetime.now(timezone.utc)
+    ledger.add_approval_grant(
+        ApprovalGrant(
+            agent_id="mcp-client",
+            source="mcp_stdio",
+            tool_name="read_file",
+            arguments_hash=hash_tool_arguments(arguments),
+            approved_by="security",
+            reason="should not bypass deny",
+            created_at=now,
+            expires_at=now + timedelta(minutes=5),
+        )
+    )
+    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    line = (
+        b'{"jsonrpc":"2.0","id":18,"method":"tools/call",'
+        b'"params":{"name":"read_file","arguments":{"path":".env"}}}\n'
+    )
+
+    action = processor.handle_client_line(line)
+    response = _loads(action.to_client or b"{}")
+
+    assert action.to_server is None
+    assert response["error"]["code"] == POLICY_DENIED
+    assert response["error"]["data"]["rule_id"] == "path.sensitive"
+    assert ledger.list_approval_grants()[0].used_count == 0
 
 
 def test_allowed_call_is_correlated_and_response_is_redacted(tmp_path: Path) -> None:

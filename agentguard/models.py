@@ -81,6 +81,21 @@ class ToolInventoryItem:
 
 
 @dataclass(frozen=True)
+class ApprovalGrant:
+    agent_id: str
+    source: str
+    tool_name: str
+    arguments_hash: str
+    approved_by: str
+    reason: str
+    expires_at: datetime
+    max_uses: int = 1
+    used_count: int = 0
+    grant_id: str = field(default_factory=lambda: uuid4().hex)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass(frozen=True)
 class ScanReport:
     generated_at: datetime
     findings: tuple[ServerFinding, ...]

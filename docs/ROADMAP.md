@@ -69,10 +69,11 @@ Deliverables:
 - Compatibility smoke test against pinned `@modelcontextprotocol/server-filesystem`. (implemented)
 - High-volume server output regression covering bounded streaming/backpressure. (implemented)
 - Inventory freshness/expiry controls for long-running tool servers. (implemented)
+- Local expiring approval grants for exact approval-required tool calls. (implemented)
 
 Remaining hardening:
 
-- Optional human approval workflow instead of fail-closed `require_approval` responses.
+- Interactive human approval UX instead of pre-created local grants.
 
 Non-goals:
 

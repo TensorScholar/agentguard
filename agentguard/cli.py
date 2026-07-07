@@ -3,18 +3,27 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from ._meta import package_version
-from .audit import AuditLedger
+from .audit import AuditLedger, hash_tool_arguments
 from .changed import ChangedConfigError, changed_config_paths
 from .demo import write_demo
 from .discovery import discover_config_paths, scan_configs
 from .doctor import render_doctor_markdown, run_doctor
 from .gate import scan_report_fails_gate
 from .mcp_stdio import DEFAULT_INVENTORY_TTL_SECONDS, MCPStdioProxy
-from .models import AuditEvent, RiskLevel, ScanReport, ToolCall
+from .models import (
+    ApprovalGrant,
+    AuditEvent,
+    Decision,
+    PolicyDecision,
+    RiskLevel,
+    ScanReport,
+    ToolCall,
+)
 from .policy import load_policy
 from .policy_packs import available_policy_packs, render_policy_pack
 from .render import (
@@ -107,6 +116,30 @@ def main(argv: list[str] | None = None) -> int:
         "--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path"
     )
 
+    approve_parser = subparsers.add_parser(
+        "approve-call",
+        help="Create an expiring local approval grant for one exact tool call",
+    )
+    approve_parser.add_argument(
+        "--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path"
+    )
+    approve_parser.add_argument("--tool", required=True, help="Tool name")
+    approve_parser.add_argument("--arg", action="append", default=[], help="Tool arg as key=value")
+    approve_parser.add_argument("--agent-id", default="mcp-client")
+    approve_parser.add_argument("--source", default="mcp_stdio")
+    approve_parser.add_argument("--approved-by", required=True)
+    approve_parser.add_argument("--reason", required=True)
+    approve_parser.add_argument("--ttl-seconds", type=float, default=300.0)
+    approve_parser.add_argument("--max-uses", type=int, default=1)
+    approve_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+
+    approvals_parser = subparsers.add_parser("approvals", help="List local approval grants")
+    approvals_parser.add_argument(
+        "--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path"
+    )
+    approvals_parser.add_argument("--include-expired", action="store_true")
+    approvals_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+
     mcp_parser = subparsers.add_parser("mcp-proxy", help="Proxy an MCP stdio server with policy")
     mcp_parser.add_argument("--policy", help="Path to policy.yaml")
     mcp_parser.add_argument(
@@ -159,6 +192,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_check_call(args)
     if args.command == "proxy":
         return _cmd_proxy(args)
+    if args.command == "approve-call":
+        return _cmd_approve_call(args)
+    if args.command == "approvals":
+        return _cmd_approvals(args)
     if args.command == "mcp-proxy":
         return _cmd_mcp_proxy(args)
     if args.command == "report":
@@ -276,6 +313,7 @@ def _cmd_proxy(args: argparse.Namespace) -> int:
                 call_id=str(payload.get("call_id", "")) or ToolCall(tool_name="tmp").call_id,
             )
             decision = policy.evaluate(call)
+            decision = _apply_approval_grant(ledger, call, decision)
             event = AuditEvent.from_decision(call, decision)
             ledger.record(event)
             sys.stdout.write(to_json(event) + "\n")
@@ -285,6 +323,45 @@ def _cmd_proxy(args: argparse.Namespace) -> int:
             exit_code = 1
             sys.stdout.write(json.dumps({"decision": "deny", "reason": str(exc)}) + "\n")
     return exit_code
+
+
+def _cmd_approve_call(args: argparse.Namespace) -> int:
+    if args.ttl_seconds <= 0:
+        sys.stderr.write("--ttl-seconds must be greater than zero\n")
+        return 2
+    if args.max_uses < 1:
+        sys.stderr.write("--max-uses must be greater than zero\n")
+        return 2
+
+    arguments = _parse_raw_args(args.arg)
+    now = datetime.now(timezone.utc)
+    grant = ApprovalGrant(
+        agent_id=args.agent_id,
+        source=args.source,
+        tool_name=args.tool,
+        arguments_hash=hash_tool_arguments(arguments),
+        approved_by=args.approved_by,
+        reason=args.reason,
+        expires_at=now + timedelta(seconds=args.ttl_seconds),
+        max_uses=args.max_uses,
+        created_at=now,
+    )
+    ledger = AuditLedger(Path(args.ledger))
+    ledger.add_approval_grant(grant)
+
+    if args.format == "json":
+        sys.stdout.write(to_json(grant) + "\n")
+    else:
+        sys.stdout.write(_render_approval_grant_markdown(grant))
+    return 0
+
+
+def _cmd_approvals(args: argparse.Namespace) -> int:
+    ledger = AuditLedger(Path(args.ledger))
+    grants = ledger.list_approval_grants(include_expired=args.include_expired)
+    output = to_json(grants) if args.format == "json" else _render_approval_grants_markdown(grants)
+    _write_output(output, None)
+    return 0
 
 
 def _cmd_report(args: argparse.Namespace) -> int:
@@ -321,6 +398,23 @@ def _cmd_mcp_proxy(args: argparse.Namespace) -> int:
     return proxy.run()
 
 
+def _apply_approval_grant(
+    ledger: AuditLedger, call: ToolCall, decision: PolicyDecision
+) -> PolicyDecision:
+    if decision.decision != Decision.REQUIRE_APPROVAL:
+        return decision
+    grant = ledger.consume_approval_grant(call)
+    if grant is None:
+        return decision
+    return PolicyDecision(
+        decision=Decision.ALLOW,
+        reason=f"approved by {grant.approved_by}: {grant.reason}",
+        rule_id=f"approval.grant.{grant.grant_id}",
+        capabilities=decision.capabilities,
+        redacted_arguments=redact_value(call.arguments),
+    )
+
+
 def _parse_args(items: list[str]) -> dict[str, Any]:
     output: dict[str, Any] = {}
     for item in items:
@@ -328,6 +422,16 @@ def _parse_args(items: list[str]) -> dict[str, Any]:
             raise ValueError(f"Argument must be key=value: {item}")
         key, value = item.split("=", 1)
         output[key] = redact_value(value)
+    return output
+
+
+def _parse_raw_args(items: list[str]) -> dict[str, Any]:
+    output: dict[str, Any] = {}
+    for item in items:
+        if "=" not in item:
+            raise ValueError(f"Argument must be key=value: {item}")
+        key, value = item.split("=", 1)
+        output[key] = value
     return output
 
 
@@ -361,6 +465,50 @@ def _render_scan_report(report: ScanReport, output_format: str) -> str:
 def _write_summary_output(report: ScanReport, path: str | None) -> None:
     if path:
         _write_output(render_findings_summary_markdown(report), path)
+
+
+def _render_approval_grant_markdown(grant: ApprovalGrant) -> str:
+    return (
+        f"Created approval grant `{grant.grant_id}`\n\n"
+        f"- Tool: `{grant.tool_name}`\n"
+        f"- Agent: `{grant.agent_id}`\n"
+        f"- Source: `{grant.source}`\n"
+        f"- Arguments SHA-256: `{grant.arguments_hash}`\n"
+        f"- Approved by: {grant.approved_by}\n"
+        f"- Expires: {grant.expires_at.isoformat()}\n"
+        f"- Max uses: {grant.max_uses}\n"
+    )
+
+
+def _render_approval_grants_markdown(grants: list[ApprovalGrant]) -> str:
+    lines = [
+        "# AgentGuard Approval Grants",
+        "",
+        "| Grant | Tool | Agent | Source | Uses | Expires | Approved By | Reason |",
+        "| --- | --- | --- | --- | ---: | --- | --- | --- |",
+    ]
+    if not grants:
+        lines.append("| None | None | None | None | 0 | None | None | No active grants |")
+    for grant in grants:
+        lines.append(
+            " | ".join(
+                [
+                    f"| `{grant.grant_id}`",
+                    f"`{grant.tool_name}`",
+                    f"`{grant.agent_id}`",
+                    f"`{grant.source}`",
+                    f"{grant.used_count}/{grant.max_uses}",
+                    grant.expires_at.isoformat(),
+                    _markdown_cell(grant.approved_by),
+                    _markdown_cell(grant.reason) + " |",
+                ]
+            )
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _markdown_cell(value: object) -> str:
+    return str(value).replace("|", "\\|")
 
 
 if __name__ == "__main__":
