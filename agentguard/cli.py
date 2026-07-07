@@ -17,6 +17,7 @@ from .gate import scan_report_fails_gate
 from .mcp_stdio import DEFAULT_INVENTORY_TTL_SECONDS, MCPStdioProxy
 from .models import (
     ApprovalGrant,
+    AuditChainVerification,
     AuditEvent,
     Decision,
     PolicyDecision,
@@ -177,6 +178,14 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
     report_parser.add_argument("--output", help="Write report to this path instead of stdout")
 
+    verify_parser = subparsers.add_parser(
+        "verify-audit", help="Verify audit ledger hash-chain integrity"
+    )
+    verify_parser.add_argument(
+        "--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path"
+    )
+    verify_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+
     args = parser.parse_args(argv)
     if args.command == "init":
         return _cmd_init(args)
@@ -200,6 +209,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_mcp_proxy(args)
     if args.command == "report":
         return _cmd_report(args)
+    if args.command == "verify-audit":
+        return _cmd_verify_audit(args)
     parser.error("unknown command")
     return 2
 
@@ -368,13 +379,30 @@ def _cmd_report(args: argparse.Namespace) -> int:
     ledger = AuditLedger(Path(args.ledger))
     events = ledger.list_events()
     tools = ledger.list_tool_inventory()
+    chain = ledger.verify_chain()
     output = (
-        to_json({"events": events, "tools": tools})
+        to_json({"events": events, "tools": tools, "chain": chain})
         if args.format == "json"
-        else render_audit_markdown(events, tools)
+        else render_audit_markdown(events, tools, chain)
     )
     _write_output(output, args.output)
     return 0
+
+
+def _cmd_verify_audit(args: argparse.Namespace) -> int:
+    ledger_path = Path(args.ledger)
+    if not ledger_path.exists():
+        sys.stderr.write(f"Audit ledger does not exist: {ledger_path}\n")
+        return 1
+    ledger = AuditLedger(ledger_path)
+    verification = ledger.verify_chain()
+    output = (
+        to_json(verification)
+        if args.format == "json"
+        else _render_audit_chain_verification_markdown(verification)
+    )
+    _write_output(output, None)
+    return 0 if verification.ok else 1
 
 
 def _cmd_mcp_proxy(args: argparse.Namespace) -> int:
@@ -503,6 +531,25 @@ def _render_approval_grants_markdown(grants: list[ApprovalGrant]) -> str:
                     _markdown_cell(grant.reason) + " |",
                 ]
             )
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _render_audit_chain_verification_markdown(verification: AuditChainVerification) -> str:
+    status = "OK" if verification.ok else "FAILED"
+    lines = [
+        "# AgentGuard Audit Integrity",
+        "",
+        f"Status: **{status}**",
+        f"Events checked: {verification.checked_events}",
+        f"Head hash: `{verification.head_hash}`",
+    ]
+    if not verification.ok:
+        lines.extend(
+            [
+                f"First invalid event: `{verification.first_invalid_event_id}`",
+                f"Reason: {verification.reason}",
+            ]
         )
     return "\n".join(lines) + "\n"
 

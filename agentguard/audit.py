@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .models import (
     ApprovalGrant,
+    AuditChainVerification,
     AuditEvent,
     Capability,
     Decision,
@@ -16,6 +17,9 @@ from .models import (
     ToolCall,
     ToolInventoryItem,
 )
+
+
+AUDIT_CHAIN_GENESIS = "0" * 64
 
 
 class AuditLedger:
@@ -26,13 +30,16 @@ class AuditLedger:
 
     def record(self, event: AuditEvent) -> None:
         with sqlite3.connect(self.path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            previous_hash = _latest_audit_hash(conn)
+            event_hash = audit_event_hash(event, previous_hash)
             conn.execute(
                 """
                 INSERT INTO audit_events (
                     event_id, timestamp, agent_id, source, tool_name, call_id,
-                    decision, reason, rule_id, arguments_json
+                    decision, reason, rule_id, arguments_json, previous_hash, event_hash
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.event_id,
@@ -44,7 +51,9 @@ class AuditLedger:
                     event.decision.value,
                     event.reason,
                     event.rule_id,
-                    json.dumps(event.arguments, sort_keys=True),
+                    _canonical_json(event.arguments),
+                    previous_hash,
+                    event_hash,
                 ),
             )
 
@@ -59,20 +68,61 @@ class AuditLedger:
                 """
             ).fetchall()
         return [
-            AuditEvent(
-                event_id=row[0],
-                timestamp=datetime.fromisoformat(row[1]),
-                agent_id=row[2],
-                source=row[3],
-                tool_name=row[4],
-                call_id=row[5],
-                decision=Decision(row[6]),
-                reason=row[7],
-                rule_id=row[8],
-                arguments=json.loads(row[9]),
-            )
+            _audit_event_from_row(row)
             for row in rows
         ]
+
+    def verify_chain(self) -> AuditChainVerification:
+        with sqlite3.connect(self.path) as conn:
+            rows = conn.execute(
+                """
+                SELECT event_id, timestamp, agent_id, source, tool_name, call_id,
+                       decision, reason, rule_id, arguments_json, previous_hash, event_hash
+                FROM audit_events
+                ORDER BY rowid ASC
+                """
+            ).fetchall()
+
+        expected_previous_hash = AUDIT_CHAIN_GENESIS
+        checked_events = 0
+        for row in rows:
+            checked_events += 1
+            event_id = str(row[0])
+            previous_hash = row[10]
+            event_hash = row[11]
+            if previous_hash is None or event_hash is None:
+                return AuditChainVerification(
+                    ok=False,
+                    checked_events=checked_events,
+                    head_hash=expected_previous_hash,
+                    first_invalid_event_id=event_id,
+                    reason="missing audit chain hash",
+                )
+            if previous_hash != expected_previous_hash:
+                return AuditChainVerification(
+                    ok=False,
+                    checked_events=checked_events,
+                    head_hash=expected_previous_hash,
+                    first_invalid_event_id=event_id,
+                    reason="previous hash mismatch",
+                )
+
+            expected_hash = audit_event_hash(_audit_event_from_row(row), str(previous_hash))
+            if event_hash != expected_hash:
+                return AuditChainVerification(
+                    ok=False,
+                    checked_events=checked_events,
+                    head_hash=expected_previous_hash,
+                    first_invalid_event_id=event_id,
+                    reason="event hash mismatch",
+                )
+            expected_previous_hash = str(event_hash)
+
+        return AuditChainVerification(
+            ok=True,
+            checked_events=checked_events,
+            head_hash=expected_previous_hash,
+        )
 
     def upsert_tool_inventory(self, tools: list[ToolInventoryItem]) -> None:
         if not tools:
@@ -218,10 +268,13 @@ class AuditLedger:
                     decision TEXT NOT NULL,
                     reason TEXT NOT NULL,
                     rule_id TEXT NOT NULL,
-                    arguments_json TEXT NOT NULL
+                    arguments_json TEXT NOT NULL,
+                    previous_hash TEXT,
+                    event_hash TEXT
                 )
                 """
             )
+            _ensure_audit_chain_columns(conn)
             conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_audit_events_decision
@@ -275,6 +328,62 @@ class AuditLedger:
             )
 
 
+def audit_event_hash(event: AuditEvent, previous_hash: str) -> str:
+    payload = {
+        "previous_hash": previous_hash,
+        "event_id": event.event_id,
+        "timestamp": event.timestamp.isoformat(),
+        "agent_id": event.agent_id,
+        "source": event.source,
+        "tool_name": event.tool_name,
+        "call_id": event.call_id,
+        "decision": event.decision.value,
+        "reason": event.reason,
+        "rule_id": event.rule_id,
+        "arguments": event.arguments,
+    }
+    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def _latest_audit_hash(conn: sqlite3.Connection) -> str:
+    row = conn.execute(
+        """
+        SELECT event_hash
+        FROM audit_events
+        WHERE event_hash IS NOT NULL
+        ORDER BY rowid DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    return str(row[0]) if row else AUDIT_CHAIN_GENESIS
+
+
+def _ensure_audit_chain_columns(conn: sqlite3.Connection) -> None:
+    columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info(audit_events)").fetchall()
+    }
+    if "previous_hash" not in columns:
+        conn.execute("ALTER TABLE audit_events ADD COLUMN previous_hash TEXT")
+    if "event_hash" not in columns:
+        conn.execute("ALTER TABLE audit_events ADD COLUMN event_hash TEXT")
+
+
+def _audit_event_from_row(row: sqlite3.Row | tuple[object, ...]) -> AuditEvent:
+    return AuditEvent(
+        event_id=str(row[0]),
+        timestamp=datetime.fromisoformat(str(row[1])),
+        agent_id=str(row[2]),
+        source=str(row[3]),
+        tool_name=str(row[4]),
+        call_id=str(row[5]),
+        decision=Decision(str(row[6])),
+        reason=str(row[7]),
+        rule_id=str(row[8]),
+        arguments=json.loads(str(row[9])),
+    )
+
+
 def _upsert_tool_inventory(conn: sqlite3.Connection, tools: list[ToolInventoryItem]) -> None:
     if not tools:
         return
@@ -312,8 +421,11 @@ def _upsert_tool_inventory(conn: sqlite3.Connection, tools: list[ToolInventoryIt
 
 
 def hash_tool_arguments(arguments: dict[str, object]) -> str:
-    payload = json.dumps(arguments, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return hashlib.sha256(_canonical_json(arguments).encode("utf-8")).hexdigest()
+
+
+def _canonical_json(payload: object) -> str:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def _approval_grant_row(grant: ApprovalGrant) -> tuple[object, ...]:

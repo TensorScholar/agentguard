@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -26,6 +27,111 @@ def test_audit_ledger_round_trip(tmp_path: Path) -> None:
     assert len(events) == 1
     assert events[0].tool_name == "read_file"
     assert events[0].rule_id == "path.sensitive"
+
+
+def test_audit_chain_verifies_recorded_events(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    first_call = ToolCall(tool_name="read_file", arguments={"path": ".env"}, agent_id="test")
+    second_call = ToolCall(
+        tool_name="run_command",
+        arguments={"command": "git status"},
+        agent_id="test",
+    )
+    policy = Policy()
+
+    ledger.record(AuditEvent.from_decision(first_call, policy.evaluate(first_call)))
+    ledger.record(AuditEvent.from_decision(second_call, policy.evaluate(second_call)))
+
+    verification = ledger.verify_chain()
+
+    assert verification.ok
+    assert verification.checked_events == 2
+    assert len(verification.head_hash) == 64
+    assert verification.first_invalid_event_id is None
+    assert verification.reason is None
+
+
+def test_audit_chain_detects_event_mutation(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "audit.sqlite"
+    ledger = AuditLedger(ledger_path)
+    call = ToolCall(tool_name="read_file", arguments={"path": ".env"}, agent_id="test")
+    event = AuditEvent.from_decision(call, Policy().evaluate(call))
+    ledger.record(event)
+
+    with sqlite3.connect(ledger_path) as conn:
+        conn.execute(
+            "UPDATE audit_events SET reason = ? WHERE event_id = ?",
+            ("tampered reason", event.event_id),
+        )
+
+    verification = ledger.verify_chain()
+
+    assert not verification.ok
+    assert verification.checked_events == 1
+    assert verification.first_invalid_event_id == event.event_id
+    assert verification.reason == "event hash mismatch"
+
+
+def test_audit_chain_detects_broken_previous_hash(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "audit.sqlite"
+    ledger = AuditLedger(ledger_path)
+    policy = Policy()
+    first_call = ToolCall(tool_name="read_file", arguments={"path": ".env"}, agent_id="test")
+    second_call = ToolCall(
+        tool_name="run_command",
+        arguments={"command": "git status"},
+        agent_id="test",
+    )
+    first_event = AuditEvent.from_decision(first_call, policy.evaluate(first_call))
+    second_event = AuditEvent.from_decision(second_call, policy.evaluate(second_call))
+    ledger.record(first_event)
+    ledger.record(second_event)
+
+    with sqlite3.connect(ledger_path) as conn:
+        conn.execute(
+            "UPDATE audit_events SET previous_hash = ? WHERE event_id = ?",
+            ("f" * 64, second_event.event_id),
+        )
+
+    verification = ledger.verify_chain()
+
+    assert not verification.ok
+    assert verification.checked_events == 2
+    assert verification.first_invalid_event_id == second_event.event_id
+    assert verification.reason == "previous hash mismatch"
+
+
+def test_audit_chain_detects_legacy_unhashed_events(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "audit.sqlite"
+    AuditLedger(ledger_path)
+    with sqlite3.connect(ledger_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO audit_events (
+                event_id, timestamp, agent_id, source, tool_name, call_id,
+                decision, reason, rule_id, arguments_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy-event",
+                datetime.now(timezone.utc).isoformat(),
+                "test",
+                "local",
+                "read_file",
+                "call-1",
+                "deny",
+                "legacy row",
+                "legacy.rule",
+                "{}",
+            ),
+        )
+
+    verification = AuditLedger(ledger_path).verify_chain()
+
+    assert not verification.ok
+    assert verification.first_invalid_event_id == "legacy-event"
+    assert verification.reason == "missing audit chain hash"
 
 
 def test_tool_inventory_round_trip(tmp_path: Path) -> None:

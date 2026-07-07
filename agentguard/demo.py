@@ -119,4 +119,10 @@ Render the audit report:
 ```bash
 python -m agentguard.cli report --ledger {demo_dir}/audit.sqlite --format markdown
 ```
+
+Verify the audit chain:
+
+```bash
+python -m agentguard.cli verify-audit --ledger {demo_dir}/audit.sqlite
+```
 """

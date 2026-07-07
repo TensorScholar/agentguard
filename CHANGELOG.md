@@ -25,6 +25,7 @@ The project follows a pragmatic pre-1.0 format until public releases begin.
 - High-volume MCP stdio regression coverage for bounded streaming behavior.
 - MCP tool inventory freshness controls with configurable TTL.
 - Local expiring approval grants for exact approval-required tool calls.
+- Audit ledger hash chaining with `verify-audit` integrity checks.
 
 ### Security
 
@@ -35,4 +36,5 @@ The project follows a pragmatic pre-1.0 format until public releases begin.
 - Handles downstream MCP stdio pipe closure without uncaught relay-thread failures.
 - Requires approval for stale known MCP tool inventory instead of trusting expired metadata.
 - Ensures local approval grants do not override denied policy decisions.
+- Detects local audit-event mutation or broken ledger continuity through chained hashes.
 - Adds responsible disclosure guidance.

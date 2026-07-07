@@ -8,7 +8,14 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from .models import AuditEvent, RiskLevel, ScanReport, ServerFinding, ToolInventoryItem
+from .models import (
+    AuditChainVerification,
+    AuditEvent,
+    RiskLevel,
+    ScanReport,
+    ServerFinding,
+    ToolInventoryItem,
+)
 from .secrets import redact_value
 
 
@@ -81,17 +88,39 @@ def render_findings_summary_markdown(report: ScanReport) -> str:
 
 
 def render_audit_markdown(
-    events: list[AuditEvent], tools: list[ToolInventoryItem] | None = None
+    events: list[AuditEvent],
+    tools: list[ToolInventoryItem] | None = None,
+    chain: AuditChainVerification | None = None,
 ) -> str:
     decisions = Counter(event.decision.value for event in events)
     lines = [
         "# AgentGuard Audit Report",
         "",
         f"Total events: {len(events)}",
-        "",
-        "| Decision | Count |",
-        "| --- | ---: |",
     ]
+    if chain is not None:
+        status = "OK" if chain.ok else "FAILED"
+        lines.extend(
+            [
+                f"Integrity: **{status}**",
+                f"Events checked: {chain.checked_events}",
+                f"Head hash: `{chain.head_hash}`",
+            ]
+        )
+        if not chain.ok:
+            lines.extend(
+                [
+                    f"First invalid event: `{chain.first_invalid_event_id}`",
+                    f"Reason: {chain.reason}",
+                ]
+            )
+    lines.extend(
+        [
+            "",
+            "| Decision | Count |",
+            "| --- | ---: |",
+        ]
+    )
     for decision, count in sorted(decisions.items()):
         lines.append(f"| {decision} | {count} |")
     lines.extend(

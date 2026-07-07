@@ -73,5 +73,12 @@ python -m agentguard.cli report \
   --format markdown
 ```
 
+Verify the audit ledger hash chain:
+
+```bash
+python -m agentguard.cli verify-audit \
+  --ledger .agentguard/demo/audit.sqlite
+```
+
 This produces the local audit evidence a team can attach to a review, incident, or security
 assessment.

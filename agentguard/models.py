@@ -96,6 +96,15 @@ class ApprovalGrant:
 
 
 @dataclass(frozen=True)
+class AuditChainVerification:
+    ok: bool
+    checked_events: int
+    head_hash: str
+    first_invalid_event_id: str | None = None
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class ScanReport:
     generated_at: datetime
     findings: tuple[ServerFinding, ...]

@@ -37,6 +37,7 @@ python -m agentguard.cli mcp-proxy \
   --real-mcp-server --flag value
 python -m agentguard.cli gate --config examples/mcp_config.json --fail-on-risk high
 python -m agentguard.cli report --ledger .agentguard/audit.sqlite --format markdown
+python -m agentguard.cli verify-audit --ledger .agentguard/audit.sqlite
 ```
 
 `python -m agentguard` is supported for installed-package and source-checkout usage. `doctor`
@@ -156,6 +157,17 @@ Audit reports include both runtime decisions and discovered MCP tools:
 ```bash
 python -m agentguard.cli report --ledger .agentguard/audit.sqlite --format markdown
 ```
+
+Audit events are chained with deterministic SHA-256 hashes. Verify the chain before attaching an
+audit report to a review or incident record:
+
+```bash
+python -m agentguard.cli verify-audit --ledger .agentguard/audit.sqlite
+```
+
+`verify-audit` exits non-zero when an event is modified or chain continuity is broken. The command
+prints the current head hash; store that hash outside the SQLite file if you need truncation
+detection across review periods.
 
 CI gate example:
 

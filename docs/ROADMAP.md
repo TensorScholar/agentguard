@@ -98,6 +98,7 @@ Deliverables:
 - Stable findings JSON and compact CI step summaries. (implemented)
 - Install/runtime diagnostics via `agentguard doctor`. (implemented)
 - Policy exceptions with expiry and approval metadata for approval-required calls. (implemented)
+- Local audit hash-chain verification. (implemented)
 - PDF security report export.
 
 ## Phase 3: Team Product
@@ -121,7 +122,7 @@ Deliverables:
 
 - OpenTelemetry export.
 - SIEM export.
-- Tamper-evident audit logs.
+- Externally anchored tamper-evident audit logs.
 - Role-based approvals.
 - Secrets-manager integrations.
 - Kubernetes sidecar deployment.
