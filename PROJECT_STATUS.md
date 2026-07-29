@@ -9,16 +9,17 @@ production-ready identity, credential, or distributed authorization service.
 - deterministic default-deny authorization
 - provenance-aware high-impact escalation
 - blast-radius limits
-- signed decision and approval receipts
-- credential audience/scope/TTL/tenant ceilings
-- argument, principal, subject, action, resource, effects and schema binding
-- atomic single-use nonce consumption
+- verified signed decision and approval receipts with complete ActionIntent binding
+- authenticated broker grants plus credential audience/scope/TTL/tenant ceilings
+- atomic single-use credential issuance, approval-use, and execution-nonce consumption
+- execution-time current-policy digest verification and delegation capability ceilings
+- fresh MCP tool-schema resolution with unavailable/stale/changed fail-closed handling
 - hash-chained audit records
 - MCP stdio enforcement processor
 - preserved real v0.1 MCP stdio relay, inventory freshness, exact approvals, redaction,
   backpressure, bounded shutdown, audit verification, doctor, scan, and report workflows
 - HTTP transport security validation primitives
-- verifiable evidence bundles
+- closed-world verifiable evidence bundles that reject unlisted files
 - no-secret mock broker and Loadout integration contract preview
 
 ## Not demonstrated

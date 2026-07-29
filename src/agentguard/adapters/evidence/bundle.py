@@ -111,11 +111,30 @@ def verify_bundle(output: Path) -> tuple[bool, int]:
         if not isinstance(expected_digest, str):
             raise EvidenceVerificationError("evidence.manifest_invalid")
         artifact_names.add(artifact_name)
-        data = (output / artifact_name).read_bytes()
+        artifact_path = output / artifact_name
+        if not artifact_path.is_file() or artifact_path.is_symlink():
+            raise EvidenceVerificationError(f"evidence.missing_artifact:{artifact_name}")
+        data = artifact_path.read_bytes()
+        expected_bytes = item.get("bytes")
+        if not isinstance(expected_bytes, int) or expected_bytes != len(data):
+            raise EvidenceVerificationError(f"evidence.size_mismatch:{artifact_name}")
         actual_digest = sha256(data).hexdigest()
         if actual_digest != expected_digest or checksums.get(artifact_name) != actual_digest:
             raise EvidenceVerificationError(f"evidence.digest_mismatch:{artifact_name}")
         checked += 1
     if set(checksums) != artifact_names | {"manifest.json"}:
         raise EvidenceVerificationError("evidence.checksums_invalid")
+    expected_files = artifact_names | {"manifest.json", "SHA256SUMS"}
+    regular_files: set[str] = set()
+    for path in output.iterdir():
+        if path.is_symlink():
+            raise EvidenceVerificationError(f"evidence.unsafe_file:{path.name}")
+        if path.is_file():
+            regular_files.add(path.name)
+    unexpected = regular_files - expected_files
+    if unexpected:
+        raise EvidenceVerificationError("evidence.unexpected_file:" + ",".join(sorted(unexpected)))
+    missing = expected_files - regular_files
+    if missing:
+        raise EvidenceVerificationError("evidence.missing_artifact:" + ",".join(sorted(missing)))
     return True, checked

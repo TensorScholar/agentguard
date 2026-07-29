@@ -45,3 +45,12 @@ def test_github_action_uploads_findings_and_summary() -> None:
     assert "agentguard-findings.json" in workflow
     assert "agentguard-summary.md" in workflow
     assert "GITHUB_STEP_SUMMARY" in workflow
+
+
+def test_real_mcp_smoke_pin_matches_release_documentation() -> None:
+    smoke = (REPO_ROOT / "tests" / "test_mcp_real_server_smoke.py").read_text(encoding="utf-8")
+    release = (REPO_ROOT / "docs" / "RELEASE.md").read_text(encoding="utf-8")
+
+    assert 'FILESYSTEM_VERSION = "2026.1.14"' in smoke
+    assert "@modelcontextprotocol/server-filesystem@2026.1.14" in release
+    assert "2025.8.21" not in smoke + release

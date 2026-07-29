@@ -25,6 +25,39 @@ def test_evidence_tamper_detected(tmp_path):
         verify_bundle(out)
 
 
+def test_unexpected_regular_file_rejected(tmp_path):
+    out = build_bundle(tmp_path / "e", {"a.json": {"x": 1}})
+    (out / "unlisted.json").write_text('{"unexpected":true}', encoding="utf-8")
+    with pytest.raises(EvidenceVerificationError, match="unexpected_file:unlisted.json"):
+        verify_bundle(out)
+
+
+def test_missing_listed_artifact_rejected(tmp_path):
+    out = build_bundle(tmp_path / "e", {"a.json": {"x": 1}})
+    (out / "a.json").unlink()
+    with pytest.raises(EvidenceVerificationError, match="missing_artifact:a.json"):
+        verify_bundle(out)
+
+
+def test_manifest_size_tamper_rejected(tmp_path):
+    out = build_bundle(tmp_path / "e", {"a.json": {"x": 1}})
+    manifest = (out / "manifest.json").read_text(encoding="utf-8")
+    tampered = manifest.replace('"bytes":7', '"bytes":8')
+    (out / "manifest.json").write_text(tampered, encoding="utf-8")
+    (out / "SHA256SUMS").write_text(
+        "\n".join(
+            line
+            if not line.endswith("  manifest.json")
+            else f"{sha256(tampered.encode()).hexdigest()}  manifest.json"
+            for line in (out / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(EvidenceVerificationError, match="size_mismatch:a.json"):
+        verify_bundle(out)
+
+
 def test_manifest_and_checksum_tamper_detected(tmp_path):
     out = build_bundle(tmp_path / "e", {"a.json": {"x": 1}})
     (out / "manifest.json").write_text('{"artifacts":[],"schema_version":"1"}', encoding="utf-8")
