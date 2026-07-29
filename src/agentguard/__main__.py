@@ -1,3 +1,4 @@
-from agentguard.cli.app import app
+from agentguard.cli import entrypoint
+
 if __name__ == "__main__":
-    app()
+    raise SystemExit(entrypoint())

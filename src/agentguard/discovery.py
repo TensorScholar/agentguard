@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .models import ScanReport, ServerFinding
 from .risk import classify_server
-
 
 DEFAULT_CONFIG_CANDIDATES = (
     Path.home() / "Library/Application Support/Claude/claude_desktop_config.json",
@@ -30,7 +29,7 @@ def scan_configs(paths: list[Path]) -> ScanReport:
     findings: list[ServerFinding] = []
     for path in paths:
         findings.extend(_scan_single_config(path))
-    return ScanReport(generated_at=datetime.now(timezone.utc), findings=tuple(findings))
+    return ScanReport(generated_at=datetime.now(UTC), findings=tuple(findings))
 
 
 def _scan_single_config(path: Path) -> list[ServerFinding]:
@@ -45,7 +44,7 @@ def _scan_single_config(path: Path) -> list[ServerFinding]:
         command = _optional_string(config.get("command"))
         args = tuple(str(item) for item in config.get("args", []) if item is not None)
         env = config.get("env", {})
-        env_keys = tuple(str(key) for key in env.keys()) if isinstance(env, dict) else ()
+        env_keys = tuple(str(key) for key in env) if isinstance(env, dict) else ()
         capabilities, risk, reasons = classify_server(command, args, env_keys)
         findings.append(
             ServerFinding(

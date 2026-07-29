@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 from .models import (
     AuditChainVerification,
@@ -17,7 +17,6 @@ from .models import (
     ToolInventoryItem,
 )
 from .secrets import redact_value
-
 
 FINDINGS_SCHEMA_VERSION = "agentguard.findings.v1"
 RISK_ORDER = (RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH, RiskLevel.CRITICAL)
@@ -173,7 +172,7 @@ def _to_jsonable(value: object) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
     if hasattr(value, "__dataclass_fields__"):
-        return {key: _to_jsonable(item) for key, item in asdict(value).items()}
+        return {key: _to_jsonable(item) for key, item in asdict(cast(Any, value)).items()}
     if isinstance(value, dict):
         return {str(key): _to_jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):

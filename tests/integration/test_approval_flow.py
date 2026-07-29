@@ -1,12 +1,13 @@
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone
+
 import pytest
+
 from agentguard.adapters.broker import MockCredentialBroker
 from agentguard.application import AgentGuardService
 from agentguard.domain import CredentialCeiling, CredentialRequest, Effect
 from agentguard.domain.policy import ActionMatcher, PolicyRule
 from agentguard.engine.execution import ExecutionGuardError
-from agentguard.engine.receipts import verify_approval_receipt, ReceiptVerificationError
+from agentguard.engine.receipts import ReceiptVerificationError, verify_approval_receipt
 
 
 def approval_policy(policy):

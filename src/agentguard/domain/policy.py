@@ -1,8 +1,12 @@
 from __future__ import annotations
+
 from typing import Literal
+
 from pydantic import Field, model_validator
+
 from .enums import Effect, ProvenanceLabel
 from .models import CredentialCeiling, ExecutionBudget, StrictModel
+
 
 class PrincipalMatcher(StrictModel):
     agent_ids: frozenset[str] = frozenset()
@@ -10,9 +14,11 @@ class PrincipalMatcher(StrictModel):
     tenant_ids: frozenset[str] = frozenset()
     verified_identity_required: bool = False
 
+
 class SubjectMatcher(StrictModel):
     required: bool = False
     user_ids: frozenset[str] = frozenset()
+
 
 class ActionMatcher(StrictModel):
     protocols: frozenset[str] = frozenset()
@@ -21,17 +27,20 @@ class ActionMatcher(StrictModel):
     operations: frozenset[str] = frozenset()
     capabilities_any: frozenset[str] = frozenset()
 
+
 class ResourceMatcher(StrictModel):
     types: frozenset[str] = frozenset()
     tenant_from_principal: bool = False
     recipient_domains: frozenset[str] = frozenset()
     excluded_recipient_domains: frozenset[str] = frozenset()
 
+
 class ProvenanceMatcher(StrictModel):
     contains_any: frozenset[ProvenanceLabel] = frozenset()
     contains_only: frozenset[ProvenanceLabel] = frozenset()
     deny_if_contains: frozenset[ProvenanceLabel] = frozenset()
     verified_required: bool = False
+
 
 class EffectMatcher(StrictModel):
     maximum_financial_amount_minor: int | None = Field(default=None, ge=0)
@@ -41,6 +50,7 @@ class EffectMatcher(StrictModel):
     maximum_tool_calls: int | None = Field(default=None, ge=0)
     maximum_execution_seconds: int | None = Field(default=None, ge=0)
     maximum_output_bytes: int | None = Field(default=None, ge=0)
+
 
 class PolicyRule(StrictModel):
     id: str = Field(min_length=1, max_length=200)
@@ -56,16 +66,19 @@ class PolicyRule(StrictModel):
     execution_budget: ExecutionBudget = ExecutionBudget()
     reason_code: str | None = Field(default=None, max_length=300)
 
+
 class PolicyDefaults(StrictModel):
     effect: Literal[Effect.DENY] = Effect.DENY
     maximum_credential_ttl_seconds: int = Field(default=60, ge=1, le=3600)
     unknown_provenance: Effect = Effect.REQUIRE_APPROVAL
     unknown_capability: Effect = Effect.DENY
 
+
 class PolicyMetadata(StrictModel):
     id: str = Field(min_length=1, max_length=200)
     revision: int = Field(ge=1)
     description: str | None = Field(default=None, max_length=1000)
+
 
 class PolicyDocument(StrictModel):
     schema_version: Literal["2"] = "2"
@@ -74,8 +87,8 @@ class PolicyDocument(StrictModel):
     rules: tuple[PolicyRule, ...]
 
     @model_validator(mode="after")
-    def unique_rule_ids(self) -> "PolicyDocument":
-        ids=[rule.id for rule in self.rules]
-        if len(ids)!=len(set(ids)):
+    def unique_rule_ids(self) -> PolicyDocument:
+        ids = [rule.id for rule in self.rules]
+        if len(ids) != len(set(ids)):
             raise ValueError("policy rule ids must be unique")
         return self

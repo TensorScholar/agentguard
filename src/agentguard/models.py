@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 from uuid import uuid4
@@ -77,7 +77,7 @@ class ToolInventoryItem:
     capabilities: tuple[Capability, ...] = ()
     risk_level: RiskLevel = RiskLevel.LOW
     reasons: tuple[str, ...] = ()
-    discovered_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    discovered_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,7 @@ class ApprovalGrant:
     max_uses: int = 1
     used_count: int = 0
     grant_id: str = field(default_factory=lambda: uuid4().hex)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass(frozen=True)
@@ -136,10 +136,10 @@ class AuditEvent:
     arguments: dict[str, Any]
 
     @classmethod
-    def from_decision(cls, call: ToolCall, decision: PolicyDecision) -> "AuditEvent":
+    def from_decision(cls, call: ToolCall, decision: PolicyDecision) -> AuditEvent:
         return cls(
             event_id=uuid4().hex,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             agent_id=call.agent_id,
             source=call.source,
             tool_name=call.tool_name,

@@ -28,10 +28,9 @@ def changed_config_paths(
 def changed_paths(base_ref: str, head_ref: str = "HEAD", repo: Path | None = None) -> list[Path]:
     repo_path = repo or Path.cwd()
     comparison = f"{base_ref}...{head_ref}"
-    process = subprocess.run(  # noqa: S603 - explicit argv, never shell=True.
+    process = subprocess.run(
         ["git", "-C", str(repo_path), "diff", "--name-only", "--diff-filter=ACMR", comparison],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         check=False,
     )

@@ -1,5 +1,6 @@
-from pathlib import Path
 import json
+from pathlib import Path
+
 from agentguard.domain import (
     ActionIntent,
     ApprovalReceipt,

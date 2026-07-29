@@ -13,7 +13,6 @@ from agentguard.audit import AuditLedger
 from agentguard.mcp_stdio import APPROVAL_REQUIRED
 from agentguard.models import Decision
 
-
 REAL_MCP_SMOKE_ENV = "AGENTGUARD_RUN_REAL_MCP_SMOKE"
 FILESYSTEM_PACKAGE = "@modelcontextprotocol/server-filesystem"
 FILESYSTEM_VERSION = "2026.1.14"
@@ -42,7 +41,7 @@ def test_mcp_proxy_with_pinned_filesystem_server(tmp_path: Path) -> None:
     env["PYTHONPATH"] = _prepend_pythonpath(repo_root, env.get("PYTHONPATH"))
     env["npm_config_cache"] = str(tmp_path / "npm-cache")
 
-    install = subprocess.run(  # noqa: S603 - test uses explicit argv only.
+    install = subprocess.run(
         [
             npm,
             "install",
@@ -50,9 +49,8 @@ def test_mcp_proxy_with_pinned_filesystem_server(tmp_path: Path) -> None:
             str(install_dir),
             f"{FILESYSTEM_PACKAGE}@{FILESYSTEM_VERSION}",
         ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=120,
+        capture_output=True,
+        timeout=300,
         check=False,
         env=env,
     )
@@ -71,17 +69,7 @@ def test_mcp_proxy_with_pinned_filesystem_server(tmp_path: Path) -> None:
     policy_path = tmp_path / "policy.yaml"
     ledger_path = tmp_path / "audit.sqlite"
     policy_path.write_text(
-        "\n".join(
-            [
-                "denied_capabilities:",
-                "  - credential_access",
-                "require_approval_capabilities:",
-                "  - filesystem_write",
-                "  - shell_execution",
-                "  - production_mutation",
-                "",
-            ]
-        ),
+        "denied_capabilities:\n  - credential_access\nrequire_approval_capabilities:\n  - filesystem_write\n  - shell_execution\n  - production_mutation\n",
         encoding="utf-8",
     )
 
@@ -120,7 +108,7 @@ def test_mcp_proxy_with_pinned_filesystem_server(tmp_path: Path) -> None:
         ]
     )
 
-    process = subprocess.run(  # noqa: S603 - test uses explicit argv only.
+    process = subprocess.run(
         [
             sys.executable,
             "-m",
@@ -138,8 +126,7 @@ def test_mcp_proxy_with_pinned_filesystem_server(tmp_path: Path) -> None:
             str(workspace),
         ],
         input=payload,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=20,
         check=False,
         cwd=repo_root,

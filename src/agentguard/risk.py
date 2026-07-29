@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 import json
+from collections.abc import Iterable
 from typing import Any
 
 from .models import Capability, RiskLevel
-
 
 SHELL_COMMANDS = {"bash", "sh", "zsh", "fish", "powershell", "python", "python3", "node", "npx"}
 CLOUD_COMMANDS = {"aws", "gcloud", "az", "kubectl", "terraform", "pulumi"}
@@ -60,7 +59,11 @@ def classify_server(
         caps.add(Capability.UNKNOWN)
         reasons.append("capability cannot be inferred from static config")
 
-    return tuple(sorted(caps, key=lambda item: item.value)), _risk_for_capabilities(caps), tuple(reasons)
+    return (
+        tuple(sorted(caps, key=lambda item: item.value)),
+        _risk_for_capabilities(caps),
+        tuple(reasons),
+    )
 
 
 def classify_tool_name(tool_name: str) -> tuple[Capability, ...]:
@@ -83,10 +86,11 @@ def classify_tool_name(tool_name: str) -> tuple[Capability, ...]:
     return tuple(sorted(caps or {Capability.UNKNOWN}, key=lambda item: item.value))
 
 
-def classify_tool_definition(tool: dict[str, Any]) -> tuple[tuple[Capability, ...], RiskLevel, tuple[str, ...]]:
+def classify_tool_definition(
+    tool: dict[str, Any],
+) -> tuple[tuple[Capability, ...], RiskLevel, tuple[str, ...]]:
     caps: set[Capability] = set(classify_tool_name(str(tool.get("name", ""))))
-    if Capability.UNKNOWN in caps:
-        caps.remove(Capability.UNKNOWN)
+    caps.discard(Capability.UNKNOWN)
 
     text_parts = [
         str(tool.get("name", "")),
@@ -123,7 +127,11 @@ def classify_tool_definition(tool: dict[str, Any]) -> tuple[tuple[Capability, ..
         caps.add(Capability.UNKNOWN)
         reasons.append("capability cannot be inferred from tool metadata")
 
-    return tuple(sorted(caps, key=lambda item: item.value)), _risk_for_capabilities(caps), tuple(reasons)
+    return (
+        tuple(sorted(caps, key=lambda item: item.value)),
+        _risk_for_capabilities(caps),
+        tuple(reasons),
+    )
 
 
 def _schema_text(value: object) -> str:
@@ -136,7 +144,10 @@ def _schema_text(value: object) -> str:
 
 
 def _risk_for_capabilities(capabilities: set[Capability]) -> RiskLevel:
-    if Capability.CREDENTIAL_ACCESS in capabilities or Capability.PRODUCTION_MUTATION in capabilities:
+    if (
+        Capability.CREDENTIAL_ACCESS in capabilities
+        or Capability.PRODUCTION_MUTATION in capabilities
+    ):
         return RiskLevel.CRITICAL
     if Capability.SHELL_EXECUTION in capabilities or Capability.CLOUD_ACCESS in capabilities:
         return RiskLevel.HIGH

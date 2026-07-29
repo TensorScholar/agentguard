@@ -1,9 +1,11 @@
 from __future__ import annotations
+
 import json
 from pathlib import Path
+
 from typer.testing import CliRunner
+
 from agentguard.cli.app import app
-from agentguard.demo import create_demo
 
 runner = CliRunner()
 
@@ -29,6 +31,8 @@ def test_demo_command(tmp_path):
     assert result.exit_code == 0, result.stdout
     payload = json.loads((out / "results.json").read_text())
     assert payload["happy_path"] == "authorized"
+    assert payload["argument_mutation"] == "execution.arguments_digest_mismatch"
+    assert payload["excessive_scope"] == "credential.scope_exceeds_decision"
     assert payload["replay"] == "decision_receipt.replayed"
 
 

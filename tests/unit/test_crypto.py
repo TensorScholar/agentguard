@@ -1,7 +1,9 @@
-from pathlib import Path
-import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier, encode_signature, decode_signature
+from agentguard.adapters.crypto import (
+    Ed25519Signer,
+    Ed25519Verifier,
+    decode_signature,
+    encode_signature,
+)
 
 
 def test_key_file_round_trip(tmp_path):

@@ -3,7 +3,6 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -41,9 +40,7 @@ def test_project_urls_expose_trust_documents() -> None:
 
 
 def test_github_action_uploads_findings_and_summary() -> None:
-    workflow = (REPO_ROOT / ".github" / "workflows" / "agentguard.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (REPO_ROOT / ".github" / "workflows" / "agentguard.yml").read_text(encoding="utf-8")
 
     assert "agentguard-findings.json" in workflow
     assert "agentguard-summary.md" in workflow

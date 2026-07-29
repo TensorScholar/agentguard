@@ -3,19 +3,20 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from ._meta import package_version
-from .audit import AuditLedger, hash_tool_arguments
-from .changed import ChangedConfigError, changed_config_paths
-from .demo import write_demo
-from .discovery import discover_config_paths, scan_configs
-from .doctor import render_doctor_markdown, run_doctor
-from .gate import scan_report_fails_gate
-from .mcp_stdio import DEFAULT_INVENTORY_TTL_SECONDS, MCPStdioProxy
-from .models import (
+from agentguard._meta import package_version
+from agentguard.audit import AuditLedger, hash_tool_arguments
+from agentguard.changed import ChangedConfigError
+from agentguard.changed import changed_config_paths as _changed_config_paths
+from agentguard.compatibility.v1_demo import write_demo
+from agentguard.discovery import discover_config_paths, scan_configs
+from agentguard.doctor import render_doctor_markdown, run_doctor
+from agentguard.gate import scan_report_fails_gate
+from agentguard.mcp_stdio import DEFAULT_INVENTORY_TTL_SECONDS, MCPStdioProxy
+from agentguard.models import (
     ApprovalGrant,
     AuditChainVerification,
     AuditEvent,
@@ -25,16 +26,18 @@ from .models import (
     ScanReport,
     ToolCall,
 )
-from .policy import load_policy
-from .policy_packs import available_policy_packs, render_policy_pack
-from .render import (
+from agentguard.policy import load_policy
+from agentguard.policy_packs import available_policy_packs, render_policy_pack
+from agentguard.render import (
     render_audit_markdown,
     render_findings_summary_markdown,
     render_scan_markdown,
     scan_report_to_findings,
     to_json,
 )
-from .secrets import redact_value
+from agentguard.secrets import redact_mapping, redact_value
+
+changed_config_paths = _changed_config_paths
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -226,8 +229,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
     output_path.write_text(render_policy_pack(args.pack), encoding="utf-8")
     sys.stdout.write(f"Wrote {args.pack} policy to {output_path}\n")
     sys.stdout.write(
-        "Next: run agentguard mcp-proxy --policy "
-        f"{output_path} -- --your-mcp-server-command\n"
+        f"Next: run agentguard mcp-proxy --policy {output_path} -- --your-mcp-server-command\n"
     )
     return 0
 
@@ -345,7 +347,7 @@ def _cmd_approve_call(args: argparse.Namespace) -> int:
         return 2
 
     arguments = _parse_raw_args(args.arg)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     grant = ApprovalGrant(
         agent_id=args.agent_id,
         source=args.source,
@@ -439,7 +441,7 @@ def _apply_approval_grant(
         reason=f"approved by {grant.approved_by}: {grant.reason}",
         rule_id=f"approval.grant.{grant.grant_id}",
         capabilities=decision.capabilities,
-        redacted_arguments=redact_value(call.arguments),
+        redacted_arguments=redact_mapping(call.arguments),
     )
 
 

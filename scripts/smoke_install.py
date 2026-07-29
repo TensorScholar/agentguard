@@ -1,8 +1,13 @@
-import subprocess,sys,tempfile
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
-wheel=Path(sys.argv[1])
+
+wheel = Path(sys.argv[1])
 with tempfile.TemporaryDirectory() as td:
-    v=Path(td)/'venv'; subprocess.check_call([sys.executable,'-m','venv',str(v)])
-    py=v/'bin/python'; pip=v/'bin/pip'
-    subprocess.check_call([str(pip),'install','--no-deps',str(wheel)])
-    subprocess.check_call([str(py),'-m','agentguard','--version'])
+    v = Path(td) / "venv"
+    subprocess.check_call([sys.executable, "-m", "venv", str(v)])
+    py = v / "bin/python"
+    pip = v / "bin/pip"
+    subprocess.check_call([str(pip), "install", "--no-deps", str(wheel)])
+    subprocess.check_call([str(py), "-m", "agentguard", "--version"])

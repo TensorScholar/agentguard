@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -18,9 +19,7 @@ SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("openai_key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
     (
         "generic_secret_assignment",
-        re.compile(
-            r"(?i)\b(api[_-]?key|token|secret|password)\b\s*[:=]\s*['\"]?[^'\"\s]{8,}"
-        ),
+        re.compile(r"(?i)\b(api[_-]?key|token|secret|password)\b\s*[:=]\s*['\"]?[^'\"\s]{8,}"),
     ),
 )
 
@@ -60,3 +59,8 @@ def redact_value(value: object) -> object:
     if isinstance(value, dict):
         return {str(key): redact_value(item) for key, item in value.items()}
     return value
+
+
+def redact_mapping(value: dict[str, Any]) -> dict[str, Any]:
+    """Redact a mapping while retaining its type for policy and audit callers."""
+    return {str(key): redact_value(item) for key, item in value.items()}

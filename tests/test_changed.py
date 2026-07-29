@@ -32,9 +32,7 @@ def test_filter_config_paths_selects_existing_mcp_configs(tmp_path: Path) -> Non
     assert paths == [mcp_config, nested_mcp_config]
 
 
-def test_changed_paths_uses_git_diff_name_only(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+def test_changed_paths_uses_git_diff_name_only(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     calls: list[list[str]] = []
 
     def fake_run(argv: list[str], **kwargs: Any) -> SimpleNamespace:
@@ -59,9 +57,7 @@ def test_changed_paths_uses_git_diff_name_only(
     ]
 
 
-def test_changed_paths_raises_clear_error(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+def test_changed_paths_raises_clear_error(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     def fake_run(argv: list[str], **kwargs: Any) -> SimpleNamespace:
         return SimpleNamespace(returncode=128, stdout="", stderr="bad revision")
 

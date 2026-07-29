@@ -8,15 +8,14 @@ import sys
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import BinaryIO
 
 from .audit import AuditLedger
 from .models import AuditEvent, Decision, PolicyDecision, ToolCall, ToolInventoryItem
 from .policy import Policy
 from .risk import classify_tool_definition
-from .secrets import redact_value
-
+from .secrets import redact_mapping, redact_value
 
 JSONRPC_VERSION = "2.0"
 PARSE_ERROR = -32700
@@ -246,7 +245,7 @@ class MCPMessageProcessor:
             ),
             rule_id="inventory.stale",
             capabilities=known_tool.capabilities,
-            redacted_arguments=redact_value(call.arguments),
+            redacted_arguments=redact_mapping(call.arguments),
         )
 
     def _apply_approval_grant(self, call: ToolCall, decision: PolicyDecision) -> PolicyDecision:
@@ -260,7 +259,7 @@ class MCPMessageProcessor:
             reason=f"approved by {grant.approved_by}: {grant.reason}",
             rule_id=f"approval.grant.{grant.grant_id}",
             capabilities=decision.capabilities,
-            redacted_arguments=redact_value(call.arguments),
+            redacted_arguments=redact_mapping(call.arguments),
         )
 
     def _is_pending_tool_list(self, request_id: object) -> bool:
@@ -313,7 +312,7 @@ class MCPStdioProxy:
         self.shutdown_timeout_seconds = shutdown_timeout_seconds
 
     def run(self) -> int:
-        process = subprocess.Popen(  # noqa: S603 - explicit argv, never shell=True.
+        process = subprocess.Popen(
             self.server_command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -372,9 +371,10 @@ class MCPStdioProxy:
                     return
                 continue
             action = self.processor.handle_client_line(raw_line)
-            if action.to_client is not None:
-                if not _write_and_flush(client_output, action.to_client):
-                    return
+            if action.to_client is not None and not _write_and_flush(
+                client_output, action.to_client
+            ):
+                return
             if action.to_server is not None:
                 try:
                     server_input.write(action.to_server)
@@ -396,9 +396,10 @@ class MCPStdioProxy:
                     return
                 continue
             action = self.processor.handle_server_line(raw_line)
-            if action.to_client is not None:
-                if not _write_and_flush(client_output, action.to_client):
-                    return
+            if action.to_client is not None and not _write_and_flush(
+                client_output, action.to_client
+            ):
+                return
 
 
 def _iter_bounded_lines(stream: BinaryIO, max_bytes: int) -> Iterator[bytes | None]:
@@ -435,13 +436,14 @@ def _inventory_expired(tool: ToolInventoryItem, ttl_seconds: float) -> bool:
         return False
     discovered_at = tool.discovered_at
     if discovered_at.tzinfo is None:
-        discovered_at = discovered_at.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) - discovered_at > timedelta(seconds=ttl_seconds)
+        discovered_at = discovered_at.replace(tzinfo=UTC)
+    return datetime.now(UTC) - discovered_at > timedelta(seconds=ttl_seconds)
 
 
 def _decode_json_rpc(raw_line: bytes) -> object | None:
     try:
-        return json.loads(raw_line.decode("utf-8"))
+        parsed: object = json.loads(raw_line.decode("utf-8"))
+        return parsed
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
 

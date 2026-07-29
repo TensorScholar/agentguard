@@ -17,7 +17,7 @@ dependencies = [
   "PyYAML>=6,<7",
   "typer>=0.12,<1",
   "rich>=13,<15",
-  "cryptography>=43,<47"
+  "cryptography>=48.0.1,<49"
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -29,13 +29,26 @@ classifiers = [
   "Programming Language :: Python :: 3.13"
 ]
 
+[project.urls]
+Repository = "https://github.com/TensorScholar/agentguard"
+Issues = "https://github.com/TensorScholar/agentguard/issues"
+Changelog = "https://github.com/TensorScholar/agentguard/blob/main/CHANGELOG.md"
+Security = "https://github.com/TensorScholar/agentguard/blob/main/SECURITY.md"
+
 [project.optional-dependencies]
-http = ["starlette>=0.40,<1", "httpx>=0.27,<1", "uvicorn>=0.30,<1"]
+http = ["starlette>=1.3.1,<2", "httpx>=0.27,<1", "uvicorn>=0.30,<1"]
 otel = ["opentelemetry-api>=1.27,<2", "opentelemetry-sdk>=1.27,<2"]
-dev = ["pytest>=8,<10", "coverage>=7,<8", "ruff>=0.8,<1", "mypy>=1.13,<2", "jsonschema>=4.23,<5"]
+dev = [
+  "pytest>=8,<10",
+  "coverage>=7,<8",
+  "ruff>=0.8,<1",
+  "mypy>=1.13,<2",
+  "jsonschema>=4.23,<5",
+  "types-PyYAML>=6.0.12,<7",
+]
 
 [project.scripts]
-agentguard = "agentguard.cli.app:app"
+agentguard = "agentguard.cli:entrypoint"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -46,7 +59,7 @@ where = ["src"]
 agentguard = ["resources/*.yaml", "resources/*.json", "resources/policy_packs/*.yaml"]
 
 [tool.pytest.ini_options]
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers --import-mode=importlib"
 testpaths = ["tests"]
 
 [tool.ruff]

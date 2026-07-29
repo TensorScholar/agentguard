@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from agentguard.discovery import scan_configs
@@ -43,25 +44,26 @@ def test_findings_json_has_stable_summary_and_findings(tmp_path: Path) -> None:
 
 
 def test_findings_json_redacts_secret_like_args(tmp_path: Path) -> None:
+    synthetic_token = "sk-" + "abcdefghijklmnopqrstuvwxyz"
     config = tmp_path / "mcp.json"
     config.write_text(
-        """
-        {
-          "mcpServers": {
-            "unsafe": {
-              "command": "agentguard-token-test",
-              "args": ["--api-key", "sk-abcdefghijklmnopqrstuvwxyz"]
+        json.dumps(
+            {
+                "mcpServers": {
+                    "unsafe": {
+                        "command": "agentguard-token-test",
+                        "args": ["--api-key", synthetic_token],
+                    }
+                }
             }
-          }
-        }
-        """,
+        ),
         encoding="utf-8",
     )
 
     payload = scan_report_to_findings(scan_configs([config]))
     serialized = to_json(payload)
 
-    assert "sk-abcdefghijklmnopqrstuvwxyz" not in serialized
+    assert synthetic_token not in serialized
     assert "[REDACTED:openai_key]" in serialized
 
 

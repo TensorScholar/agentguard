@@ -1,19 +1,24 @@
 from __future__ import annotations
+
 import subprocess
 import sys
 from dataclasses import dataclass
+
 from agentguard.application import AgentGuardService
 from agentguard.domain import Effect, EnforcementMode, PolicyDocument, Principal
-from .jsonrpc import MCPProtocolError, error_response, parse_message
+
 from .intent import intent_from_tools_call
+from .jsonrpc import MCPProtocolError, error_response, parse_message
 
 POLICY_DENIED = -32001
 APPROVAL_REQUIRED = -32002
+
 
 @dataclass(frozen=True)
 class ProcessResult:
     to_server: bytes | None = None
     to_client: bytes | None = None
+
 
 class MCPStdioProcessor:
     def __init__(
@@ -51,7 +56,7 @@ class MCPStdioProcessor:
             )
         try:
             intent = intent_from_tools_call(msg, principal=self.principal, server=self.server)
-        except ValueError as exc:
+        except (TypeError, ValueError) as exc:
             return ProcessResult(to_client=error_response(msg.get("id"), -32602, str(exc)))
         receipt = self.service.authorize(intent, self.policy, mode=self.mode)
         if self.mode == EnforcementMode.OBSERVE:
@@ -90,6 +95,7 @@ class MCPStdioProcessor:
                 )
             )
         return ProcessResult(to_server=self._newline(raw))
+
 
 class MCPStdioProxy:
     def __init__(self, processor: MCPStdioProcessor, server_command: list[str]) -> None:

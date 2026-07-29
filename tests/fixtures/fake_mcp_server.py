@@ -63,7 +63,9 @@ def main() -> int:
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": "OPENAI_API_KEY=sk-testsecretabcdefghijklmnopqrstuvwxyz",
+                                    "text": "OPENAI_API_KEY="
+                                    + "sk-"
+                                    + "testsecretabcdefghijklmnopqrstuvwxyz",
                                 }
                             ]
                         },

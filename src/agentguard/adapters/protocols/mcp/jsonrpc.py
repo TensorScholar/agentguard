@@ -1,11 +1,14 @@
 from __future__ import annotations
+
 import json
 from typing import Any
+
 
 class MCPProtocolError(ValueError):
     def __init__(self, code: int, message: str) -> None:
         super().__init__(message)
         self.code = code
+
 
 def parse_message(raw: bytes, max_bytes: int = 1_000_000) -> dict[str, Any]:
     if len(raw) > max_bytes:
@@ -16,12 +19,23 @@ def parse_message(raw: bytes, max_bytes: int = 1_000_000) -> dict[str, Any]:
         raise MCPProtocolError(-32700, "parse error") from exc
     if not isinstance(value, dict) or value.get("jsonrpc") != "2.0":
         raise MCPProtocolError(-32600, "invalid JSON-RPC request")
+    if "method" in value:
+        if not isinstance(value["method"], str) or not value["method"]:
+            raise MCPProtocolError(-32600, "invalid JSON-RPC method")
+        if "params" in value and not isinstance(value["params"], (dict, list)):
+            raise MCPProtocolError(-32602, "invalid JSON-RPC params")
+    elif "id" not in value or ("result" in value) == ("error" in value):
+        raise MCPProtocolError(-32600, "invalid JSON-RPC message")
     return value
+
 
 def encode_message(value: dict[str, Any]) -> bytes:
     return (json.dumps(value, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
 
-def error_response(request_id: Any, code: int, message: str, data: dict[str, Any] | None = None) -> bytes:
+
+def error_response(
+    request_id: Any, code: int, message: str, data: dict[str, Any] | None = None
+) -> bytes:
     error: dict[str, Any] = {"code": code, "message": message}
     if data is not None:
         error["data"] = data

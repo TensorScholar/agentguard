@@ -1,11 +1,13 @@
 from __future__ import annotations
+
 import gzip
 import io
+import sys
 import tarfile
 from pathlib import Path
-import sys
 
 EPOCH = 1785283200
+
 
 def normalize(source: Path, destination: Path) -> None:
     with tarfile.open(source, "r:gz") as src:
@@ -25,9 +27,12 @@ def normalize(source: Path, destination: Path) -> None:
                 dst.addfile(member, fileobj)
         payload = buffer.getvalue()
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("wb") as raw:
-        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=EPOCH, compresslevel=9) as gz:
-            gz.write(payload)
+    with (
+        destination.open("wb") as raw,
+        gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=EPOCH, compresslevel=9) as gz,
+    ):
+        gz.write(payload)
+
 
 if __name__ == "__main__":
     normalize(Path(sys.argv[1]), Path(sys.argv[2]))

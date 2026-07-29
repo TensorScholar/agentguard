@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from agentguard.audit import AuditLedger, hash_tool_arguments
@@ -115,7 +115,7 @@ def test_audit_chain_detects_legacy_unhashed_events(tmp_path: Path) -> None:
             """,
             (
                 "legacy-event",
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(UTC).isoformat(),
                 "test",
                 "local",
                 "read_file",
@@ -199,7 +199,7 @@ def test_approval_grant_round_trip_and_consumption(tmp_path: Path) -> None:
         agent_id="mcp-client",
         source="mcp_stdio",
     )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     grant = ApprovalGrant(
         agent_id=call.agent_id,
         source=call.source,
@@ -232,7 +232,7 @@ def test_expired_approval_grant_is_not_consumed(tmp_path: Path) -> None:
         agent_id="mcp-client",
         source="mcp_stdio",
     )
-    created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+    created_at = datetime.now(UTC) - timedelta(minutes=10)
     ledger.add_approval_grant(
         ApprovalGrant(
             agent_id=call.agent_id,
@@ -252,7 +252,7 @@ def test_expired_approval_grant_is_not_consumed(tmp_path: Path) -> None:
 
 def test_approval_grant_requires_exact_argument_hash(tmp_path: Path) -> None:
     ledger = AuditLedger(tmp_path / "audit.sqlite")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ledger.add_approval_grant(
         ApprovalGrant(
             agent_id="mcp-client",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from fnmatch import fnmatch
 from pathlib import PurePosixPath
 from typing import Any
@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from .models import Capability, Decision, PolicyDecision, ToolCall
 from .risk import classify_tool_name
-from .secrets import redact_value
+from .secrets import redact_mapping
 
 
 @dataclass(frozen=True)
@@ -118,9 +118,7 @@ class Policy:
                 exceptions=self.approval_exceptions,
             )
             if exception:
-                approver = (
-                    f", approved by {exception.approved_by}" if exception.approved_by else ""
-                )
+                approver = f", approved by {exception.approved_by}" if exception.approved_by else ""
                 return PolicyDecision(
                     decision=Decision.ALLOW,
                     reason=(
@@ -129,7 +127,7 @@ class Policy:
                     ),
                     rule_id=f"approval_exception.{_rule_id_fragment(exception.exception_id)}",
                     capabilities=capabilities,
-                    redacted_arguments=redact_value(call.arguments),
+                    redacted_arguments=redact_mapping(call.arguments),
                 )
             return PolicyDecision(
                 decision=Decision.REQUIRE_APPROVAL,
@@ -154,7 +152,9 @@ class Policy:
             reason="no policy rule denied the call",
             rule_id="default.allow",
             capabilities=capabilities,
-            redacted_arguments=redact_value(call.arguments),  # never persist raw tokens by default
+            redacted_arguments=redact_mapping(
+                call.arguments
+            ),  # never persist raw tokens by default
         )
 
 
@@ -198,10 +198,10 @@ def _load_simple_yaml(path: str) -> dict[str, object]:
             index += 1
             continue
         if line.startswith("  - ") and current_key:
-            result.setdefault(current_key, [])
+            items = result.setdefault(current_key, [])
             value = _strip_quotes(line[4:].strip())
-            assert isinstance(result[current_key], list)
-            result[current_key].append(value)
+            assert isinstance(items, list)
+            items.append(value)
             index += 1
             continue
         if ":" in line:
@@ -248,12 +248,12 @@ def _approval_exceptions_from_raw(value: object) -> tuple[ApprovalException, ...
     if value in (None, "", []):
         return ()
     if not isinstance(value, list):
-        raise ValueError("approval_exceptions must be a list")
+        raise TypeError("approval_exceptions must be a list")
 
     exceptions: list[ApprovalException] = []
     for index, item in enumerate(value, start=1):
         if not isinstance(item, dict):
-            raise ValueError(f"approval_exceptions[{index}] must be a mapping")
+            raise TypeError(f"approval_exceptions[{index}] must be a mapping")
 
         exception_id = _required_string(item, "id", index)
         reason = _required_string(item, "reason", index)
@@ -265,9 +265,7 @@ def _approval_exceptions_from_raw(value: object) -> tuple[ApprovalException, ...
             for name in _as_string_list(item.get("capabilities") or item.get("capability") or [])
         )
         if not capabilities:
-            raise ValueError(
-                f"approval_exceptions[{index}] must include capabilities scope"
-            )
+            raise ValueError(f"approval_exceptions[{index}] must include capabilities scope")
 
         exceptions.append(
             ApprovalException(
@@ -300,9 +298,7 @@ def _parse_date(value: str, index: int) -> date:
     try:
         return date.fromisoformat(value)
     except ValueError as exc:
-        raise ValueError(
-            f"approval_exceptions[{index}].expires_at must be YYYY-MM-DD"
-        ) from exc
+        raise ValueError(f"approval_exceptions[{index}].expires_at must be YYYY-MM-DD") from exc
 
 
 def _parse_approval_exceptions(lines: list[str], start: int) -> list[dict[str, object]]:
@@ -368,7 +364,7 @@ def _matching_approval_exception(
     required_capabilities: tuple[Capability, ...],
     exceptions: tuple[ApprovalException, ...],
 ) -> ApprovalException | None:
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     for exception in exceptions:
         if exception.expires_at < today:
             continue

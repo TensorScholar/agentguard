@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from .models import RiskLevel, ScanReport
 
-
 RISK_ORDER: dict[RiskLevel, int] = {
     RiskLevel.LOW: 0,
     RiskLevel.MEDIUM: 1,

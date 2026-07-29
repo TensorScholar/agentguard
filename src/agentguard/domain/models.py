@@ -1,11 +1,16 @@
 from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
 from .enums import AuditEventType, Effect, EnforcementMode, ExecutionStatus, ProvenanceLabel
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
 
 class Principal(StrictModel):
     agent_id: str = Field(min_length=1, max_length=200)
@@ -15,16 +20,19 @@ class Principal(StrictModel):
     identity_verified: bool = False
     identity_issuer: str | None = Field(default=None, max_length=300)
 
+
 class Subject(StrictModel):
     user_id: str = Field(min_length=1, max_length=200)
     tenant_id: str | None = Field(default=None, max_length=200)
     authentication_level: str | None = Field(default=None, max_length=100)
+
 
 class DelegationContext(StrictModel):
     delegation_id: str = Field(min_length=1, max_length=200)
     depth: int = Field(ge=0, le=16)
     permitted_capabilities: frozenset[str] = frozenset()
     expires_at: datetime
+
 
 class Action(StrictModel):
     protocol: str = Field(min_length=1, max_length=50)
@@ -33,12 +41,14 @@ class Action(StrictModel):
     operation: str = Field(min_length=1, max_length=100)
     capabilities: frozenset[str] = frozenset()
 
+
 class Resource(StrictModel):
     type: str = Field(min_length=1, max_length=100)
     id: str | None = Field(default=None, max_length=500)
     owner_tenant: str | None = Field(default=None, max_length=200)
     recipient_domains: tuple[str, ...] = ()
     attributes: dict[str, str | int | bool] = Field(default_factory=dict)
+
 
 class EffectProjection(StrictModel):
     currency: Literal["USD"] = "USD"
@@ -49,6 +59,7 @@ class EffectProjection(StrictModel):
     tool_calls: int | None = Field(default=None, ge=0)
     execution_seconds: int | None = Field(default=None, ge=0)
     output_bytes: int | None = Field(default=None, ge=0)
+
 
 class ActionIntent(StrictModel):
     schema_version: Literal["1"] = "1"
@@ -73,12 +84,14 @@ class ActionIntent(StrictModel):
             raise ValueError("requested_at must be timezone-aware")
         return value
 
+
 class CredentialCeiling(StrictModel):
     audience: str = Field(min_length=1, max_length=500)
     scopes: frozenset[str] = Field(min_length=1)
     maximum_ttl_seconds: int = Field(ge=1, le=3600)
     single_use: bool = True
     tenant_id: str | None = Field(default=None, max_length=200)
+
 
 class ExecutionBudget(StrictModel):
     maximum_financial_amount_minor: int | None = Field(default=None, ge=0)
@@ -88,6 +101,7 @@ class ExecutionBudget(StrictModel):
     maximum_tool_calls: int | None = Field(default=None, ge=0)
     maximum_execution_seconds: int | None = Field(default=None, ge=0)
     maximum_output_bytes: int | None = Field(default=None, ge=0)
+
 
 class DecisionReceipt(StrictModel):
     schema_version: Literal["1"] = "1"
@@ -116,10 +130,11 @@ class DecisionReceipt(StrictModel):
     signature: str
 
     @model_validator(mode="after")
-    def validate_times(self) -> "DecisionReceipt":
+    def validate_times(self) -> DecisionReceipt:
         if not (self.issued_at <= self.not_before <= self.expires_at):
             raise ValueError("receipt times are inconsistent")
         return self
+
 
 class ApprovalReceipt(StrictModel):
     schema_version: Literal["1"] = "1"
@@ -139,6 +154,13 @@ class ApprovalReceipt(StrictModel):
     key_id: str
     signature: str
 
+    @model_validator(mode="after")
+    def validate_times(self) -> ApprovalReceipt:
+        if self.issued_at > self.expires_at:
+            raise ValueError("approval receipt times are inconsistent")
+        return self
+
+
 class CredentialRequest(StrictModel):
     schema_version: Literal["1"] = "1"
     request_id: str
@@ -150,20 +172,28 @@ class CredentialRequest(StrictModel):
     tenant_id: str | None = None
     approval_id: str | None = None
 
+
 class CredentialGrant(StrictModel):
     schema_version: Literal["1"] = "1"
     grant_id: str
     issuance_id: str
     decision_id: str
     trace_id: str
-    mode: Literal["opaque_handle", "brokered_execution", "development_token"]
-    credential_handle: str | None = None
+    mode: Literal["opaque_handle", "brokered_execution"]
+    credential_handle: str | None = Field(default=None, repr=False)
     audience: str
     scopes: frozenset[str]
     tenant_id: str | None = None
     issued_at: datetime
     expires_at: datetime
     broker: str
+
+    @model_validator(mode="after")
+    def validate_times(self) -> CredentialGrant:
+        if self.issued_at >= self.expires_at:
+            raise ValueError("credential grant times are inconsistent")
+        return self
+
 
 class ExecutionRequest(StrictModel):
     schema_version: Literal["1"] = "1"
@@ -173,6 +203,7 @@ class ExecutionRequest(StrictModel):
     receipt: DecisionReceipt
     credential_grant: CredentialGrant | None = None
     approval_receipt: ApprovalReceipt | None = None
+
 
 class ExecutionOutcome(StrictModel):
     schema_version: Literal["1"] = "1"
@@ -185,6 +216,7 @@ class ExecutionOutcome(StrictModel):
     error_code: str | None = None
     started_at: datetime
     completed_at: datetime
+
 
 class AuditEvent(StrictModel):
     schema_version: Literal["1"] = "1"

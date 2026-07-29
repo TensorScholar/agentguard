@@ -12,9 +12,7 @@ from agentguard.models import AuditEvent, ToolCall
 from agentguard.policy import Policy
 
 
-def test_verify_audit_succeeds_for_valid_chain(
-    tmp_path: Path, capsys: CaptureFixture[str]
-) -> None:
+def test_verify_audit_succeeds_for_valid_chain(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
     ledger_path = tmp_path / "audit.sqlite"
     _record_event(ledger_path)
 
@@ -28,9 +26,7 @@ def test_verify_audit_succeeds_for_valid_chain(
     assert len(payload["head_hash"]) == 64
 
 
-def test_verify_audit_fails_for_tampered_chain(
-    tmp_path: Path, capsys: CaptureFixture[str]
-) -> None:
+def test_verify_audit_fails_for_tampered_chain(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
     ledger_path = tmp_path / "audit.sqlite"
     event_id = _record_event(ledger_path)
     with sqlite3.connect(ledger_path) as conn:
@@ -48,9 +44,7 @@ def test_verify_audit_fails_for_tampered_chain(
     assert "Reason: event hash mismatch" in captured.out
 
 
-def test_verify_audit_fails_for_missing_ledger(
-    tmp_path: Path, capsys: CaptureFixture[str]
-) -> None:
+def test_verify_audit_fails_for_missing_ledger(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
     ledger_path = tmp_path / "missing.sqlite"
 
     exit_code = main(["verify-audit", "--ledger", str(ledger_path)])
@@ -60,9 +54,7 @@ def test_verify_audit_fails_for_missing_ledger(
     assert "Audit ledger does not exist" in captured.err
 
 
-def test_report_json_includes_chain_status(
-    tmp_path: Path, capsys: CaptureFixture[str]
-) -> None:
+def test_report_json_includes_chain_status(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
     ledger_path = tmp_path / "audit.sqlite"
     _record_event(ledger_path)
 

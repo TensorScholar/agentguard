@@ -4,7 +4,7 @@ import io
 import json
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from agentguard.audit import AuditLedger, hash_tool_arguments
@@ -88,7 +88,7 @@ def test_approval_required_tool_call_returns_error() -> None:
 def test_approval_grant_allows_matching_approval_required_call(tmp_path: Path) -> None:
     ledger = AuditLedger(tmp_path / "audit.sqlite")
     arguments = {"command": "git status"}
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ledger.add_approval_grant(
         ApprovalGrant(
             agent_id="mcp-client",
@@ -121,7 +121,7 @@ def test_approval_grant_allows_matching_approval_required_call(tmp_path: Path) -
 def test_approval_grant_does_not_override_deny(tmp_path: Path) -> None:
     ledger = AuditLedger(tmp_path / "audit.sqlite")
     arguments = {"path": ".env"}
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ledger.add_approval_grant(
         ApprovalGrant(
             agent_id="mcp-client",
@@ -150,6 +150,7 @@ def test_approval_grant_does_not_override_deny(tmp_path: Path) -> None:
 
 
 def test_allowed_call_is_correlated_and_response_is_redacted(tmp_path: Path) -> None:
+    synthetic_token = b"sk-" + b"abcdefghijklmnopqrstuvwxyz"
     ledger = AuditLedger(tmp_path / "audit.sqlite")
     processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
     call_line = (
@@ -160,13 +161,13 @@ def test_allowed_call_is_correlated_and_response_is_redacted(tmp_path: Path) -> 
     call_action = processor.handle_client_line(call_line)
     response_action = processor.handle_server_line(
         b'{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text",'
-        b'"text":"OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz"}]}}\n'
+        b'"text":"OPENAI_API_KEY=' + synthetic_token + b'"}]}}\n'
     )
     response = _loads(response_action.to_client or b"{}")
     events = ledger.list_events()
 
     assert call_action.to_server == call_line
-    assert "sk-abcdefghijklmnopqrstuvwxyz" not in json.dumps(response)
+    assert synthetic_token.decode() not in json.dumps(response)
     assert response["result"]["content"][0]["text"] == "OPENAI_API_KEY=[REDACTED:openai_key]"
     assert [event.decision for event in events] == [Decision.ALLOW, Decision.REDACT]
 
@@ -211,7 +212,7 @@ def test_stale_inventory_requires_approval_for_vague_tool_name(tmp_path: Path) -
                 capabilities=(Capability.DATABASE_ACCESS,),
                 risk_level=RiskLevel.HIGH,
                 reasons=("tool metadata mentions database access",),
-                discovered_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+                discovered_at=datetime.now(UTC) - timedelta(seconds=30),
             )
         ]
     )
@@ -246,7 +247,7 @@ def test_stale_inventory_preserves_fallback_hard_deny(tmp_path: Path) -> None:
                 source="mcp_stdio",
                 name="read_file",
                 capabilities=(Capability.FILESYSTEM_READ,),
-                discovered_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+                discovered_at=datetime.now(UTC) - timedelta(seconds=30),
             )
         ]
     )
@@ -274,7 +275,7 @@ def test_inventory_ttl_zero_disables_expiry(tmp_path: Path) -> None:
                 capabilities=(Capability.CREDENTIAL_ACCESS,),
                 risk_level=RiskLevel.CRITICAL,
                 reasons=("tool metadata mentions credentials",),
-                discovered_at=datetime.now(timezone.utc) - timedelta(days=365),
+                discovered_at=datetime.now(UTC) - timedelta(days=365),
             )
         ]
     )
@@ -350,19 +351,12 @@ def test_write_and_flush_returns_false_for_closed_downstream() -> None:
 
 
 def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
+    synthetic_token = "sk-" + "integrationtestabcdefghijklmnopqrstuvwxyz"
     policy_path = tmp_path / "policy.yaml"
     ledger_path = tmp_path / "audit.sqlite"
     fake_server = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
     policy_path.write_text(
-        "\n".join(
-            [
-                "denied_capabilities:",
-                "  - credential_access",
-                "require_approval_capabilities:",
-                "  - shell_execution",
-                "  - production_mutation",
-            ]
-        ),
+        "denied_capabilities:\n  - credential_access\nrequire_approval_capabilities:\n  - shell_execution\n  - production_mutation",
         encoding="utf-8",
     )
     payload = "\n".join(
@@ -375,9 +369,7 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
                     "method": "tools/call",
                     "params": {
                         "name": "echo",
-                        "arguments": {
-                            "text": "OPENAI_API_KEY=sk-integrationtestabcdefghijklmnopqrstuvwxyz"
-                        },
+                        "arguments": {"text": "OPENAI_API_KEY=" + synthetic_token},
                     },
                 }
             ),
@@ -393,7 +385,7 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
         ]
     ).encode("utf-8")
 
-    process = subprocess.run(  # noqa: S603 - test uses explicit argv only.
+    process = subprocess.run(
         [
             sys.executable,
             "-m",
@@ -410,8 +402,7 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
             str(fake_server),
         ],
         input=payload,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=5,
         check=False,
     )
@@ -423,8 +414,7 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
     assert set(responses_by_id) == {1, 2, 3}
     assert responses_by_id[1]["result"]["tools"][1]["name"] == "read_secret"
     assert (
-        responses_by_id[2]["result"]["content"][0]["text"]
-        == "OPENAI_API_KEY=[REDACTED:openai_key]"
+        responses_by_id[2]["result"]["content"][0]["text"] == "OPENAI_API_KEY=[REDACTED:openai_key]"
     )
     assert responses_by_id[3]["error"]["code"] == POLICY_DENIED
     assert responses_by_id[3]["error"]["data"]["rule_id"] == "capability.denied"
@@ -452,7 +442,7 @@ def test_mcp_proxy_drains_high_volume_server_output(tmp_path: Path) -> None:
         + "\n"
     ).encode("utf-8")
 
-    process = subprocess.run(  # noqa: S603 - test uses explicit argv only.
+    process = subprocess.run(
         [
             sys.executable,
             "-m",
@@ -471,8 +461,7 @@ def test_mcp_proxy_drains_high_volume_server_output(tmp_path: Path) -> None:
             "512",
         ],
         input=payload,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=10,
         check=False,
     )
@@ -499,7 +488,7 @@ def test_mcp_proxy_terminates_server_that_ignores_stdin_eof(tmp_path: Path) -> N
     ledger_path = tmp_path / "audit.sqlite"
     fake_server = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
 
-    process = subprocess.run(  # noqa: S603 - test uses explicit argv only.
+    process = subprocess.run(
         [
             sys.executable,
             "-m",
@@ -515,8 +504,7 @@ def test_mcp_proxy_terminates_server_that_ignores_stdin_eof(tmp_path: Path) -> N
             "--ignore-eof",
         ],
         input=b"",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=5,
         check=False,
     )

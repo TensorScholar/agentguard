@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .policy_packs import render_policy_pack
+from agentguard.policy_packs import render_policy_pack
 
 
 @dataclass(frozen=True)

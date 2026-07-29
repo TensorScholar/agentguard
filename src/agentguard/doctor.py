@@ -50,15 +50,14 @@ def render_doctor_markdown(report: DoctorReport) -> str:
         "| --- | --- | --- |",
     ]
     for check in report.checks:
-        lines.append(f"| {check.name} | {check.status} | {check.detail.replace('|', '\\|')} |")
+        detail = check.detail.replace("|", "\\|")
+        lines.append(f"| {check.name} | {check.status} | {detail} |")
     return "\n".join(lines) + "\n"
 
 
 def _python_version_check() -> DoctorCheck:
     current = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    if sys.version_info >= (3, 11):
-        return DoctorCheck("python", "pass", f"Python {current}")
-    return DoctorCheck("python", "fail", f"Python {current}; requires Python 3.11+")
+    return DoctorCheck("python", "pass", f"Python {current}")
 
 
 def _sqlite_check() -> DoctorCheck:

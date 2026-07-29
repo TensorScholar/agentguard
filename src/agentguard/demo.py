@@ -1,17 +1,22 @@
 from __future__ import annotations
+
 import json
 import shutil
 from pathlib import Path
+
 import yaml
+
 from agentguard.adapters.broker import MockCredentialBroker
 from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
 from agentguard.adapters.evidence import build_bundle
 from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService
+from agentguard.compatibility.v1_demo import write_demo
 from agentguard.domain import ActionIntent, CredentialRequest, PolicyDocument
-from agentguard.engine.execution import authorize_execution, ExecutionGuardError
+from agentguard.engine.execution import ExecutionGuardError, authorize_execution
 
 RESOURCE_ROOT = Path(__file__).parent / "resources"
+
 
 def create_demo(output: Path, force: bool = False) -> None:
     if output.exists():
@@ -46,9 +51,24 @@ def create_demo(output: Path, force: bool = False) -> None:
     mutated = intent.model_copy(update={"arguments": {**intent.arguments, "amount_minor": 85000}})
     mutation_result = "unexpected_allow"
     try:
-        authorize_execution(mutated, receipt, grant, verifier, SQLiteState(output / "mutation.sqlite"))
+        authorize_execution(
+            mutated, receipt, grant, verifier, SQLiteState(output / "mutation.sqlite")
+        )
     except ExecutionGuardError as exc:
         mutation_result = str(exc)
+
+    excessive_scope_result = "unexpected_allow"
+    inflated_grant = grant.model_copy(update={"scopes": grant.scopes | {"payments:admin"}})
+    try:
+        authorize_execution(
+            intent,
+            receipt,
+            inflated_grant,
+            verifier,
+            SQLiteState(output / "scope-inflation.sqlite"),
+        )
+    except ExecutionGuardError as exc:
+        excessive_scope_result = str(exc)
 
     replay_result = "unexpected_allow"
     try:
@@ -67,17 +87,27 @@ def create_demo(output: Path, force: bool = False) -> None:
     results = {
         "happy_path": "authorized",
         "argument_mutation": mutation_result,
+        "excessive_scope": excessive_scope_result,
         "replay": replay_result,
         "audit": state.verify(),
     }
     (output / "results.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     build_bundle(
         output / "evidence",
-        {"intent.json": intent, "receipt.json": receipt, "grant.json": grant, "results.json": results},
+        {
+            "intent.json": intent,
+            "receipt.json": receipt,
+            "grant.json": grant,
+            "results.json": results,
+        },
     )
+    write_demo(output / "v1-compat")
     (output / "README.md").write_text(
         "# AgentGuard meeting demo\n\n"
         "Shows a scoped authorization, opaque broker grant, argument-mutation rejection, "
-        "replay rejection, and verifiable evidence.\n",
+        "scope-inflation rejection, replay rejection, and verifiable evidence.\n",
         encoding="utf-8",
     )
+
+
+__all__ = ["create_demo", "write_demo"]

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from agentguard.gate import risk_at_or_above, scan_report_fails_gate
 from agentguard.models import RiskLevel, ScanReport, ServerFinding
@@ -14,10 +14,10 @@ def test_risk_threshold_ordering() -> None:
 
 def test_scan_report_gate_fails_only_when_findings_cross_threshold() -> None:
     report = ScanReport(
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
         findings=(ServerFinding(name="danger", command="bash", risk_level=RiskLevel.HIGH),),
     )
-    empty_report = ScanReport(generated_at=datetime.now(timezone.utc), findings=())
+    empty_report = ScanReport(generated_at=datetime.now(UTC), findings=())
 
     assert scan_report_fails_gate(report, RiskLevel.HIGH)
     assert not scan_report_fails_gate(report, RiskLevel.CRITICAL)

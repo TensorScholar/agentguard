@@ -1,14 +1,18 @@
 from __future__ import annotations
+
 from enum import Enum
+
 
 class Effect(str, Enum):
     ALLOW = "allow"
     DENY = "deny"
     REQUIRE_APPROVAL = "require_approval"
 
+
 class EnforcementMode(str, Enum):
     OBSERVE = "observe"
     ENFORCE = "enforce"
+
 
 class ProvenanceLabel(str, Enum):
     TRUSTED_SYSTEM_INSTRUCTION = "trusted_system_instruction"
@@ -21,6 +25,7 @@ class ProvenanceLabel(str, Enum):
     PERSISTENT_MEMORY = "persistent_memory"
     OTHER_AGENT_MESSAGE = "other_agent_message"
     UNVERIFIED = "unverified"
+
 
 class AuditEventType(str, Enum):
     AUTHORIZATION_REQUESTED = "authorization.requested"
@@ -35,6 +40,7 @@ class AuditEventType(str, Enum):
     EXECUTION_UNKNOWN = "execution.unknown"
     RECEIPT_REJECTED = "receipt.rejected"
     RECEIPT_CONSUMED = "receipt.consumed"
+
 
 class ExecutionStatus(str, Enum):
     SUCCESS = "success"

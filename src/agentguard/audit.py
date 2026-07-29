@@ -4,7 +4,7 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .models import (
@@ -17,7 +17,6 @@ from .models import (
     ToolCall,
     ToolInventoryItem,
 )
-
 
 AUDIT_CHAIN_GENESIS = "0" * 64
 
@@ -67,10 +66,7 @@ class AuditLedger:
                 ORDER BY timestamp ASC
                 """
             ).fetchall()
-        return [
-            _audit_event_from_row(row)
-            for row in rows
-        ]
+        return [_audit_event_from_row(row) for row in rows]
 
     def verify_chain(self) -> AuditChainVerification:
         with sqlite3.connect(self.path) as conn:
@@ -203,7 +199,7 @@ class AuditLedger:
             )
 
     def list_approval_grants(self, include_expired: bool = False) -> list[ApprovalGrant]:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         where = "" if include_expired else "WHERE expires_at >= ? AND used_count < max_uses"
         params: tuple[str, ...] = () if include_expired else (now,)
         with sqlite3.connect(self.path) as conn:
@@ -220,7 +216,7 @@ class AuditLedger:
         return [_approval_grant_from_row(row) for row in rows]
 
     def consume_approval_grant(self, call: ToolCall) -> ApprovalGrant | None:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         arguments_hash = hash_tool_arguments(call.arguments)
         with sqlite3.connect(self.path) as conn:
             row = conn.execute(
@@ -359,10 +355,7 @@ def _latest_audit_hash(conn: sqlite3.Connection) -> str:
 
 
 def _ensure_audit_chain_columns(conn: sqlite3.Connection) -> None:
-    columns = {
-        str(row[1])
-        for row in conn.execute("PRAGMA table_info(audit_events)").fetchall()
-    }
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(audit_events)").fetchall()}
     if "previous_hash" not in columns:
         conn.execute("ALTER TABLE audit_events ADD COLUMN previous_hash TEXT")
     if "event_hash" not in columns:
@@ -455,6 +448,6 @@ def _approval_grant_from_row(row: sqlite3.Row | tuple[object, ...]) -> ApprovalG
         arguments_hash=str(row[6]),
         approved_by=str(row[7]),
         reason=str(row[8]),
-        max_uses=int(row[9]),
-        used_count=int(row[10]),
+        max_uses=int(str(row[9])),
+        used_count=int(str(row[10])),
     )
