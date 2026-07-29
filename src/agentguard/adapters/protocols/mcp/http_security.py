@@ -1,0 +1,21 @@
+from __future__ import annotations
+from urllib.parse import urlparse
+
+class HTTPTransportSecurityError(ValueError): pass
+
+def validate_origin(origin:str|None,allowed_origins:frozenset[str],*,browser_reachable:bool=True)->None:
+    if origin is None:
+        if browser_reachable: raise HTTPTransportSecurityError("mcp_http.origin_missing")
+        return
+    if origin not in allowed_origins: raise HTTPTransportSecurityError("mcp_http.origin_denied")
+
+def validate_host(host:str,allowed_hosts:frozenset[str])->None:
+    hostname=host.split(":",1)[0].lower()
+    if hostname not in {h.lower() for h in allowed_hosts}: raise HTTPTransportSecurityError("mcp_http.host_denied")
+
+def validate_mirrored_headers(message:dict,method_header:str|None,name_header:str|None)->None:
+    method=message.get("method")
+    if method_header is not None and method_header!=method: raise HTTPTransportSecurityError("mcp_http.method_header_body_mismatch")
+    if method=="tools/call" and name_header is not None:
+        params=message.get("params") or {}
+        if not isinstance(params,dict) or params.get("name")!=name_header: raise HTTPTransportSecurityError("mcp_http.name_header_body_mismatch")
