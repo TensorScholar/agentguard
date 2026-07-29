@@ -126,11 +126,13 @@ def verify_bundle(output: Path) -> tuple[bool, int]:
         raise EvidenceVerificationError("evidence.checksums_invalid")
     expected_files = artifact_names | {"manifest.json", "SHA256SUMS"}
     regular_files: set[str] = set()
-    for path in output.iterdir():
+    for path in output.rglob("*"):
         if path.is_symlink():
-            raise EvidenceVerificationError(f"evidence.unsafe_file:{path.name}")
+            raise EvidenceVerificationError(
+                f"evidence.unsafe_file:{path.relative_to(output).as_posix()}"
+            )
         if path.is_file():
-            regular_files.add(path.name)
+            regular_files.add(path.relative_to(output).as_posix())
     unexpected = regular_files - expected_files
     if unexpected:
         raise EvidenceVerificationError("evidence.unexpected_file:" + ",".join(sorted(unexpected)))

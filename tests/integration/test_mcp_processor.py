@@ -186,6 +186,20 @@ def test_mcp_requires_approval_when_schema_unavailable(policy, intent, signer, v
     assert b"mcp.tool_schema_unavailable" in result.to_client
 
 
+def test_mcp_rejects_disabled_schema_freshness(policy, intent, signer, verifier, state):
+    import pytest
+
+    with pytest.raises(ValueError, match="greater than zero"):
+        MCPStdioProcessor(
+            AgentGuardService(signer, verifier, state),
+            policy,
+            intent.principal,
+            "filesystem",
+            schema_resolver=schemas("read_file"),
+            schema_ttl_seconds=0,
+        )
+
+
 def test_mcp_requires_approval_when_schema_stale(policy, intent, signer, verifier, state):
     processor = MCPStdioProcessor(
         AgentGuardService(signer, verifier, state),

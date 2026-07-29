@@ -76,6 +76,21 @@ def test_future_receipt_rejected(intent, policy, signer, verifier):
         verify_decision_receipt(receipt, verifier, now=now, clock_skew_seconds=0)
 
 
+def test_default_receipt_verification_has_no_permissive_expiry_skew(
+    intent, policy, signer, verifier
+):
+    now = datetime.now(UTC)
+    receipt = issue_decision_receipt(
+        intent,
+        evaluate_policy(policy, intent),
+        signer,
+        now=now - timedelta(seconds=2),
+        ttl_seconds=1,
+    )
+    with pytest.raises(ReceiptVerificationError, match="expired"):
+        verify_decision_receipt(receipt, verifier, now=now)
+
+
 def test_argument_binding(intent, policy, signer):
     receipt = make(intent, policy, signer)
     verify_intent_binding(intent, receipt)

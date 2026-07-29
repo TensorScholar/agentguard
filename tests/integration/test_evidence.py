@@ -32,6 +32,18 @@ def test_unexpected_regular_file_rejected(tmp_path):
         verify_bundle(out)
 
 
+def test_unexpected_nested_regular_file_rejected(tmp_path):
+    out = build_bundle(tmp_path / "e", {"a.json": {"x": 1}})
+    nested = out / "nested"
+    nested.mkdir()
+    (nested / "unlisted.json").write_text('{"unexpected":true}', encoding="utf-8")
+    with pytest.raises(
+        EvidenceVerificationError,
+        match="unexpected_file:nested/unlisted.json",
+    ):
+        verify_bundle(out)
+
+
 def test_missing_listed_artifact_rejected(tmp_path):
     out = build_bundle(tmp_path / "e", {"a.json": {"x": 1}})
     (out / "a.json").unlink()

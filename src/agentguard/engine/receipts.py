@@ -85,7 +85,7 @@ def verify_decision_receipt(
     verifier: SignatureVerifier,
     *,
     now: datetime | None = None,
-    clock_skew_seconds: int = 5,
+    clock_skew_seconds: int = 0,
 ) -> None:
     now = now or datetime.now(UTC)
     if not _is_timezone_aware(now) or not all(

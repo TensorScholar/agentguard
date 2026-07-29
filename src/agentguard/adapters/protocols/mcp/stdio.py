@@ -35,8 +35,8 @@ class MCPStdioProcessor:
         schema_resolver: ToolSchemaResolver | None = None,
         schema_ttl_seconds: float = 300.0,
     ) -> None:
-        if schema_ttl_seconds < 0:
-            raise ValueError("schema_ttl_seconds cannot be negative")
+        if schema_ttl_seconds <= 0:
+            raise ValueError("schema_ttl_seconds must be greater than zero")
         self.service = service
         self.policy = policy
         self.principal = principal
@@ -157,9 +157,7 @@ class MCPStdioProcessor:
             return {}, "mcp.tool_schema_unavailable"
         if resolved.discovered_at.tzinfo is None or resolved.discovered_at.utcoffset() is None:
             return {}, "mcp.tool_schema_stale"
-        if self.schema_ttl_seconds > 0 and (
-            datetime.now(UTC) - resolved.discovered_at > timedelta(seconds=self.schema_ttl_seconds)
-        ):
+        if datetime.now(UTC) - resolved.discovered_at > timedelta(seconds=self.schema_ttl_seconds):
             return {}, "mcp.tool_schema_stale"
         if digest(resolved.schema) != resolved.schema_digest:
             return {}, "mcp.tool_schema_changed"
