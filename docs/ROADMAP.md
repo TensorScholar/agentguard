@@ -1,5 +1,9 @@
 # AgentGuard Plan And Roadmap
 
+This is the preserved v0.1 roadmap, updated for the v0.2 release-candidate boundary. Future items
+are exploratory, not claims of implemented capability or commitments to build a hosted control
+plane.
+
 ## Strategic Position
 
 AgentGuard is an agent-tool security product. It should stay narrow and prove value by blocking
@@ -77,7 +81,7 @@ Remaining hardening:
 
 Non-goals:
 
-- No hosted dashboard yet.
+- A hosted dashboard is outside the current product contract.
 - No ML-based prompt-injection classifier as a required control.
 
 ## Phase 2: Developer Workflow Adoption
@@ -109,7 +113,7 @@ Deliverables:
 
 - Central policy repository support.
 - Team audit export.
-- SSO-ready hosted dashboard or self-hosted API.
+- Provider-neutral export contracts for customer-operated policy and audit systems.
 - Slack/Jira notifications for blocked high-risk actions.
 - Centralized exception review and fleet-wide exception reporting.
 - Fleet reports across developer machines and CI runners.
@@ -132,7 +136,7 @@ Deliverables:
 
 - Policy must be deterministic and testable.
 - Default-deny for high-risk capabilities.
-- Local-first before hosted.
+- Local-first and offline-capable in the authorization path.
 - Audit everything, but never log raw secrets.
 - Keep enforcement independent from any one agent vendor.
 - Treat MCP as the first adapter, not the whole product.

@@ -7,3 +7,7 @@
 - Effect projection is supplied by a trusted adapter; ambiguous high-impact effects must not be treated as zero.
 - The Loadout adapter is a contract preview, not a live integration.
 - Approval receipt persistence and interactive approval UX are reserved for the next hardening increment.
+- Local hash chaining detects modification of retained audit events but cannot prove tail
+  non-truncation without an externally anchored head.
+- Existing v0.1 SQLite audit files are retained as evidence and rejected by the v0.2 state adapter;
+  an in-place data migration is intentionally not provided in this release candidate.

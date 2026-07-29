@@ -29,6 +29,9 @@ Authorized action == Credentialed action == Executed action
 - HTTP transport security helpers for Origin, Host, and mirrored-header/body validation.
 - Hash-chained local audit events and verifiable evidence bundles.
 - Meeting-ready demo covering a valid scoped refund, argument mutation, scope inflation and replay.
+- Preserved v0.1 MCP stdio relay with real `tools/call` interception, bounded messages,
+  inventory freshness, exact local approvals, bounded shutdown/backpressure, secret redaction,
+  audit verification, and the opt-in pinned filesystem-server compatibility smoke.
 
 ## Quick start
 
@@ -59,10 +62,19 @@ AgentGuard owns action normalization, deterministic authorization, blast-radius 
 
 AgentGuard does **not** own model evaluation, prompt-injection classification, identity issuance, credential vaulting, secret storage, agent orchestration, SIEM storage or a hosted dashboard.
 
+## v0.1 compatibility
+
+The installed CLI continues to expose `doctor`, `scan`, `gate`, `check-call`, `proxy`,
+`approve-call`, `approvals`, `mcp-proxy`, `report`, and `verify-audit`. Policy v1 tool lists can be
+converted with `agentguard.compatibility.policy_v1.migrate_policy_v1`; sensitive path, host,
+capability, exception, and approval semantics require human review. Existing v0.1 SQLite audit
+files are never upgraded in place.
+
 ## Loadout integration status
 
 The repository includes a broker-neutral contract, mock adapter, schemas, threat model and integration RFC. It does not claim a live Loadout API integration because no reviewed API contract or sandbox was available during this release build.
 
 ## Release status
 
-**Production-grade release candidate, not production-ready.** Public CI, external security review, a real broker sandbox integration and an external pilot remain required before a stable `v0.2.0` release.
+**Release candidate; not production-ready.** Public CI, external security review, a real broker
+sandbox integration and an external pilot remain required before a stable `v0.2.0` release.
