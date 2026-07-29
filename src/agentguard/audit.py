@@ -63,7 +63,7 @@ class AuditLedger:
                 SELECT event_id, timestamp, agent_id, source, tool_name, call_id,
                        decision, reason, rule_id, arguments_json
                 FROM audit_events
-                ORDER BY timestamp ASC
+                ORDER BY rowid ASC
                 """
             ).fetchall()
         return [_audit_event_from_row(row) for row in rows]

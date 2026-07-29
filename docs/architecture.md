@@ -32,3 +32,9 @@ The v2 MCP adapter obtains each `tools/call` schema through a `ToolSchemaResolve
 resolver projects the preserved v0.1 discovered inventory into the v2 path. Missing, stale, or
 digest-inconsistent schemas require approval before authorization; the adapter never substitutes an
 empty schema for an allowed call.
+
+The v0.1 stdio relay defines audit order as durable SQLite append order. Causality is guaranteed
+within one request (for example, `ALLOW` precedes response `REDACT`), while independent concurrent
+requests may interleave. Shutdown uses an idle-output deadline plus a hard upper bound: active
+server output extends the graceful drain window, but a hung or endlessly streaming child is still
+terminated within the bound.

@@ -7,6 +7,8 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from agentguard.audit import AuditLedger, hash_tool_arguments
 from agentguard.mcp_stdio import (
     APPROVAL_REQUIRED,
@@ -419,14 +421,19 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
     assert responses_by_id[3]["error"]["code"] == POLICY_DENIED
     assert responses_by_id[3]["error"]["data"]["rule_id"] == "capability.denied"
     assert {tool.name for tool in ledger.list_tool_inventory()} >= {"echo", "read_secret"}
-    assert [event.decision for event in ledger.list_events()] == [
-        Decision.ALLOW,
-        Decision.REDACT,
-        Decision.DENY,
-    ]
+    events_by_call: dict[str, list[Decision]] = {}
+    for event in ledger.list_events():
+        events_by_call.setdefault(event.call_id, []).append(event.decision)
+    # Causal order is defined within a call. Independent requests may interleave.
+    assert events_by_call["2"] == [Decision.ALLOW, Decision.REDACT]
+    assert events_by_call["3"] == [Decision.DENY]
 
 
-def test_mcp_proxy_drains_high_volume_server_output(tmp_path: Path) -> None:
+@pytest.mark.parametrize("_iteration", range(3))
+def test_mcp_proxy_drains_high_volume_server_output(
+    tmp_path: Path,
+    _iteration: int,
+) -> None:
     ledger_path = tmp_path / "audit.sqlite"
     fake_server = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
     burst_count = 600

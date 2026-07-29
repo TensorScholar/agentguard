@@ -2,6 +2,7 @@
 
 - The v2 MCP processor requires a trusted schema resolver. Without one, `tools/call` fails closed
   with approval required; it does not discover tools by itself.
+- MCP audit order is causal per request, not a synthetic global order across independent requests.
 
 - Local SQLite nonce semantics are single-node, not distributed.
 - Canonical JSON supports the signed schema subset and rejects floats; it is JCS-oriented but this RC does not claim complete RFC 8785 implementation for arbitrary JSON numbers.

@@ -6,8 +6,9 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import BinaryIO
 
@@ -30,6 +31,23 @@ DEFAULT_INVENTORY_TTL_SECONDS = 300.0
 class ProxyAction:
     to_server: bytes | None = None
     to_client: bytes | None = None
+
+
+@dataclass
+class _OutputDrainState:
+    """Track causal output progress without imposing a global request order."""
+
+    last_activity: float = field(default_factory=time.monotonic)
+    completed: threading.Event = field(default_factory=threading.Event)
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def mark_activity(self) -> None:
+        with self._lock:
+            self.last_activity = time.monotonic()
+
+    def seconds_since_activity(self) -> float:
+        with self._lock:
+            return time.monotonic() - self.last_activity
 
 
 class MCPMessageProcessor:
@@ -322,6 +340,7 @@ class MCPStdioProxy:
         if process.stdin is None or process.stdout is None:
             raise RuntimeError("failed to open MCP server stdio pipes")
 
+        drain_state = _OutputDrainState()
         client_thread = threading.Thread(
             target=self._relay_client_to_server,
             args=(sys.stdin.buffer, process.stdin, sys.stdout.buffer),
@@ -329,22 +348,34 @@ class MCPStdioProxy:
         )
         server_thread = threading.Thread(
             target=self._relay_server_to_client,
-            args=(process.stdout, sys.stdout.buffer),
+            args=(process.stdout, sys.stdout.buffer, drain_state),
             daemon=True,
         )
         server_thread.start()
         client_thread.start()
         client_thread.join()
-        self._wait_or_stop_server(process)
-        server_thread.join(timeout=1.0)
+        drain_state.mark_activity()
+        self._wait_or_stop_server(process, drain_state)
+        server_thread.join(timeout=max(5.0, self.shutdown_timeout_seconds * 4))
         return process.returncode if process.returncode is not None else 1
 
-    def _wait_or_stop_server(self, process: subprocess.Popen[bytes]) -> None:
-        try:
-            process.wait(timeout=self.shutdown_timeout_seconds)
+    def _wait_or_stop_server(
+        self,
+        process: subprocess.Popen[bytes],
+        drain_state: _OutputDrainState,
+    ) -> None:
+        hard_deadline = time.monotonic() + max(5.0, self.shutdown_timeout_seconds * 4)
+        while process.poll() is None:
+            if time.monotonic() >= hard_deadline:
+                break
+            if drain_state.completed.is_set():
+                break
+            if drain_state.seconds_since_activity() >= self.shutdown_timeout_seconds:
+                break
+            time.sleep(0.01)
+
+        if process.poll() is not None:
             return
-        except subprocess.TimeoutExpired:
-            pass
 
         _terminate_process_group(process)
         try:
@@ -386,20 +417,33 @@ class MCPStdioProxy:
         except BrokenPipeError:
             return
 
-    def _relay_server_to_client(self, server_output: BinaryIO, client_output: BinaryIO) -> None:
-        for raw_line in _iter_bounded_lines(server_output, self.max_message_bytes):
-            if raw_line is None:
-                if not _write_and_flush(
-                    client_output,
-                    _jsonrpc_error(None, SERVER_PROTOCOL_ERROR, "MCP server message is too large"),
+    def _relay_server_to_client(
+        self,
+        server_output: BinaryIO,
+        client_output: BinaryIO,
+        drain_state: _OutputDrainState,
+    ) -> None:
+        try:
+            for raw_line in _iter_bounded_lines(server_output, self.max_message_bytes):
+                drain_state.mark_activity()
+                if raw_line is None:
+                    if not _write_and_flush(
+                        client_output,
+                        _jsonrpc_error(
+                            None,
+                            SERVER_PROTOCOL_ERROR,
+                            "MCP server message is too large",
+                        ),
+                    ):
+                        return
+                    continue
+                action = self.processor.handle_server_line(raw_line)
+                if action.to_client is not None and not _write_and_flush(
+                    client_output, action.to_client
                 ):
                     return
-                continue
-            action = self.processor.handle_server_line(raw_line)
-            if action.to_client is not None and not _write_and_flush(
-                client_output, action.to_client
-            ):
-                return
+        finally:
+            drain_state.completed.set()
 
 
 def _iter_bounded_lines(stream: BinaryIO, max_bytes: int) -> Iterator[bytes | None]:
