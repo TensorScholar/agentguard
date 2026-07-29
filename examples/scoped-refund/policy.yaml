@@ -1,0 +1,64 @@
+schema_version: "2"
+metadata:
+  id: customer-operations
+  revision: 1
+  description: Bounded support operations with provenance-aware controls
+defaults:
+  effect: deny
+  maximum_credential_ttl_seconds: 60
+  unknown_provenance: require_approval
+  unknown_capability: deny
+rules:
+  - id: external-content-high-impact
+    priority: 1000
+    effect: require_approval
+    provenance:
+      contains_any:
+        - external_email
+        - external_web_content
+        - third_party_document
+        - other_agent_message
+    action:
+      capabilities_any:
+        - financial_mutation
+        - bulk_data_export
+        - production_mutation
+    reason_code: provenance.untrusted_high_impact
+  - id: bounded-refund
+    priority: 500
+    effect: allow
+    principal:
+      workloads:
+        - prod/support-agent-v3
+      tenant_ids:
+        - acme
+      verified_identity_required: true
+    subject:
+      required: true
+    action:
+      protocols: [mcp]
+      servers: [customer-operations]
+      tools: [refund.create]
+      operations: [call]
+    resource:
+      types: [order]
+      tenant_from_principal: true
+    provenance:
+      contains_only:
+        - authenticated_user_input
+        - internal_database
+      verified_required: true
+    effects:
+      maximum_financial_amount_minor: 10000
+      maximum_records_modified: 1
+    credential:
+      audience: payments.internal
+      scopes: [refund:create]
+      maximum_ttl_seconds: 60
+      single_use: true
+      tenant_id: acme
+    execution_budget:
+      maximum_financial_amount_minor: 10000
+      maximum_records_modified: 1
+      maximum_tool_calls: 1
+    reason_code: policy.bounded_refund

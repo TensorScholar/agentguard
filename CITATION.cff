@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: AgentGuard
+type: software
+version: 0.2.0rc1
+authors:
+  - family-names: Atashi
+    given-names: Mohammad
+repository-code: https://github.com/TensorScholar/agentguard
+license: MIT
+message: Cite this software using these metadata.

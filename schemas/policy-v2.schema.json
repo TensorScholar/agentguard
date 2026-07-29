@@ -1,0 +1,682 @@
+{
+  "$defs": {
+    "ActionMatcher": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities_any": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities Any",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "operations": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Operations",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "protocols": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Protocols",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "servers": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Servers",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "tools": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "title": "ActionMatcher",
+      "type": "object"
+    },
+    "CredentialCeiling": {
+      "additionalProperties": false,
+      "properties": {
+        "audience": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Audience",
+          "type": "string"
+        },
+        "maximum_ttl_seconds": {
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Maximum Ttl Seconds",
+          "type": "integer"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Scopes",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "single_use": {
+          "default": true,
+          "title": "Single Use",
+          "type": "boolean"
+        },
+        "tenant_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tenant Id"
+        }
+      },
+      "required": [
+        "audience",
+        "scopes",
+        "maximum_ttl_seconds"
+      ],
+      "title": "CredentialCeiling",
+      "type": "object"
+    },
+    "Effect": {
+      "enum": [
+        "allow",
+        "deny",
+        "require_approval"
+      ],
+      "title": "Effect",
+      "type": "string"
+    },
+    "EffectMatcher": {
+      "additionalProperties": false,
+      "properties": {
+        "maximum_deleted_files": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Deleted Files"
+        },
+        "maximum_execution_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Execution Seconds"
+        },
+        "maximum_external_recipients": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum External Recipients"
+        },
+        "maximum_financial_amount_minor": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Financial Amount Minor"
+        },
+        "maximum_output_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Output Bytes"
+        },
+        "maximum_records_modified": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Records Modified"
+        },
+        "maximum_tool_calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Tool Calls"
+        }
+      },
+      "title": "EffectMatcher",
+      "type": "object"
+    },
+    "ExecutionBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "maximum_deleted_files": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Deleted Files"
+        },
+        "maximum_execution_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Execution Seconds"
+        },
+        "maximum_external_recipients": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum External Recipients"
+        },
+        "maximum_financial_amount_minor": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Financial Amount Minor"
+        },
+        "maximum_output_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Output Bytes"
+        },
+        "maximum_records_modified": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Records Modified"
+        },
+        "maximum_tool_calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Tool Calls"
+        }
+      },
+      "title": "ExecutionBudget",
+      "type": "object"
+    },
+    "PolicyDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "effect": {
+          "const": "deny",
+          "default": "deny",
+          "title": "Effect",
+          "type": "string"
+        },
+        "maximum_credential_ttl_seconds": {
+          "default": 60,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Maximum Credential Ttl Seconds",
+          "type": "integer"
+        },
+        "unknown_capability": {
+          "$ref": "#/$defs/Effect",
+          "default": "deny"
+        },
+        "unknown_provenance": {
+          "$ref": "#/$defs/Effect",
+          "default": "require_approval"
+        }
+      },
+      "title": "PolicyDefaults",
+      "type": "object"
+    },
+    "PolicyMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "revision"
+      ],
+      "title": "PolicyMetadata",
+      "type": "object"
+    },
+    "PolicyRule": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ActionMatcher",
+          "default": {
+            "capabilities_any": [],
+            "operations": [],
+            "protocols": [],
+            "servers": [],
+            "tools": []
+          }
+        },
+        "credential": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CredentialCeiling"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "effect": {
+          "$ref": "#/$defs/Effect"
+        },
+        "effects": {
+          "$ref": "#/$defs/EffectMatcher",
+          "default": {
+            "maximum_deleted_files": null,
+            "maximum_execution_seconds": null,
+            "maximum_external_recipients": null,
+            "maximum_financial_amount_minor": null,
+            "maximum_output_bytes": null,
+            "maximum_records_modified": null,
+            "maximum_tool_calls": null
+          }
+        },
+        "execution_budget": {
+          "$ref": "#/$defs/ExecutionBudget",
+          "default": {
+            "maximum_deleted_files": null,
+            "maximum_execution_seconds": null,
+            "maximum_external_recipients": null,
+            "maximum_financial_amount_minor": null,
+            "maximum_output_bytes": null,
+            "maximum_records_modified": null,
+            "maximum_tool_calls": null
+          }
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "principal": {
+          "$ref": "#/$defs/PrincipalMatcher",
+          "default": {
+            "agent_ids": [],
+            "tenant_ids": [],
+            "verified_identity_required": false,
+            "workloads": []
+          }
+        },
+        "priority": {
+          "default": 0,
+          "maximum": 100000,
+          "minimum": -100000,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "provenance": {
+          "$ref": "#/$defs/ProvenanceMatcher",
+          "default": {
+            "contains_any": [],
+            "contains_only": [],
+            "deny_if_contains": [],
+            "verified_required": false
+          }
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason Code"
+        },
+        "resource": {
+          "$ref": "#/$defs/ResourceMatcher",
+          "default": {
+            "excluded_recipient_domains": [],
+            "recipient_domains": [],
+            "tenant_from_principal": false,
+            "types": []
+          }
+        },
+        "subject": {
+          "$ref": "#/$defs/SubjectMatcher",
+          "default": {
+            "required": false,
+            "user_ids": []
+          }
+        }
+      },
+      "required": [
+        "id",
+        "effect"
+      ],
+      "title": "PolicyRule",
+      "type": "object"
+    },
+    "PrincipalMatcher": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Agent Ids",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "tenant_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Tenant Ids",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "verified_identity_required": {
+          "default": false,
+          "title": "Verified Identity Required",
+          "type": "boolean"
+        },
+        "workloads": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Workloads",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "title": "PrincipalMatcher",
+      "type": "object"
+    },
+    "ProvenanceLabel": {
+      "enum": [
+        "trusted_system_instruction",
+        "authenticated_user_input",
+        "internal_database",
+        "external_web_content",
+        "external_email",
+        "third_party_document",
+        "tool_output",
+        "persistent_memory",
+        "other_agent_message",
+        "unverified"
+      ],
+      "title": "ProvenanceLabel",
+      "type": "string"
+    },
+    "ProvenanceMatcher": {
+      "additionalProperties": false,
+      "properties": {
+        "contains_any": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProvenanceLabel"
+          },
+          "title": "Contains Any",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "contains_only": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProvenanceLabel"
+          },
+          "title": "Contains Only",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "deny_if_contains": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProvenanceLabel"
+          },
+          "title": "Deny If Contains",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "verified_required": {
+          "default": false,
+          "title": "Verified Required",
+          "type": "boolean"
+        }
+      },
+      "title": "ProvenanceMatcher",
+      "type": "object"
+    },
+    "ResourceMatcher": {
+      "additionalProperties": false,
+      "properties": {
+        "excluded_recipient_domains": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Recipient Domains",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "recipient_domains": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Recipient Domains",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "tenant_from_principal": {
+          "default": false,
+          "title": "Tenant From Principal",
+          "type": "boolean"
+        },
+        "types": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Types",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "title": "ResourceMatcher",
+      "type": "object"
+    },
+    "SubjectMatcher": {
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "user_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "User Ids",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "title": "SubjectMatcher",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "defaults": {
+      "$ref": "#/$defs/PolicyDefaults",
+      "default": {
+        "effect": "deny",
+        "maximum_credential_ttl_seconds": 60,
+        "unknown_capability": "deny",
+        "unknown_provenance": "require_approval"
+      }
+    },
+    "metadata": {
+      "$ref": "#/$defs/PolicyMetadata"
+    },
+    "rules": {
+      "items": {
+        "$ref": "#/$defs/PolicyRule"
+      },
+      "title": "Rules",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "2",
+      "default": "2",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "metadata",
+    "rules"
+  ],
+  "title": "PolicyDocument",
+  "type": "object"
+}

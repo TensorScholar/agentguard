@@ -1,0 +1,19 @@
+{
+  "schema_version": "1",
+  "project": "agentguard",
+  "version": "0.2.0rc1",
+  "benchmark_type": "synthetic-local",
+  "measures": [
+    "deterministic Policy v2 evaluation",
+    "local Ed25519 decision-receipt verification",
+    "single-process SQLite nonce consumption"
+  ],
+  "exclusions": [
+    "network latency",
+    "real credential broker latency",
+    "tool execution latency",
+    "multi-process or multi-node contention",
+    "production capacity"
+  ],
+  "results_file": "benchmark-results.json"
+}

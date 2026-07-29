@@ -1,0 +1,217 @@
+{
+  "$defs": {
+    "ExecutionBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "maximum_deleted_files": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Deleted Files"
+        },
+        "maximum_execution_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Execution Seconds"
+        },
+        "maximum_external_recipients": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum External Recipients"
+        },
+        "maximum_financial_amount_minor": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Financial Amount Minor"
+        },
+        "maximum_output_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Output Bytes"
+        },
+        "maximum_records_modified": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Records Modified"
+        },
+        "maximum_tool_calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Tool Calls"
+        }
+      },
+      "title": "ExecutionBudget",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "approval_id": {
+      "title": "Approval Id",
+      "type": "string"
+    },
+    "approved_action_digest": {
+      "title": "Approved Action Digest",
+      "type": "string"
+    },
+    "approved_arguments_digest": {
+      "title": "Approved Arguments Digest",
+      "type": "string"
+    },
+    "approved_budget": {
+      "$ref": "#/$defs/ExecutionBudget",
+      "default": {
+        "maximum_deleted_files": null,
+        "maximum_execution_seconds": null,
+        "maximum_external_recipients": null,
+        "maximum_financial_amount_minor": null,
+        "maximum_output_bytes": null,
+        "maximum_records_modified": null,
+        "maximum_tool_calls": null
+      }
+    },
+    "approved_resource_digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Approved Resource Digest"
+    },
+    "approver_subject": {
+      "title": "Approver Subject",
+      "type": "string"
+    },
+    "authentication_level": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Authentication Level"
+    },
+    "decision_id": {
+      "title": "Decision Id",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "issued_at": {
+      "format": "date-time",
+      "title": "Issued At",
+      "type": "string"
+    },
+    "key_id": {
+      "title": "Key Id",
+      "type": "string"
+    },
+    "maximum_uses": {
+      "default": 1,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Maximum Uses",
+      "type": "integer"
+    },
+    "reason": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "signature": {
+      "title": "Signature",
+      "type": "string"
+    },
+    "trace_id": {
+      "title": "Trace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approval_id",
+    "decision_id",
+    "trace_id",
+    "approver_subject",
+    "approved_action_digest",
+    "approved_arguments_digest",
+    "reason",
+    "issued_at",
+    "expires_at",
+    "key_id",
+    "signature"
+  ],
+  "title": "ApprovalReceipt",
+  "type": "object"
+}

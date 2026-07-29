@@ -1,0 +1,488 @@
+{
+  "$defs": {
+    "Action": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "operation": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Operation",
+          "type": "string"
+        },
+        "protocol": {
+          "maxLength": 50,
+          "minLength": 1,
+          "title": "Protocol",
+          "type": "string"
+        },
+        "server": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Server",
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "server",
+        "tool",
+        "operation"
+      ],
+      "title": "Action",
+      "type": "object"
+    },
+    "DelegationContext": {
+      "additionalProperties": false,
+      "properties": {
+        "delegation_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Delegation Id",
+          "type": "string"
+        },
+        "depth": {
+          "maximum": 16,
+          "minimum": 0,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "permitted_capabilities": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Permitted Capabilities",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "delegation_id",
+        "depth",
+        "expires_at"
+      ],
+      "title": "DelegationContext",
+      "type": "object"
+    },
+    "EffectProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "const": "USD",
+          "default": "USD",
+          "title": "Currency",
+          "type": "string"
+        },
+        "deleted_files": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deleted Files"
+        },
+        "execution_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Seconds"
+        },
+        "external_recipients": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Recipients"
+        },
+        "financial_amount_minor": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Financial Amount Minor"
+        },
+        "output_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Bytes"
+        },
+        "records_modified": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Records Modified"
+        },
+        "tool_calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Calls"
+        }
+      },
+      "title": "EffectProjection",
+      "type": "object"
+    },
+    "Principal": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "identity_issuer": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Identity Issuer"
+        },
+        "identity_verified": {
+          "default": false,
+          "title": "Identity Verified",
+          "type": "boolean"
+        },
+        "runtime_identity": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime Identity"
+        },
+        "tenant_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "workload_id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Workload Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "workload_id",
+        "tenant_id"
+      ],
+      "title": "Principal",
+      "type": "object"
+    },
+    "ProvenanceLabel": {
+      "enum": [
+        "trusted_system_instruction",
+        "authenticated_user_input",
+        "internal_database",
+        "external_web_content",
+        "external_email",
+        "third_party_document",
+        "tool_output",
+        "persistent_memory",
+        "other_agent_message",
+        "unverified"
+      ],
+      "title": "ProvenanceLabel",
+      "type": "string"
+    },
+    "Resource": {
+      "additionalProperties": false,
+      "properties": {
+        "attributes": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Attributes",
+          "type": "object"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "owner_tenant": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Tenant"
+        },
+        "recipient_domains": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Recipient Domains",
+          "type": "array"
+        },
+        "type": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Resource",
+      "type": "object"
+    },
+    "Subject": {
+      "additionalProperties": false,
+      "properties": {
+        "authentication_level": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Authentication Level"
+        },
+        "tenant_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tenant Id"
+        },
+        "user_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "User Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "user_id"
+      ],
+      "title": "Subject",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "$ref": "#/$defs/Action"
+    },
+    "arguments": {
+      "additionalProperties": true,
+      "title": "Arguments",
+      "type": "object"
+    },
+    "delegation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DelegationContext"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "effects": {
+      "$ref": "#/$defs/EffectProjection",
+      "default": {
+        "currency": "USD",
+        "deleted_files": null,
+        "execution_seconds": null,
+        "external_recipients": null,
+        "financial_amount_minor": null,
+        "output_bytes": null,
+        "records_modified": null,
+        "tool_calls": null
+      }
+    },
+    "principal": {
+      "$ref": "#/$defs/Principal"
+    },
+    "provenance": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ProvenanceLabel"
+      },
+      "title": "Provenance",
+      "type": "array"
+    },
+    "provenance_verified": {
+      "default": false,
+      "title": "Provenance Verified",
+      "type": "boolean"
+    },
+    "request_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "requested_at": {
+      "format": "date-time",
+      "title": "Requested At",
+      "type": "string"
+    },
+    "resource": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Resource"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "subject": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Subject"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "tool_schema": {
+      "additionalProperties": true,
+      "title": "Tool Schema",
+      "type": "object"
+    },
+    "trace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Trace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "trace_id",
+    "principal",
+    "action",
+    "requested_at"
+  ],
+  "title": "ActionIntent",
+  "type": "object"
+}

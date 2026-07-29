@@ -1,55 +1,59 @@
-[project]
-name = "agentguard"
-version = "0.1.0"
-description = "Local-first security gateway for AI agents, MCP tools, and tool-calling workflows."
-readme = "README.md"
-requires-python = ">=3.11"
-authors = [{ name = "Mohammad Atashi" }]
-license = "MIT"
-keywords = ["ai-agents", "mcp", "security", "tool-calling", "audit"]
-classifiers = [
-  "Development Status :: 3 - Alpha",
-  "Environment :: Console",
-  "Intended Audience :: Developers",
-  "Intended Audience :: Information Technology",
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Topic :: Security",
-  "Topic :: Software Development :: Quality Assurance",
-]
-dependencies = []
-
-[project.urls]
-Repository = "https://github.com/TensorScholar/agentguard"
-Issues = "https://github.com/TensorScholar/agentguard/issues"
-Changelog = "https://github.com/TensorScholar/agentguard/blob/main/CHANGELOG.md"
-Security = "https://github.com/TensorScholar/agentguard/blob/main/SECURITY.md"
-
-[project.optional-dependencies]
-dev = [
-  "pytest>=7.4",
-  "ruff>=0.1.7",
-  "mypy>=1.7",
-]
-
-[project.scripts]
-agentguard = "agentguard.cli:main"
-
-[tool.pytest.ini_options]
-addopts = "-q"
-testpaths = ["tests"]
-
-[tool.ruff]
-line-length = 100
-
-[tool.mypy]
-python_version = "3.11"
-strict = true
-
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "agentguard"
+version = "0.2.0rc1"
+description = "Provider-neutral action integrity for AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Mohammad Atashi"}]
+keywords = ["ai-agents", "mcp", "authorization", "security", "credential-broker", "audit"]
+dependencies = [
+  "pydantic>=2.8,<3",
+  "PyYAML>=6,<7",
+  "typer>=0.12,<1",
+  "rich>=13,<15",
+  "cryptography>=43,<47"
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Topic :: Security",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13"
+]
+
+[project.optional-dependencies]
+http = ["starlette>=0.40,<1", "httpx>=0.27,<1", "uvicorn>=0.30,<1"]
+otel = ["opentelemetry-api>=1.27,<2", "opentelemetry-sdk>=1.27,<2"]
+dev = ["pytest>=8,<10", "coverage>=7,<8", "ruff>=0.8,<1", "mypy>=1.13,<2", "jsonschema>=4.23,<5"]
+
+[project.scripts]
+agentguard = "agentguard.cli.app:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
 [tool.setuptools.packages.find]
-include = ["agentguard*"]
+where = ["src"]
+[tool.setuptools.package-data]
+agentguard = ["resources/*.yaml", "resources/*.json", "resources/policy_packs/*.yaml"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["agentguard"]
