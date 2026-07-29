@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from agentguard.domain import (
     DelegationContext,
     Effect,
+    EffectProjection,
     ExecutionBudget,
     PolicyDocument,
     ProvenanceLabel,
@@ -72,6 +73,45 @@ def test_unbounded_high_impact_requires_approval(intent, policy):
     )
     changed_policy = policy.model_copy(update={"rules": (selected,)})
     assert evaluate_policy(changed_policy, intent).effect == Effect.REQUIRE_APPROVAL
+
+
+@pytest.mark.parametrize(
+    "capability",
+    [
+        "financial_mutation",
+        "production_mutation",
+        "bulk_data_export",
+        "destructive_filesystem",
+        "destructive_filesystem_operations",
+        "filesystem_delete",
+        "external_communication",
+    ],
+)
+def test_unknown_high_impact_projection_never_auto_allows(intent, policy, capability):
+    selected = policy.rules[1].model_copy(
+        update={"effects": EffectMatcher(), "execution_budget": ExecutionBudget()}
+    )
+    changed_policy = policy.model_copy(update={"rules": (selected,)})
+    changed = intent.model_copy(
+        update={
+            "action": intent.action.model_copy(update={"capabilities": frozenset({capability})}),
+            "effects": EffectProjection(),
+        }
+    )
+    result = evaluate_policy(changed_policy, changed)
+    assert result.effect == Effect.REQUIRE_APPROVAL
+    assert result.reason_codes[0] == "policy.unbounded_high_impact"
+
+
+def test_zero_high_impact_projection_is_not_treated_as_unknown(intent, policy):
+    selected = policy.rules[1].model_copy(
+        update={"effects": EffectMatcher(), "execution_budget": ExecutionBudget()}
+    )
+    changed_policy = policy.model_copy(update={"rules": (selected,)})
+    zero = intent.model_copy(
+        update={"effects": intent.effects.model_copy(update={"financial_amount_minor": 0})}
+    )
+    assert evaluate_policy(changed_policy, zero).effect == Effect.ALLOW
 
 
 def test_missing_subject_denied(intent, policy):

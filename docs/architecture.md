@@ -27,3 +27,8 @@ Broker grants carry a provider-neutral Ed25519 attestation in the mock adapter. 
 payload binds the broker and key identity, decision and trace, issuance identifier, audience,
 scopes, tenant, mode, timestamps, and a digest of the opaque handle. Production adapters may use a
 different authentication mechanism only through an explicit trusted `BrokerGrantVerifier` port.
+
+The v2 MCP adapter obtains each `tools/call` schema through a `ToolSchemaResolver`. The included
+resolver projects the preserved v0.1 discovered inventory into the v2 path. Missing, stale, or
+digest-inconsistent schemas require approval before authorization; the adapter never substitutes an
+empty schema for an allowed call.

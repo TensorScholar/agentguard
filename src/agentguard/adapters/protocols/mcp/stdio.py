@@ -3,9 +3,12 @@ from __future__ import annotations
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from agentguard.application import AgentGuardService
 from agentguard.domain import Effect, EnforcementMode, PolicyDocument, Principal
+from agentguard.engine.canonical import digest
+from agentguard.ports import ToolSchemaResolver
 
 from .intent import intent_from_tools_call
 from .jsonrpc import MCPProtocolError, error_response, parse_message
@@ -29,13 +32,19 @@ class MCPStdioProcessor:
         server: str,
         mode: EnforcementMode = EnforcementMode.ENFORCE,
         max_message_bytes: int = 1_000_000,
+        schema_resolver: ToolSchemaResolver | None = None,
+        schema_ttl_seconds: float = 300.0,
     ) -> None:
+        if schema_ttl_seconds < 0:
+            raise ValueError("schema_ttl_seconds cannot be negative")
         self.service = service
         self.policy = policy
         self.principal = principal
         self.server = server
         self.mode = mode
         self.max_message_bytes = max_message_bytes
+        self.schema_resolver = schema_resolver
+        self.schema_ttl_seconds = schema_ttl_seconds
 
     @staticmethod
     def _newline(raw: bytes) -> bytes:
@@ -54,8 +63,49 @@ class MCPStdioProcessor:
                     None, -32600, "tools/call notifications cannot be audited safely"
                 )
             )
+        params = msg.get("params")
+        if not isinstance(params, dict):
+            return ProcessResult(
+                to_client=error_response(
+                    msg.get("id"),
+                    -32602,
+                    "tools/call params must be an object",
+                )
+            )
+        tool = params.get("name")
+        if not isinstance(tool, str) or not tool:
+            return ProcessResult(
+                to_client=error_response(
+                    msg.get("id"),
+                    -32602,
+                    "tools/call params.name is required",
+                )
+            )
+        if not isinstance(params.get("arguments", {}), dict):
+            return ProcessResult(
+                to_client=error_response(
+                    msg.get("id"),
+                    -32602,
+                    "tools/call arguments must be an object",
+                )
+            )
+        schema, reason = self._resolve_tool_schema(tool)
+        if reason is not None:
+            return ProcessResult(
+                to_client=error_response(
+                    msg.get("id"),
+                    APPROVAL_REQUIRED,
+                    "AgentGuard requires approval because the current tool schema is not trusted",
+                    {"reason_codes": [reason]},
+                )
+            )
         try:
-            intent = intent_from_tools_call(msg, principal=self.principal, server=self.server)
+            intent = intent_from_tools_call(
+                msg,
+                principal=self.principal,
+                server=self.server,
+                tool_schema=schema,
+            )
         except (TypeError, ValueError) as exc:
             return ProcessResult(to_client=error_response(msg.get("id"), -32602, str(exc)))
         receipt = self.service.authorize(intent, self.policy, mode=self.mode)
@@ -95,6 +145,25 @@ class MCPStdioProcessor:
                 )
             )
         return ProcessResult(to_server=self._newline(raw))
+
+    def _resolve_tool_schema(
+        self,
+        tool: str,
+    ) -> tuple[dict[str, object], str | None]:
+        if self.schema_resolver is None:
+            return {}, "mcp.tool_schema_unavailable"
+        resolved = self.schema_resolver.resolve(self.server, tool)
+        if resolved is None or not resolved.schema:
+            return {}, "mcp.tool_schema_unavailable"
+        if resolved.discovered_at.tzinfo is None or resolved.discovered_at.utcoffset() is None:
+            return {}, "mcp.tool_schema_stale"
+        if self.schema_ttl_seconds > 0 and (
+            datetime.now(UTC) - resolved.discovered_at > timedelta(seconds=self.schema_ttl_seconds)
+        ):
+            return {}, "mcp.tool_schema_stale"
+        if digest(resolved.schema) != resolved.schema_digest:
+            return {}, "mcp.tool_schema_changed"
+        return resolved.schema, None
 
 
 class MCPStdioProxy:

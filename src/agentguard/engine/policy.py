@@ -189,44 +189,32 @@ def _unknown_provenance_requires_override(rule: PolicyRule, intent: ActionIntent
 
 
 def _has_unbounded_high_impact(rule: PolicyRule, intent: ActionIntent) -> bool:
-    projected = (
-        (
-            intent.effects.financial_amount_minor,
-            rule.effects.maximum_financial_amount_minor,
-            rule.execution_budget.maximum_financial_amount_minor,
-        ),
-        (
-            intent.effects.records_modified,
-            rule.effects.maximum_records_modified,
-            rule.execution_budget.maximum_records_modified,
-        ),
-        (
-            intent.effects.external_recipients,
-            rule.effects.maximum_external_recipients,
-            rule.execution_budget.maximum_external_recipients,
-        ),
-        (
-            intent.effects.deleted_files,
-            rule.effects.maximum_deleted_files,
-            rule.execution_budget.maximum_deleted_files,
-        ),
-        (
-            intent.effects.tool_calls,
-            rule.effects.maximum_tool_calls,
-            rule.execution_budget.maximum_tool_calls,
-        ),
-        (
-            intent.effects.execution_seconds,
-            rule.effects.maximum_execution_seconds,
-            rule.execution_budget.maximum_execution_seconds,
-        ),
-        (
-            intent.effects.output_bytes,
-            rule.effects.maximum_output_bytes,
-            rule.execution_budget.maximum_output_bytes,
-        ),
-    )
-    return any(
-        value and policy_max is None and execution_max is None
-        for value, policy_max, execution_max in projected
-    )
+    required_fields = {
+        "financial_mutation": ("financial_amount_minor",),
+        "production_mutation": ("records_modified",),
+        "bulk_data_export": ("records_modified", "output_bytes"),
+        "destructive_filesystem": ("deleted_files",),
+        "destructive_filesystem_operations": ("deleted_files",),
+        "filesystem_delete": ("deleted_files",),
+        "external_communication": ("external_recipients",),
+    }
+    maximum_fields = {
+        "financial_amount_minor": "maximum_financial_amount_minor",
+        "records_modified": "maximum_records_modified",
+        "external_recipients": "maximum_external_recipients",
+        "deleted_files": "maximum_deleted_files",
+        "tool_calls": "maximum_tool_calls",
+        "execution_seconds": "maximum_execution_seconds",
+        "output_bytes": "maximum_output_bytes",
+    }
+    for capability in sorted(intent.action.capabilities):
+        for field in required_fields.get(capability, ()):
+            value = getattr(intent.effects, field)
+            maximum_field = maximum_fields[field]
+            policy_maximum = getattr(rule.effects, maximum_field)
+            execution_maximum = getattr(rule.execution_budget, maximum_field)
+            if value is None:
+                return True
+            if value > 0 and policy_maximum is None and execution_maximum is None:
+                return True
+    return False

@@ -36,6 +36,6 @@ def intent_from_tools_call(
         provenance_verified=provenance_verified,
         effects=EffectProjection(),
         arguments=arguments,
-        tool_schema=tool_schema or {},
+        tool_schema=tool_schema if tool_schema is not None else {},
         requested_at=datetime.now(UTC),
     )

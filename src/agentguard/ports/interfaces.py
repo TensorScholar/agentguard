@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from agentguard.domain import (
     ApprovalReceipt,
@@ -34,6 +35,17 @@ class BrokerGrantVerifier(Protocol):
         payload: bytes,
         signature: bytes,
     ) -> bool: ...
+
+
+@dataclass(frozen=True)
+class ResolvedToolSchema:
+    schema: dict[str, Any]
+    schema_digest: str
+    discovered_at: datetime
+
+
+class ToolSchemaResolver(Protocol):
+    def resolve(self, server: str, tool: str) -> ResolvedToolSchema | None: ...
 
 
 class NonceRepository(Protocol):

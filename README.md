@@ -25,7 +25,7 @@ Authorized action == Credentialed action == Executed action
 - Atomic, independent issuance and execution-nonce consumption in SQLite.
 - Provider-neutral credential broker port and a no-secret mock Loadout-style broker.
 - Authenticated broker grants with broker/key identity, opaque-handle digest, and ceiling checks.
-- MCP stdio message processor with fail-closed `tools/call` handling and bounded messages.
+- MCP stdio message processor with fail-closed `tools/call`, fresh schema binding, and bounded messages.
 - HTTP transport security helpers for Origin, Host, and mirrored-header/body validation.
 - Hash-chained local audit events and verifiable evidence bundles.
 - Meeting-ready demo covering a valid scoped refund, argument mutation, scope inflation and replay.
