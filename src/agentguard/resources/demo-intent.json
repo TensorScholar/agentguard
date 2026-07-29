@@ -1,0 +1,23 @@
+{
+  "schema_version": "1",
+  "request_id": "req_demo_refund",
+  "trace_id": "trc_demo_refund",
+  "principal": {
+    "agent_id": "support-agent",
+    "workload_id": "prod/support-agent-v3",
+    "tenant_id": "acme",
+    "runtime_identity": "spiffe://acme.ai/agent/support",
+    "identity_verified": true,
+    "identity_issuer": "demo"
+  },
+  "subject": {"user_id": "user-482", "tenant_id": "acme", "authentication_level": "mfa"},
+  "delegation": null,
+  "action": {"protocol": "mcp", "server": "customer-operations", "tool": "refund.create", "operation": "call", "capabilities": ["financial_mutation"]},
+  "resource": {"type": "order", "id": "order-1042", "owner_tenant": "acme", "recipient_domains": [], "attributes": {}},
+  "provenance": ["authenticated_user_input", "internal_database"],
+  "provenance_verified": true,
+  "effects": {"currency": "USD", "financial_amount_minor": 8500, "records_modified": 1, "external_recipients": null, "deleted_files": null, "tool_calls": 1, "execution_seconds": null, "output_bytes": null},
+  "arguments": {"order_id": "order-1042", "amount_minor": 8500, "currency": "USD"},
+  "tool_schema": {"type": "object", "required": ["order_id", "amount_minor", "currency"]},
+  "requested_at": "2026-07-29T10:00:00Z"
+}
