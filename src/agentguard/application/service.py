@@ -15,12 +15,19 @@ from agentguard.domain import (
     EnforcementMode,
     PolicyDocument,
 )
+from agentguard.engine.credentials import (
+    CredentialVerificationError,
+    validate_credential_request,
+)
 from agentguard.engine.execution import authorize_execution
 from agentguard.engine.policy import evaluate_policy
 from agentguard.engine.receipts import (
+    ReceiptVerificationError,
     issue_approval_receipt,
     issue_decision_receipt,
     verify_approval_receipt,
+    verify_decision_receipt,
+    verify_intent_binding,
 )
 from agentguard.ports import (
     CredentialBroker,
@@ -84,6 +91,7 @@ class AgentGuardService:
             receipt,
             intent,
             self.signer,
+            self.verifier,
             approver_subject=approver_subject,
             reason=reason,
             authentication_level=authentication_level,
@@ -107,10 +115,20 @@ class AgentGuardService:
         broker: CredentialBroker,
         approval: ApprovalReceipt | None = None,
     ) -> CredentialGrant:
+        try:
+            verify_decision_receipt(receipt, self.verifier)
+            verify_intent_binding(intent, receipt)
+        except ReceiptVerificationError as exc:
+            raise CredentialVerificationError(str(exc)) from exc
         if approval is not None:
             verify_approval_receipt(approval, receipt, intent, self.verifier)
             if request.approval_id != approval.approval_id:
                 raise ValueError("credential.approval_binding_mismatch")
+        validate_credential_request(
+            receipt,
+            request,
+            approval_verified=approval is not None,
+        )
         self.state.append(
             self._event(
                 AuditEventType.CREDENTIAL_REQUESTED,

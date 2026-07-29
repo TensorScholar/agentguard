@@ -111,6 +111,7 @@ class DecisionReceipt(StrictModel):
     effect: Effect
     reason_codes: tuple[str, ...]
     matched_rule_ids: tuple[str, ...] = ()
+    intent_digest: str
     principal_digest: str
     subject_digest: str | None = None
     action_digest: str
@@ -128,6 +129,13 @@ class DecisionReceipt(StrictModel):
     nonce: str
     key_id: str
     signature: str
+
+    @field_validator("issued_at", "not_before", "expires_at")
+    @classmethod
+    def aware_security_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("decision receipt timestamps must be timezone-aware")
+        return value
 
     @model_validator(mode="after")
     def validate_times(self) -> DecisionReceipt:
@@ -153,6 +161,13 @@ class ApprovalReceipt(StrictModel):
     expires_at: datetime
     key_id: str
     signature: str
+
+    @field_validator("issued_at", "expires_at")
+    @classmethod
+    def aware_security_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("approval receipt timestamps must be timezone-aware")
+        return value
 
     @model_validator(mode="after")
     def validate_times(self) -> ApprovalReceipt:

@@ -479,6 +479,10 @@
           "title": "Expires At",
           "type": "string"
         },
+        "intent_digest": {
+          "title": "Intent Digest",
+          "type": "string"
+        },
         "issued_at": {
           "format": "date-time",
           "title": "Issued At",
@@ -573,6 +577,7 @@
         "trace_id",
         "effect",
         "reason_codes",
+        "intent_digest",
         "principal_digest",
         "action_digest",
         "arguments_digest",

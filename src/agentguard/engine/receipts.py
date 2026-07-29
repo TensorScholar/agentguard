@@ -53,6 +53,7 @@ def issue_decision_receipt(
         effect=evaluation.effect,
         reason_codes=evaluation.reason_codes,
         matched_rule_ids=tuple(r.id for r in evaluation.matched_rules),
+        intent_digest=digest(intent),
         principal_digest=digest(intent.principal),
         subject_digest=digest(intent.subject) if intent.subject else None,
         action_digest=digest(intent.action),
@@ -109,6 +110,8 @@ def verify_intent_binding(intent: ActionIntent, receipt: DecisionReceipt) -> Non
     for name, (actual, expected) in checks.items():
         if actual != expected:
             raise ReceiptVerificationError(f"execution.{name}_digest_mismatch")
+    if digest(intent) != receipt.intent_digest:
+        raise ReceiptVerificationError("execution.intent_digest_mismatch")
 
 
 def _unsigned_approval(receipt: ApprovalReceipt) -> dict[str, Any]:
@@ -121,6 +124,7 @@ def issue_approval_receipt(
     decision_receipt: DecisionReceipt,
     intent: ActionIntent,
     signer: Signer,
+    verifier: SignatureVerifier,
     *,
     approver_subject: str,
     reason: str,
@@ -129,6 +133,7 @@ def issue_approval_receipt(
     ttl_seconds: int = 300,
     approved_budget: ExecutionBudget | None = None,
 ) -> ApprovalReceipt:
+    verify_decision_receipt(decision_receipt, verifier, now=now)
     if decision_receipt.effect != Effect.REQUIRE_APPROVAL:
         raise ReceiptVerificationError("approval.decision_not_pending")
     verify_intent_binding(intent, decision_receipt)
