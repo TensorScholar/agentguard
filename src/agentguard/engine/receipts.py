@@ -23,6 +23,10 @@ class ReceiptVerificationError(ValueError):
     pass
 
 
+def _is_timezone_aware(value: datetime) -> bool:
+    return value.tzinfo is not None and value.utcoffset() is not None
+
+
 def _unsigned(receipt: DecisionReceipt) -> dict[str, Any]:
     data = receipt.model_dump(mode="python")
     data["signature"] = ""
@@ -84,6 +88,11 @@ def verify_decision_receipt(
     clock_skew_seconds: int = 5,
 ) -> None:
     now = now or datetime.now(UTC)
+    if not _is_timezone_aware(now) or not all(
+        _is_timezone_aware(value)
+        for value in (receipt.issued_at, receipt.not_before, receipt.expires_at)
+    ):
+        raise ReceiptVerificationError("receipt.timestamp_invalid")
     try:
         signature = decode_signature(receipt.signature)
     except ValueError as exc:
@@ -169,6 +178,10 @@ def verify_approval_receipt(
     now: datetime | None = None,
 ) -> None:
     now = now or datetime.now(UTC)
+    if not _is_timezone_aware(now) or not all(
+        _is_timezone_aware(value) for value in (approval.issued_at, approval.expires_at)
+    ):
+        raise ReceiptVerificationError("approval.timestamp_invalid")
     try:
         signature = decode_signature(approval.signature)
     except ValueError as exc:

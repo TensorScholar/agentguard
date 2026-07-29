@@ -1,6 +1,18 @@
 from __future__ import annotations
 
-from agentguard.domain import Effect, ExecutionBudget, ProvenanceLabel
+import json
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from pydantic import ValidationError
+
+from agentguard.domain import (
+    DelegationContext,
+    Effect,
+    ExecutionBudget,
+    PolicyDocument,
+    ProvenanceLabel,
+)
 from agentguard.domain.policy import EffectMatcher
 from agentguard.engine.policy import evaluate_policy
 
@@ -95,3 +107,70 @@ def test_policy_digest_changes(policy, intent):
         intent,
     ).policy_digest
     assert a != b
+
+
+def test_delegation_capability_subset_allows(intent, policy):
+    delegated = intent.model_copy(
+        update={
+            "delegation": DelegationContext(
+                delegation_id="delegation",
+                depth=1,
+                permitted_capabilities=frozenset({"financial_mutation", "filesystem_read"}),
+                expires_at=datetime.now(UTC) + timedelta(minutes=5),
+            )
+        }
+    )
+    assert evaluate_policy(policy, delegated).effect == Effect.ALLOW
+
+
+def test_expired_delegation_denies_with_stable_reason(intent, policy):
+    delegated = intent.model_copy(
+        update={
+            "delegation": DelegationContext(
+                delegation_id="expired",
+                depth=1,
+                permitted_capabilities=frozenset({"financial_mutation"}),
+                expires_at=datetime.now(UTC) - timedelta(seconds=1),
+            )
+        }
+    )
+    result = evaluate_policy(policy, delegated)
+    assert result.effect == Effect.DENY
+    assert result.reason_codes == ("delegation.expired",)
+
+
+@pytest.mark.parametrize(
+    "permitted",
+    [frozenset(), frozenset({"filesystem_read"})],
+)
+def test_delegation_cannot_increase_capability_authority(intent, policy, permitted):
+    delegated = intent.model_copy(
+        update={
+            "delegation": DelegationContext(
+                delegation_id="too-narrow",
+                depth=1,
+                permitted_capabilities=permitted,
+                expires_at=datetime.now(UTC) + timedelta(minutes=5),
+            )
+        }
+    )
+    result = evaluate_policy(policy, delegated)
+    assert result.effect == Effect.DENY
+    assert result.reason_codes == ("delegation.capability_exceeded",)
+
+
+def test_policy_default_credential_ttl_rejects_wider_rule(policy):
+    data = policy.model_dump(mode="json")
+    data["defaults"]["maximum_credential_ttl_seconds"] = 30
+    with pytest.raises(ValidationError, match="credential TTL exceeds"):
+        PolicyDocument.model_validate_json(json.dumps(data))
+
+
+def test_runtime_rejects_policy_copy_with_wider_rule_ttl(policy, intent):
+    invalid = policy.model_copy(
+        update={
+            "defaults": policy.defaults.model_copy(update={"maximum_credential_ttl_seconds": 30})
+        }
+    )
+    with pytest.raises(ValueError, match="policy.credential_ttl_exceeds_default"):
+        evaluate_policy(invalid, intent)

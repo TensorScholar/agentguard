@@ -53,7 +53,8 @@ agentguard authorize   --request examples/scoped-refund/request.json   --policy 
 
 agentguard broker-demo examples/scoped-refund/request.json decision.json --output grant.json
 
-agentguard verify-execution   --request examples/scoped-refund/request.json   --receipt decision.json   --grant grant.json
+agentguard verify-execution examples/scoped-refund/request.json decision.json \
+  examples/scoped-refund/policy.yaml --grant grant.json
 ```
 
 ## Product boundary

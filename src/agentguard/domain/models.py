@@ -33,6 +33,13 @@ class DelegationContext(StrictModel):
     permitted_capabilities: frozenset[str] = frozenset()
     expires_at: datetime
 
+    @field_validator("expires_at")
+    @classmethod
+    def aware_expires_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("delegation expires_at must be timezone-aware")
+        return value
+
 
 class Action(StrictModel):
     protocol: str = Field(min_length=1, max_length=50)
@@ -80,7 +87,7 @@ class ActionIntent(StrictModel):
     @field_validator("requested_at")
     @classmethod
     def aware_requested_at(cls, value: datetime) -> datetime:
-        if value.tzinfo is None:
+        if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("requested_at must be timezone-aware")
         return value
 
@@ -242,6 +249,19 @@ class ExecutionOutcome(StrictModel):
     started_at: datetime
     completed_at: datetime
 
+    @field_validator("started_at", "completed_at")
+    @classmethod
+    def aware_security_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("execution outcome timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def validate_times(self) -> ExecutionOutcome:
+        if self.started_at > self.completed_at:
+            raise ValueError("execution outcome times are inconsistent")
+        return self
+
 
 class AuditEvent(StrictModel):
     schema_version: Literal["1"] = "1"
@@ -260,3 +280,10 @@ class AuditEvent(StrictModel):
     data: dict[str, str | int | bool | None] = Field(default_factory=dict)
     previous_hash: str | None = None
     event_hash: str | None = None
+
+    @field_validator("timestamp")
+    @classmethod
+    def aware_timestamp(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("audit event timestamp must be timezone-aware")
+        return value

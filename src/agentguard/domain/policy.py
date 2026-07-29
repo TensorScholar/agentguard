@@ -91,4 +91,15 @@ class PolicyDocument(StrictModel):
         ids = [rule.id for rule in self.rules]
         if len(ids) != len(set(ids)):
             raise ValueError("policy rule ids must be unique")
+        over_limit = [
+            rule.id
+            for rule in self.rules
+            if rule.credential is not None
+            and rule.credential.maximum_ttl_seconds > self.defaults.maximum_credential_ttl_seconds
+        ]
+        if over_limit:
+            raise ValueError(
+                "rule credential TTL exceeds policy default maximum: "
+                + ", ".join(sorted(over_limit))
+            )
         return self

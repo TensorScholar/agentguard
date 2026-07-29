@@ -9,7 +9,10 @@
 
 ## Primary threats
 
-Argument substitution, action substitution, confused deputy, cross-tenant reuse, receipt replay, credential scope inflation, stale tool schema, provenance spoofing, approval substitution, audit tampering, audit truncation, DNS rebinding, header/body confusion and broker outage bypass.
+Argument substitution, action substitution, delegation escalation, confused deputy, cross-tenant
+reuse, receipt replay, credential scope inflation, changed-policy execution, stale tool schema,
+provenance spoofing, approval substitution, audit tampering, audit truncation, DNS rebinding,
+header/body confusion and broker outage bypass.
 
 ## Trust assumptions
 

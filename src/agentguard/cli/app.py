@@ -180,6 +180,7 @@ def broker_demo(
 def verify_execution(
     request: Path,
     receipt: Path,
+    policy: Path,
     grant: Path | None = None,
     approval: Path | None = None,
     public_key: Path = Path(".agentguard/decision-public.pem"),
@@ -191,6 +192,7 @@ def verify_execution(
 
     intent = load_json_model(request, ActionIntent)
     r = load_json_model(receipt, DecisionReceipt)
+    current_policy = load_policy(policy)
     g = load_json_model(grant, CredentialGrant) if grant else None
     a = load_json_model(approval, ApprovalReceipt) if approval else None
     verifier = Ed25519Verifier.from_public_file(public_key)
@@ -211,6 +213,7 @@ def verify_execution(
         state,
         broker_grant_verifier=broker_verifier,
         approval=a,
+        current_policy=current_policy,
     )
     console.print("Execution authorized and receipt atomically consumed")
 

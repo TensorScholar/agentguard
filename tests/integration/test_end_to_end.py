@@ -23,7 +23,7 @@ def test_authorize_broker_execute(intent, policy, signer, verifier, state):
         tenant_id=c.tenant_id,
     )
     grant = service.request_credential(intent, receipt, request, broker)
-    service.guard_execution(intent, receipt, grant)
+    service.guard_execution(intent, receipt, grant, current_policy=policy)
     assert state.verify()[0]
 
 
@@ -49,6 +49,7 @@ def test_replay_is_blocked(intent, policy, signer, verifier, state):
         verifier,
         state,
         broker_grant_verifier=broker.verifier,
+        current_policy=policy,
     )
     with pytest.raises(ExecutionGuardError, match="replayed"):
         authorize_execution(
@@ -58,6 +59,7 @@ def test_replay_is_blocked(intent, policy, signer, verifier, state):
             verifier,
             state,
             broker_grant_verifier=broker.verifier,
+            current_policy=policy,
         )
 
 
@@ -85,4 +87,5 @@ def test_argument_mutation_is_blocked(intent, policy, signer, verifier, state):
             verifier,
             state,
             broker_grant_verifier=broker.verifier,
+            current_policy=policy,
         )

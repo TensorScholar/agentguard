@@ -198,6 +198,8 @@ class AgentGuardService:
         receipt: DecisionReceipt,
         grant: CredentialGrant | None,
         approval: ApprovalReceipt | None = None,
+        *,
+        current_policy: PolicyDocument | None = None,
     ) -> None:
         authorize_execution(
             intent,
@@ -207,6 +209,7 @@ class AgentGuardService:
             self.state,
             broker_grant_verifier=self.broker_grant_verifier,
             approval=approval,
+            current_policy=current_policy,
         )
         self.state.append(
             self._event(

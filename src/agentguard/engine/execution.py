@@ -9,7 +9,9 @@ from agentguard.domain import (
     DecisionReceipt,
     Effect,
     ExecutionBudget,
+    PolicyDocument,
 )
+from agentguard.engine.canonical import digest
 from agentguard.engine.credentials import CredentialVerificationError, verify_credential_grant
 from agentguard.engine.receipts import (
     ReceiptVerificationError,
@@ -52,6 +54,7 @@ def authorize_execution(
     *,
     broker_grant_verifier: BrokerGrantVerifier | None = None,
     approval: ApprovalReceipt | None = None,
+    current_policy: PolicyDocument | None = None,
     now: datetime | None = None,
 ) -> None:
     now = now or datetime.now(UTC)
@@ -60,6 +63,10 @@ def authorize_execution(
         verify_intent_binding(intent, receipt)
     except ReceiptVerificationError as exc:
         raise ExecutionGuardError(str(exc)) from exc
+    if current_policy is None:
+        raise ExecutionGuardError("execution.policy_unavailable")
+    if digest(current_policy) != receipt.policy_digest:
+        raise ExecutionGuardError("execution.policy_changed")
     if receipt.effect == Effect.DENY:
         raise ExecutionGuardError("execution.decision_not_allow")
     if receipt.effect == Effect.REQUIRE_APPROVAL:

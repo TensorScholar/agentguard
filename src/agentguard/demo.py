@@ -54,6 +54,7 @@ def create_demo(output: Path, force: bool = False) -> None:
         verifier,
         state,
         broker_grant_verifier=broker.verifier,
+        current_policy=policy,
     )
 
     mutated = intent.model_copy(update={"arguments": {**intent.arguments, "amount_minor": 85000}})
@@ -66,6 +67,7 @@ def create_demo(output: Path, force: bool = False) -> None:
             verifier,
             SQLiteState(output / "mutation.sqlite"),
             broker_grant_verifier=broker.verifier,
+            current_policy=policy,
         )
     except ExecutionGuardError as exc:
         mutation_result = str(exc)
@@ -82,6 +84,7 @@ def create_demo(output: Path, force: bool = False) -> None:
             verifier,
             SQLiteState(output / "scope-inflation.sqlite"),
             broker_grant_verifier=broker.verifier,
+            current_policy=policy,
         )
     except ExecutionGuardError as exc:
         excessive_scope_result = str(exc)
@@ -95,6 +98,7 @@ def create_demo(output: Path, force: bool = False) -> None:
             verifier,
             state,
             broker_grant_verifier=broker.verifier,
+            current_policy=policy,
         )
     except ExecutionGuardError as exc:
         replay_result = str(exc)

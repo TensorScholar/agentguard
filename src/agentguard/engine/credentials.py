@@ -71,6 +71,15 @@ def verify_credential_grant(
     now: datetime | None = None,
 ) -> None:
     now = now or datetime.now(UTC)
+    if (
+        now.tzinfo is None
+        or now.utcoffset() is None
+        or grant.issued_at.tzinfo is None
+        or grant.issued_at.utcoffset() is None
+        or grant.expires_at.tzinfo is None
+        or grant.expires_at.utcoffset() is None
+    ):
+        raise CredentialVerificationError("credential.timestamp_invalid")
     if verifier is None:
         raise CredentialVerificationError("credential.grant_verifier_unavailable")
     if grant.mode == "opaque_handle" and grant.credential_handle is None:

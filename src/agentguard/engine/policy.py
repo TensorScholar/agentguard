@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from fnmatch import fnmatchcase
 
 from agentguard.domain import (
@@ -111,7 +112,30 @@ def rule_matches(rule: PolicyRule, intent: ActionIntent) -> bool:
     return True
 
 
-def evaluate_policy(policy: PolicyDocument, intent: ActionIntent) -> PolicyEvaluation:
+def evaluate_policy(
+    policy: PolicyDocument,
+    intent: ActionIntent,
+    *,
+    now: datetime | None = None,
+) -> PolicyEvaluation:
+    now = now or datetime.now(UTC)
+    over_limit = [
+        rule.id
+        for rule in policy.rules
+        if rule.credential is not None
+        and rule.credential.maximum_ttl_seconds > policy.defaults.maximum_credential_ttl_seconds
+    ]
+    if over_limit:
+        raise ValueError("policy.credential_ttl_exceeds_default:" + ",".join(sorted(over_limit)))
+    delegation_reason = _delegation_rejection(intent, now)
+    if delegation_reason is not None:
+        return PolicyEvaluation(
+            effect=Effect.DENY,
+            reason_codes=(delegation_reason,),
+            matched_rules=(),
+            selected_rule=None,
+            policy_digest=digest(policy),
+        )
     matches = tuple(rule for rule in policy.rules if rule_matches(rule, intent))
     if not matches:
         return PolicyEvaluation(
@@ -137,6 +161,19 @@ def evaluate_policy(policy: PolicyDocument, intent: ActionIntent) -> PolicyEvalu
         effect = Effect.REQUIRE_APPROVAL
         reasons = ("policy.unbounded_high_impact", *reasons)
     return PolicyEvaluation(effect, reasons, matches, selected, digest(policy))
+
+
+def _delegation_rejection(intent: ActionIntent, now: datetime) -> str | None:
+    delegation = intent.delegation
+    if delegation is None:
+        return None
+    if delegation.expires_at.tzinfo is None or delegation.expires_at.utcoffset() is None:
+        return "delegation.timestamp_invalid"
+    if delegation.expires_at <= now:
+        return "delegation.expired"
+    if not intent.action.capabilities.issubset(delegation.permitted_capabilities):
+        return "delegation.capability_exceeded"
+    return None
 
 
 def _unknown_provenance_requires_override(rule: PolicyRule, intent: ActionIntent) -> bool:

@@ -52,7 +52,13 @@ def test_signed_approval_enables_broker_and_execution(intent, policy, signer, ve
         approval_id=approval.approval_id,
     )
     grant = service.request_credential(intent, receipt, request, broker, approval)
-    service.guard_execution(intent, receipt, grant, approval)
+    service.guard_execution(
+        intent,
+        receipt,
+        grant,
+        approval,
+        current_policy=approval_policy(policy),
+    )
     assert state.verify()[0]
 
 
@@ -60,7 +66,12 @@ def test_missing_approval_is_rejected(intent, policy, signer, verifier, state):
     service = AgentGuardService(signer, verifier, state)
     receipt = service.authorize(intent, approval_policy(policy))
     with pytest.raises(ExecutionGuardError, match="approval_missing"):
-        service.guard_execution(intent, receipt, None)
+        service.guard_execution(
+            intent,
+            receipt,
+            None,
+            current_policy=approval_policy(policy),
+        )
 
 
 def test_approval_argument_substitution_rejected(intent, policy, signer, verifier, state):
