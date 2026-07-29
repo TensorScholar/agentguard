@@ -32,7 +32,8 @@ def create_demo(output: Path, force: bool = False) -> None:
     signer.save_public(output / "public.pem")
     verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
     state = SQLiteState(output / "audit.sqlite")
-    service = AgentGuardService(signer, verifier, state)
+    broker = MockCredentialBroker()
+    service = AgentGuardService(signer, verifier, state, broker.verifier)
     receipt = service.authorize(intent, policy)
     ceiling = receipt.credential_ceiling
     assert ceiling is not None
@@ -45,20 +46,34 @@ def create_demo(output: Path, force: bool = False) -> None:
         requested_ttl_seconds=30,
         tenant_id=ceiling.tenant_id,
     )
-    grant = service.request_credential(intent, receipt, request, MockCredentialBroker())
-    authorize_execution(intent, receipt, grant, verifier, state)
+    grant = service.request_credential(intent, receipt, request, broker)
+    authorize_execution(
+        intent,
+        receipt,
+        grant,
+        verifier,
+        state,
+        broker_grant_verifier=broker.verifier,
+    )
 
     mutated = intent.model_copy(update={"arguments": {**intent.arguments, "amount_minor": 85000}})
     mutation_result = "unexpected_allow"
     try:
         authorize_execution(
-            mutated, receipt, grant, verifier, SQLiteState(output / "mutation.sqlite")
+            mutated,
+            receipt,
+            grant,
+            verifier,
+            SQLiteState(output / "mutation.sqlite"),
+            broker_grant_verifier=broker.verifier,
         )
     except ExecutionGuardError as exc:
         mutation_result = str(exc)
 
     excessive_scope_result = "unexpected_allow"
-    inflated_grant = grant.model_copy(update={"scopes": grant.scopes | {"payments:admin"}})
+    inflated_grant = broker.attest_for_testing(
+        grant.model_copy(update={"scopes": grant.scopes | {"payments:admin"}})
+    )
     try:
         authorize_execution(
             intent,
@@ -66,13 +81,21 @@ def create_demo(output: Path, force: bool = False) -> None:
             inflated_grant,
             verifier,
             SQLiteState(output / "scope-inflation.sqlite"),
+            broker_grant_verifier=broker.verifier,
         )
     except ExecutionGuardError as exc:
         excessive_scope_result = str(exc)
 
     replay_result = "unexpected_allow"
     try:
-        authorize_execution(intent, receipt, grant, verifier, state)
+        authorize_execution(
+            intent,
+            receipt,
+            grant,
+            verifier,
+            state,
+            broker_grant_verifier=broker.verifier,
+        )
     except ExecutionGuardError as exc:
         replay_result = str(exc)
 

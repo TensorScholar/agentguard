@@ -18,6 +18,7 @@ from agentguard.domain import (
 from agentguard.engine.credentials import (
     CredentialVerificationError,
     validate_credential_request,
+    verify_credential_grant,
 )
 from agentguard.engine.execution import authorize_execution
 from agentguard.engine.policy import evaluate_policy
@@ -30,6 +31,7 @@ from agentguard.engine.receipts import (
     verify_intent_binding,
 )
 from agentguard.ports import (
+    BrokerGrantVerifier,
     CredentialBroker,
     SignatureVerifier,
     Signer,
@@ -38,10 +40,17 @@ from agentguard.ports import (
 
 
 class AgentGuardService:
-    def __init__(self, signer: Signer, verifier: SignatureVerifier, state: StateRepository) -> None:
+    def __init__(
+        self,
+        signer: Signer,
+        verifier: SignatureVerifier,
+        state: StateRepository,
+        broker_grant_verifier: BrokerGrantVerifier | None = None,
+    ) -> None:
         self.signer = signer
         self.verifier = verifier
         self.state = state
+        self.broker_grant_verifier = broker_grant_verifier
 
     def _event(self, event_type: AuditEventType, intent: ActionIntent, **kw: Any) -> AuditEvent:
         return AuditEvent(
@@ -86,6 +95,7 @@ class AgentGuardService:
         approver_subject: str,
         reason: str,
         authentication_level: str | None = None,
+        maximum_uses: int = 1,
     ) -> ApprovalReceipt:
         approval = issue_approval_receipt(
             receipt,
@@ -95,7 +105,9 @@ class AgentGuardService:
             approver_subject=approver_subject,
             reason=reason,
             authentication_level=authentication_level,
+            maximum_uses=maximum_uses,
         )
+        self.state.register_approval(approval)
         self.state.append(
             self._event(
                 AuditEventType.APPROVAL_GRANTED,
@@ -129,6 +141,17 @@ class AgentGuardService:
             request,
             approval_verified=approval is not None,
         )
+        ceiling = receipt.credential_ceiling
+        assert ceiling is not None
+        claim_error = self.state.claim_credential_issuance(
+            request_id=request.request_id,
+            decision_id=receipt.decision_id,
+            approval_id=approval.approval_id if approval is not None else None,
+            single_use=ceiling.single_use,
+            claimed_at=datetime.now(UTC),
+        )
+        if claim_error is not None:
+            raise CredentialVerificationError(claim_error)
         self.state.append(
             self._event(
                 AuditEventType.CREDENTIAL_REQUESTED,
@@ -137,7 +160,23 @@ class AgentGuardService:
                 data={"audience": request.audience, "scope_count": len(request.scopes)},
             )
         )
-        grant = broker.issue(receipt, request, approval)
+        try:
+            grant = broker.issue(receipt, request, approval)
+            verify_credential_grant(receipt, grant, self.broker_grant_verifier)
+        except Exception:
+            self.state.finish_credential_issuance(
+                request.request_id,
+                None,
+                succeeded=False,
+                completed_at=datetime.now(UTC),
+            )
+            raise
+        self.state.finish_credential_issuance(
+            request.request_id,
+            grant.issuance_id,
+            succeeded=True,
+            completed_at=datetime.now(UTC),
+        )
         self.state.append(
             self._event(
                 AuditEventType.CREDENTIAL_ISSUED,
@@ -160,7 +199,15 @@ class AgentGuardService:
         grant: CredentialGrant | None,
         approval: ApprovalReceipt | None = None,
     ) -> None:
-        authorize_execution(intent, receipt, grant, self.verifier, self.state, approval=approval)
+        authorize_execution(
+            intent,
+            receipt,
+            grant,
+            self.verifier,
+            self.state,
+            broker_grant_verifier=self.broker_grant_verifier,
+            approval=approval,
+        )
         self.state.append(
             self._event(
                 AuditEventType.RECEIPT_CONSUMED,

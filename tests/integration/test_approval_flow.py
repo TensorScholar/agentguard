@@ -29,7 +29,8 @@ def approval_policy(policy):
 
 
 def test_signed_approval_enables_broker_and_execution(intent, policy, signer, verifier, state):
-    service = AgentGuardService(signer, verifier, state)
+    broker = MockCredentialBroker()
+    service = AgentGuardService(signer, verifier, state, broker.verifier)
     receipt = service.authorize(intent, approval_policy(policy))
     assert receipt.effect == Effect.REQUIRE_APPROVAL
     approval = service.approve(
@@ -50,7 +51,7 @@ def test_signed_approval_enables_broker_and_execution(intent, policy, signer, ve
         tenant_id=ceiling.tenant_id,
         approval_id=approval.approval_id,
     )
-    grant = service.request_credential(intent, receipt, request, MockCredentialBroker(), approval)
+    grant = service.request_credential(intent, receipt, request, broker, approval)
     service.guard_execution(intent, receipt, grant, approval)
     assert state.verify()[0]
 
@@ -81,7 +82,8 @@ def test_tampered_approval_rejected(intent, policy, signer, verifier, state):
 
 
 def test_approval_binding_required_for_credential(intent, policy, signer, verifier, state):
-    service = AgentGuardService(signer, verifier, state)
+    broker = MockCredentialBroker()
+    service = AgentGuardService(signer, verifier, state, broker.verifier)
     receipt = service.authorize(intent, approval_policy(policy))
     approval = service.approve(intent, receipt, approver_subject="security", reason="approved")
     ceiling = receipt.credential_ceiling
@@ -96,4 +98,4 @@ def test_approval_binding_required_for_credential(intent, policy, signer, verifi
         approval_id="wrong",
     )
     with pytest.raises(ValueError, match="approval_binding_mismatch"):
-        service.request_credential(intent, receipt, request, MockCredentialBroker(), approval)
+        service.request_credential(intent, receipt, request, broker, approval)

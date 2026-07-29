@@ -21,10 +21,10 @@ Authorized action == Credentialed action == Executed action
 - Strict versioned `ActionIntent`, policy, receipt, credential, execution, and audit schemas.
 - Policy v2 with default deny, deterministic deny precedence, provenance conditions, tenant binding, and blast-radius budgets.
 - Ed25519-signed, short-lived, request-bound decision receipts.
-- Argument, principal, subject, action, resource, tool-schema, policy and projected-effects digests.
-- Atomic one-use nonce consumption in SQLite.
+- A canonical full-intent digest plus diagnostic field digests for every security-relevant input.
+- Atomic, independent issuance and execution-nonce consumption in SQLite.
 - Provider-neutral credential broker port and a no-secret mock Loadout-style broker.
-- Scope, TTL, audience, tenant and decision binding checks for credential grants.
+- Authenticated broker grants with broker/key identity, opaque-handle digest, and ceiling checks.
 - MCP stdio message processor with fail-closed `tools/call` handling and bounded messages.
 - HTTP transport security helpers for Origin, Host, and mirrored-header/body validation.
 - Hash-chained local audit events and verifiable evidence bundles.
@@ -51,7 +51,7 @@ agentguard evidence-verify .agentguard/demo/evidence
 ```bash
 agentguard authorize   --request examples/scoped-refund/request.json   --policy examples/scoped-refund/policy.yaml   --output decision.json
 
-agentguard broker-demo decision.json --output grant.json
+agentguard broker-demo examples/scoped-refund/request.json decision.json --output grant.json
 
 agentguard verify-execution   --request examples/scoped-refund/request.json   --receipt decision.json   --grant grant.json
 ```

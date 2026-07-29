@@ -5,9 +5,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from agentguard.adapters.broker import MockCredentialBroker
+from agentguard.adapters.crypto import Ed25519Signer
 from agentguard.domain import CredentialRequest
 from agentguard.engine.credentials import (
     CredentialVerificationError,
+    attest_credential_grant,
     validate_credential_request,
     verify_credential_grant,
 )
@@ -30,11 +32,13 @@ def setup(intent, policy, signer):
     return r, q
 
 
-def test_mock_broker_returns_opaque_handle(intent, policy, signer):
+def test_mock_broker_returns_authenticated_opaque_handle(intent, policy, signer):
     r, q = setup(intent, policy, signer)
-    g = MockCredentialBroker().issue(r, q)
+    broker = MockCredentialBroker()
+    g = broker.issue(r, q)
     assert g.mode == "opaque_handle" and g.credential_handle.startswith("opaque://")
     assert g.credential_handle not in repr(g)
+    verify_credential_grant(r, g, broker.verifier)
 
 
 def test_requested_scope_excess_rejected(intent, policy, signer):
@@ -60,42 +64,104 @@ def test_request_audience_mismatch(intent, policy, signer):
 
 def test_grant_scope_inflation_rejected(intent, policy, signer):
     r, q = setup(intent, policy, signer)
-    g = (
-        MockCredentialBroker()
-        .issue(r, q)
-        .model_copy(update={"scopes": frozenset({"refund:create", "admin"})})
+    broker_signer = Ed25519Signer.generate("broker-key")
+    broker = MockCredentialBroker(signer=broker_signer)
+    g = attest_credential_grant(
+        broker.issue(r, q).model_copy(update={"scopes": frozenset({"refund:create", "admin"})}),
+        broker_signer,
     )
     with pytest.raises(CredentialVerificationError, match="scope_exceeds"):
-        verify_credential_grant(r, g)
+        verify_credential_grant(r, g, broker.verifier)
 
 
 def test_grant_ttl_inflation_rejected(intent, policy, signer):
     r, q = setup(intent, policy, signer)
-    g = MockCredentialBroker().issue(r, q)
-    g = g.model_copy(update={"expires_at": g.issued_at + timedelta(seconds=61)})
+    broker_signer = Ed25519Signer.generate("broker-key")
+    broker = MockCredentialBroker(signer=broker_signer)
+    g = broker.issue(r, q)
+    g = attest_credential_grant(
+        g.model_copy(update={"expires_at": g.issued_at + timedelta(seconds=61)}),
+        broker_signer,
+    )
     with pytest.raises(CredentialVerificationError, match="ttl_exceeds"):
-        verify_credential_grant(r, g)
+        verify_credential_grant(r, g, broker.verifier)
 
 
 def test_grant_tenant_mismatch_rejected(intent, policy, signer):
     r, q = setup(intent, policy, signer)
-    g = MockCredentialBroker().issue(r, q).model_copy(update={"tenant_id": "other"})
+    broker_signer = Ed25519Signer.generate("broker-key")
+    broker = MockCredentialBroker(signer=broker_signer)
+    g = attest_credential_grant(
+        broker.issue(r, q).model_copy(update={"tenant_id": "other"}),
+        broker_signer,
+    )
     with pytest.raises(CredentialVerificationError, match="tenant_mismatch"):
-        verify_credential_grant(r, g)
+        verify_credential_grant(r, g, broker.verifier)
 
 
 def test_future_grant_rejected(intent, policy, signer):
     r, q = setup(intent, policy, signer)
     now = datetime.now(UTC)
-    g = (
-        MockCredentialBroker()
-        .issue(r, q)
-        .model_copy(
+    broker_signer = Ed25519Signer.generate("broker-key")
+    broker = MockCredentialBroker(signer=broker_signer)
+    g = attest_credential_grant(
+        broker.issue(r, q).model_copy(
             update={
                 "issued_at": now + timedelta(seconds=10),
                 "expires_at": now + timedelta(seconds=20),
             }
-        )
+        ),
+        broker_signer,
     )
     with pytest.raises(CredentialVerificationError, match="not_yet_valid"):
-        verify_credential_grant(r, g, now=now)
+        verify_credential_grant(r, g, broker.verifier, now=now)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda grant: grant.model_copy(update={"attestation": ""}),
+        lambda grant: grant.model_copy(update={"attestation": "malformed!"}),
+        lambda grant: grant.model_copy(update={"broker_key_id": "unknown-key"}),
+        lambda grant: grant.model_copy(update={"broker": "unknown-broker"}),
+        lambda grant: grant.model_copy(update={"decision_id": "forged-decision"}),
+        lambda grant: grant.model_copy(update={"trace_id": "forged-trace"}),
+        lambda grant: grant.model_copy(update={"issuance_id": "forged-issuance"}),
+        lambda grant: grant.model_copy(update={"audience": "forged-audience"}),
+        lambda grant: grant.model_copy(update={"scopes": frozenset({"admin"})}),
+        lambda grant: grant.model_copy(update={"tenant_id": "forged-tenant"}),
+        lambda grant: grant.model_copy(
+            update={"issued_at": grant.issued_at - timedelta(seconds=1)}
+        ),
+        lambda grant: grant.model_copy(
+            update={"expires_at": grant.expires_at + timedelta(seconds=1)}
+        ),
+        lambda grant: grant.model_copy(update={"mode": "brokered_execution"}),
+        lambda grant: grant.model_copy(update={"credential_handle": "opaque://tampered"}),
+        lambda grant: grant.model_copy(update={"credential_handle_digest": "forged-digest"}),
+    ],
+)
+def test_unsigned_unknown_and_tampered_grants_fail_closed(intent, policy, signer, mutation):
+    r, q = setup(intent, policy, signer)
+    broker = MockCredentialBroker()
+    grant = mutation(broker.issue(r, q))
+
+    with pytest.raises(CredentialVerificationError):
+        verify_credential_grant(r, grant, broker.verifier)
+
+
+def test_grant_from_unknown_broker_fails_closed(intent, policy, signer):
+    r, q = setup(intent, policy, signer)
+    trusted = MockCredentialBroker(name="trusted")
+    unknown = MockCredentialBroker(name="unknown")
+
+    with pytest.raises(CredentialVerificationError, match="attestation_invalid"):
+        verify_credential_grant(r, unknown.issue(r, q), trusted.verifier)
+
+
+def test_grant_requires_explicit_verifier(intent, policy, signer):
+    r, q = setup(intent, policy, signer)
+    grant = MockCredentialBroker().issue(r, q)
+
+    with pytest.raises(CredentialVerificationError, match="verifier_unavailable"):
+        verify_credential_grant(r, grant, None)

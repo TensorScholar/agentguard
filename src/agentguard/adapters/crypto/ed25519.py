@@ -77,6 +77,42 @@ class Ed25519Verifier:
         return cls({key_id: key})
 
 
+class Ed25519BrokerGrantVerifier:
+    """Explicit trust store for provider-neutral broker grant attestations."""
+
+    def __init__(self, keys: dict[tuple[str, str], Ed25519PublicKey]) -> None:
+        self._keys = keys
+
+    def verify(
+        self,
+        broker_id: str,
+        key_id: str,
+        payload: bytes,
+        signature: bytes,
+    ) -> bool:
+        key = self._keys.get((broker_id, key_id))
+        if key is None:
+            return False
+        try:
+            key.verify(signature, payload)
+            return True
+        except InvalidSignature:
+            return False
+
+    @classmethod
+    def from_public_file(
+        cls,
+        path: Path,
+        *,
+        broker_id: str,
+        key_id: str = "mock-broker-ed25519",
+    ) -> Ed25519BrokerGrantVerifier:
+        key = serialization.load_pem_public_key(path.read_bytes())
+        if not isinstance(key, Ed25519PublicKey):
+            raise TypeError("not an Ed25519 public key")
+        return cls({(broker_id, key_id): key})
+
+
 def encode_signature(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 

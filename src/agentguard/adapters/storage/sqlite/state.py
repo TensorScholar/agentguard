@@ -5,7 +5,7 @@ from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
 
-from agentguard.domain import AuditEvent
+from agentguard.domain import ApprovalReceipt, AuditEvent
 from agentguard.engine.canonical import canonical_bytes
 
 GENESIS = "0" * 64
@@ -24,10 +24,23 @@ CREATE TABLE IF NOT EXISTS approvals(
  approval_id TEXT PRIMARY KEY, decision_id TEXT NOT NULL, receipt_json TEXT NOT NULL,
  used_count INTEGER NOT NULL DEFAULT 0, maximum_uses INTEGER NOT NULL, expires_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS credential_issuance_claims(
+ request_id TEXT PRIMARY KEY,
+ decision_id TEXT NOT NULL,
+ approval_id TEXT,
+ single_use INTEGER NOT NULL,
+ status TEXT NOT NULL,
+ issuance_id TEXT,
+ claimed_at TEXT NOT NULL,
+ completed_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_single_use_credential_decision
+ON credential_issuance_claims(decision_id) WHERE single_use = 1;
 CREATE TABLE IF NOT EXISTS agentguard_schema(
  component TEXT PRIMARY KEY, version INTEGER NOT NULL
 );
-INSERT OR IGNORE INTO agentguard_schema(component, version) VALUES('action_integrity', 2);
+INSERT OR IGNORE INTO agentguard_schema(component, version) VALUES('action_integrity', 3);
+UPDATE agentguard_schema SET version = 3 WHERE component = 'action_integrity';
 """
 
 V2_AUDIT_COLUMNS = {
@@ -76,6 +89,109 @@ class SQLiteState:
             except sqlite3.IntegrityError:
                 c.execute("ROLLBACK")
                 return False
+
+    def register_approval(self, approval: ApprovalReceipt) -> None:
+        with self._connect() as c:
+            c.execute(
+                """
+                INSERT INTO approvals(
+                    approval_id,decision_id,receipt_json,used_count,maximum_uses,expires_at
+                ) VALUES(?,?,?,?,?,?)
+                """,
+                (
+                    approval.approval_id,
+                    approval.decision_id,
+                    approval.model_dump_json(),
+                    0,
+                    approval.maximum_uses,
+                    approval.expires_at.isoformat(),
+                ),
+            )
+
+    def claim_credential_issuance(
+        self,
+        *,
+        request_id: str,
+        decision_id: str,
+        approval_id: str | None,
+        single_use: bool,
+        claimed_at: datetime,
+    ) -> str | None:
+        with self._connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                c.execute(
+                    """
+                    INSERT INTO credential_issuance_claims(
+                        request_id,decision_id,approval_id,single_use,status,claimed_at
+                    ) VALUES(?,?,?,?,?,?)
+                    """,
+                    (
+                        request_id,
+                        decision_id,
+                        approval_id,
+                        int(single_use),
+                        "pending",
+                        claimed_at.isoformat(),
+                    ),
+                )
+            except sqlite3.IntegrityError:
+                c.execute("ROLLBACK")
+                return "credential.issuance_already_consumed"
+            if approval_id is not None:
+                row = c.execute(
+                    """
+                    SELECT decision_id,used_count,maximum_uses,expires_at
+                    FROM approvals WHERE approval_id = ?
+                    """,
+                    (approval_id,),
+                ).fetchone()
+                if row is None or str(row[0]) != decision_id:
+                    c.execute("ROLLBACK")
+                    return "credential.approval_not_registered"
+                if datetime.fromisoformat(str(row[3])) <= claimed_at:
+                    c.execute("ROLLBACK")
+                    return "credential.approval_expired"
+                if int(row[1]) >= int(row[2]):
+                    c.execute("ROLLBACK")
+                    return "credential.approval_exhausted"
+                updated = c.execute(
+                    """
+                    UPDATE approvals SET used_count = used_count + 1
+                    WHERE approval_id = ? AND used_count < maximum_uses
+                    """,
+                    (approval_id,),
+                )
+                if updated.rowcount != 1:
+                    c.execute("ROLLBACK")
+                    return "credential.approval_exhausted"
+            c.execute("COMMIT")
+            return None
+
+    def finish_credential_issuance(
+        self,
+        request_id: str,
+        issuance_id: str | None,
+        *,
+        succeeded: bool,
+        completed_at: datetime,
+    ) -> None:
+        with self._connect() as c:
+            result = c.execute(
+                """
+                UPDATE credential_issuance_claims
+                SET status = ?, issuance_id = ?, completed_at = ?
+                WHERE request_id = ? AND status = 'pending'
+                """,
+                (
+                    "succeeded" if succeeded else "failed",
+                    issuance_id,
+                    completed_at.isoformat(),
+                    request_id,
+                ),
+            )
+            if result.rowcount != 1:
+                raise RuntimeError("credential.issuance_claim_not_pending")
 
     def append(self, event: AuditEvent) -> AuditEvent:
         with self._connect() as c:

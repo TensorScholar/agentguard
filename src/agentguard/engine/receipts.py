@@ -132,6 +132,7 @@ def issue_approval_receipt(
     now: datetime | None = None,
     ttl_seconds: int = 300,
     approved_budget: ExecutionBudget | None = None,
+    maximum_uses: int = 1,
 ) -> ApprovalReceipt:
     verify_decision_receipt(decision_receipt, verifier, now=now)
     if decision_receipt.effect != Effect.REQUIRE_APPROVAL:
@@ -149,7 +150,7 @@ def issue_approval_receipt(
         approved_arguments_digest=decision_receipt.arguments_digest,
         approved_budget=approved_budget or decision_receipt.execution_budget,
         reason=reason,
-        maximum_uses=1,
+        maximum_uses=maximum_uses,
         issued_at=now,
         expires_at=now + timedelta(seconds=ttl_seconds),
         key_id=signer.key_id,
@@ -185,8 +186,6 @@ def verify_approval_receipt(
         raise ReceiptVerificationError("approval.decision_binding_mismatch")
     if approval.expires_at < now:
         raise ReceiptVerificationError("approval.expired")
-    if approval.maximum_uses != 1:
-        raise ReceiptVerificationError("approval.multi_use_not_supported")
     if approval.approved_action_digest != digest(intent.action):
         raise ReceiptVerificationError("approval.action_digest_mismatch")
     if approval.approved_resource_digest != (digest(intent.resource) if intent.resource else None):

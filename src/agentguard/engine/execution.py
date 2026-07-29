@@ -17,7 +17,7 @@ from agentguard.engine.receipts import (
     verify_decision_receipt,
     verify_intent_binding,
 )
-from agentguard.ports import NonceRepository, SignatureVerifier
+from agentguard.ports import BrokerGrantVerifier, NonceRepository, SignatureVerifier
 
 
 class ExecutionGuardError(ValueError):
@@ -50,6 +50,7 @@ def authorize_execution(
     verifier: SignatureVerifier,
     nonce_repository: NonceRepository,
     *,
+    broker_grant_verifier: BrokerGrantVerifier | None = None,
     approval: ApprovalReceipt | None = None,
     now: datetime | None = None,
 ) -> None:
@@ -73,7 +74,7 @@ def authorize_execution(
         if grant is None:
             raise ExecutionGuardError("execution.credential_missing")
         try:
-            verify_credential_grant(receipt, grant, now=now)
+            verify_credential_grant(receipt, grant, broker_grant_verifier, now=now)
         except CredentialVerificationError as exc:
             raise ExecutionGuardError(str(exc)) from exc
     if not nonce_repository.consume(receipt.nonce, receipt.decision_id, now):

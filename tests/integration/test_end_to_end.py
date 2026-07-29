@@ -9,7 +9,8 @@ from agentguard.engine.execution import ExecutionGuardError, authorize_execution
 
 
 def test_authorize_broker_execute(intent, policy, signer, verifier, state):
-    service = AgentGuardService(signer, verifier, state)
+    broker = MockCredentialBroker()
+    service = AgentGuardService(signer, verifier, state, broker.verifier)
     receipt = service.authorize(intent, policy)
     c = receipt.credential_ceiling
     request = CredentialRequest(
@@ -21,7 +22,7 @@ def test_authorize_broker_execute(intent, policy, signer, verifier, state):
         requested_ttl_seconds=30,
         tenant_id=c.tenant_id,
     )
-    grant = service.request_credential(intent, receipt, request, MockCredentialBroker())
+    grant = service.request_credential(intent, receipt, request, broker)
     service.guard_execution(intent, receipt, grant)
     assert state.verify()[0]
 
@@ -39,10 +40,25 @@ def test_replay_is_blocked(intent, policy, signer, verifier, state):
         requested_ttl_seconds=30,
         tenant_id=c.tenant_id,
     )
-    grant = MockCredentialBroker().issue(receipt, request)
-    authorize_execution(intent, receipt, grant, verifier, state)
+    broker = MockCredentialBroker()
+    grant = broker.issue(receipt, request)
+    authorize_execution(
+        intent,
+        receipt,
+        grant,
+        verifier,
+        state,
+        broker_grant_verifier=broker.verifier,
+    )
     with pytest.raises(ExecutionGuardError, match="replayed"):
-        authorize_execution(intent, receipt, grant, verifier, state)
+        authorize_execution(
+            intent,
+            receipt,
+            grant,
+            verifier,
+            state,
+            broker_grant_verifier=broker.verifier,
+        )
 
 
 def test_argument_mutation_is_blocked(intent, policy, signer, verifier, state):
@@ -58,7 +74,15 @@ def test_argument_mutation_is_blocked(intent, policy, signer, verifier, state):
         requested_ttl_seconds=30,
         tenant_id=c.tenant_id,
     )
-    grant = MockCredentialBroker().issue(receipt, request)
+    broker = MockCredentialBroker()
+    grant = broker.issue(receipt, request)
     mutated = intent.model_copy(update={"arguments": {**intent.arguments, "order_id": "other"}})
     with pytest.raises(ExecutionGuardError, match="arguments_digest_mismatch"):
-        authorize_execution(mutated, receipt, grant, verifier, state)
+        authorize_execution(
+            mutated,
+            receipt,
+            grant,
+            verifier,
+            state,
+            broker_grant_verifier=broker.verifier,
+        )

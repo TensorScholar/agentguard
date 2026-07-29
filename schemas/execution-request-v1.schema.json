@@ -329,12 +329,20 @@
     "CredentialGrant": {
       "additionalProperties": false,
       "properties": {
+        "attestation": {
+          "title": "Attestation",
+          "type": "string"
+        },
         "audience": {
           "title": "Audience",
           "type": "string"
         },
         "broker": {
           "title": "Broker",
+          "type": "string"
+        },
+        "broker_key_id": {
+          "title": "Broker Key Id",
           "type": "string"
         },
         "credential_handle": {
@@ -348,6 +356,10 @@
           ],
           "default": null,
           "title": "Credential Handle"
+        },
+        "credential_handle_digest": {
+          "title": "Credential Handle Digest",
+          "type": "string"
         },
         "decision_id": {
           "title": "Decision Id",
@@ -416,11 +428,14 @@
         "decision_id",
         "trace_id",
         "mode",
+        "credential_handle_digest",
         "audience",
         "scopes",
         "issued_at",
         "expires_at",
-        "broker"
+        "broker",
+        "broker_key_id",
+        "attestation"
       ],
       "title": "CredentialGrant",
       "type": "object"

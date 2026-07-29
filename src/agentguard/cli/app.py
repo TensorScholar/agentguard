@@ -10,7 +10,11 @@ from rich.table import Table
 
 from agentguard import __version__
 from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
+from agentguard.adapters.crypto import (
+    Ed25519BrokerGrantVerifier,
+    Ed25519Signer,
+    Ed25519Verifier,
+)
 from agentguard.adapters.evidence import build_bundle, verify_bundle
 from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService
@@ -58,6 +62,9 @@ def init(output: Path = Path(".agentguard"), force: bool = False) -> None:
     signer = Ed25519Signer.generate()
     signer.save_private(output / "decision-private.pem")
     signer.save_public(output / "decision-public.pem")
+    broker_signer = Ed25519Signer.generate("mock-broker-ed25519")
+    broker_signer.save_private(output / "broker-private.pem")
+    broker_signer.save_public(output / "broker-public.pem")
     console.print(f"Initialized AgentGuard workspace at {output}")
 
 
@@ -126,10 +133,17 @@ def approve(
 
 @app.command("broker-demo")
 def broker_demo(
-    receipt: Path, approval: Path | None = None, output: Path = Path("credential-grant.json")
+    request: Path,
+    receipt: Path,
+    approval: Path | None = None,
+    decision_key: Path = Path(".agentguard/decision-private.pem"),
+    broker_key: Path = Path(".agentguard/broker-private.pem"),
+    ledger: Path = Path(".agentguard/audit.sqlite"),
+    output: Path = Path("credential-grant.json"),
 ) -> None:
     from agentguard.domain import DecisionReceipt
 
+    intent = load_json_model(request, ActionIntent)
     r = load_json_model(receipt, DecisionReceipt)
     a = load_json_model(approval, ApprovalReceipt) if approval else None
     if r.credential_ceiling is None:
@@ -144,7 +158,20 @@ def broker_demo(
         tenant_id=r.credential_ceiling.tenant_id,
         approval_id=a.approval_id if a else None,
     )
-    grant = MockCredentialBroker().issue(r, req, a)
+    decision_signer = Ed25519Signer.load_private(decision_key)
+    decision_verifier = Ed25519Verifier({decision_signer.key_id: decision_signer.public_key()})
+    broker_signer = Ed25519Signer.load_private(
+        broker_key,
+        key_id="mock-broker-ed25519",
+    )
+    broker = MockCredentialBroker(signer=broker_signer)
+    service = AgentGuardService(
+        decision_signer,
+        decision_verifier,
+        SQLiteState(ledger),
+        broker.verifier,
+    )
+    grant = service.request_credential(intent, r, req, broker, a)
     write_json(output, grant)
     console.print(f"Issued opaque development grant {grant.issuance_id}")
 
@@ -156,6 +183,8 @@ def verify_execution(
     grant: Path | None = None,
     approval: Path | None = None,
     public_key: Path = Path(".agentguard/decision-public.pem"),
+    broker_public_key: Path = Path(".agentguard/broker-public.pem"),
+    broker: str = "mock-loadout",
     ledger: Path = Path(".agentguard/audit.sqlite"),
 ) -> None:
     from agentguard.domain import CredentialGrant, DecisionReceipt
@@ -165,8 +194,24 @@ def verify_execution(
     g = load_json_model(grant, CredentialGrant) if grant else None
     a = load_json_model(approval, ApprovalReceipt) if approval else None
     verifier = Ed25519Verifier.from_public_file(public_key)
+    broker_verifier = (
+        Ed25519BrokerGrantVerifier.from_public_file(
+            broker_public_key,
+            broker_id=broker,
+        )
+        if g is not None
+        else None
+    )
     state = SQLiteState(ledger)
-    authorize_execution(intent, r, g, verifier, state, approval=a)
+    authorize_execution(
+        intent,
+        r,
+        g,
+        verifier,
+        state,
+        broker_grant_verifier=broker_verifier,
+        approval=a,
+    )
     console.print("Execution authorized and receipt atomically consumed")
 
 

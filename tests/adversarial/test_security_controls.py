@@ -21,34 +21,35 @@ def grant_for(intent, policy, signer):
         requested_ttl_seconds=30,
         tenant_id=c.tenant_id,
     )
-    return r, MockCredentialBroker().issue(r, q)
+    broker = MockCredentialBroker()
+    return r, broker.issue(r, q), broker.verifier
 
 
 def test_cross_tenant_reuse(intent, policy, signer, verifier, state):
-    r, g = grant_for(intent, policy, signer)
+    r, g, grant_verifier = grant_for(intent, policy, signer)
     other = intent.model_copy(
         update={"principal": intent.principal.model_copy(update={"tenant_id": "other"})}
     )
     with pytest.raises(ExecutionGuardError, match="principal_digest_mismatch"):
-        authorize_execution(other, r, g, verifier, state)
+        authorize_execution(other, r, g, verifier, state, broker_grant_verifier=grant_verifier)
 
 
 def test_resource_substitution(intent, policy, signer, verifier, state):
-    r, g = grant_for(intent, policy, signer)
+    r, g, grant_verifier = grant_for(intent, policy, signer)
     other = intent.model_copy(
         update={"resource": intent.resource.model_copy(update={"id": "order-999"})}
     )
     with pytest.raises(ExecutionGuardError, match="resource_digest_mismatch"):
-        authorize_execution(other, r, g, verifier, state)
+        authorize_execution(other, r, g, verifier, state, broker_grant_verifier=grant_verifier)
 
 
 def test_action_substitution(intent, policy, signer, verifier, state):
-    r, g = grant_for(intent, policy, signer)
+    r, g, grant_verifier = grant_for(intent, policy, signer)
     other = intent.model_copy(
         update={"action": intent.action.model_copy(update={"tool": "refund.delete"})}
     )
     with pytest.raises(ExecutionGuardError, match="action_digest_mismatch"):
-        authorize_execution(other, r, g, verifier, state)
+        authorize_execution(other, r, g, verifier, state, broker_grant_verifier=grant_verifier)
 
 
 def test_budget_amount_excess(intent, policy, signer, verifier, state):
@@ -61,9 +62,9 @@ def test_budget_amount_excess(intent, policy, signer, verifier, state):
         }
     )
     narrowed = policy.model_copy(update={"rules": policy.rules[:1] + (selected,)})
-    r, g = grant_for(intent, narrowed, signer)
+    r, g, grant_verifier = grant_for(intent, narrowed, signer)
     with pytest.raises(ExecutionGuardError, match="budget.financial_amount_exceeded"):
-        authorize_execution(intent, r, g, verifier, state)
+        authorize_execution(intent, r, g, verifier, state, broker_grant_verifier=grant_verifier)
 
 
 def test_untrusted_high_impact_never_auto_allows(intent, policy):

@@ -196,12 +196,22 @@ class CredentialGrant(StrictModel):
     trace_id: str
     mode: Literal["opaque_handle", "brokered_execution"]
     credential_handle: str | None = Field(default=None, repr=False)
+    credential_handle_digest: str
     audience: str
     scopes: frozenset[str]
     tenant_id: str | None = None
     issued_at: datetime
     expires_at: datetime
     broker: str
+    broker_key_id: str
+    attestation: str
+
+    @field_validator("issued_at", "expires_at")
+    @classmethod
+    def aware_security_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("credential grant timestamps must be timezone-aware")
+        return value
 
     @model_validator(mode="after")
     def validate_times(self) -> CredentialGrant:
