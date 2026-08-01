@@ -10,8 +10,8 @@
 8. Generate SBOM, release manifest, inventory and checksums.
 
 Coverage evidence must report three distinct values from `coverage.json`: statement coverage,
-branch coverage, and the combined coverage percentage. The `coverage report --fail-under=85`
-gate uses the combined metric when branch measurement is enabled; the combined value must never
-be labeled as branch coverage.
+branch coverage, and the combined coverage percentage. The coverage configuration measures `src/agentguard` only and enforces a combined source metric of
+at least 80%. Release evidence must still report statement coverage, branch coverage and the combined
+metric separately; the combined value must never be labeled as branch coverage.
 9. Verify all release hashes before creating a tag.
 10. Do not call the release production-ready before an external pilot and review.

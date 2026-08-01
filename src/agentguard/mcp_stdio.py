@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import signal
@@ -25,6 +26,19 @@ POLICY_DENIED = -32001
 APPROVAL_REQUIRED = -32002
 SERVER_PROTOCOL_ERROR = -32003
 DEFAULT_INVENTORY_TTL_SECONDS = 300.0
+
+
+def derive_server_id(server_command: list[str]) -> str:
+    if not server_command:
+        raise ValueError("server command is required")
+    return hashlib.sha256("\0".join(server_command).encode("utf-8")).hexdigest()[:16]
+
+
+def mcp_source_id(server_command: list[str], server_id: str | None = None) -> str:
+    resolved = (server_id or derive_server_id(server_command)).strip()
+    if not resolved or any(character.isspace() for character in resolved):
+        raise ValueError("server_id must be a non-empty token without whitespace")
+    return f"mcp_stdio:{resolved}"
 
 
 @dataclass(frozen=True)
@@ -59,7 +73,7 @@ class MCPMessageProcessor:
         ledger: AuditLedger | None = None,
         agent_id: str = "mcp-client",
         source: str = "mcp_stdio",
-        inventory_wait_timeout_seconds: float = 0.25,
+        inventory_wait_timeout_seconds: float = 2.0,
         inventory_ttl_seconds: float = DEFAULT_INVENTORY_TTL_SECONDS,
     ) -> None:
         if inventory_ttl_seconds < 0:
@@ -72,6 +86,7 @@ class MCPMessageProcessor:
         self.inventory_ttl_seconds = inventory_ttl_seconds
         self._pending_calls: dict[str, ToolCall] = {}
         self._pending_tool_lists: set[str] = set()
+        self._pending_passthrough: set[str] = set()
         self._condition = threading.Condition()
 
     def handle_client_line(self, raw_line: bytes) -> ProxyAction:
@@ -81,15 +96,33 @@ class MCPMessageProcessor:
         if not isinstance(message, dict):
             return ProxyAction(to_client=_jsonrpc_error(None, INVALID_REQUEST, "Invalid request"))
 
-        if message.get("method") == "tools/list" and message.get("id") is not None:
-            with self._condition:
-                self._pending_tool_lists.add(_request_key(message.get("id")))
-            return ProxyAction(to_server=_ensure_newline(raw_line))
-
-        if message.get("method") != "tools/call":
-            return ProxyAction(to_server=_ensure_newline(raw_line))
-
+        method = message.get("method")
         request_id = message.get("id")
+        if method == "tools/list" and request_id is not None:
+            key = _request_key(request_id)
+            if not self._reserve_request_id(key, request_type="tools/list"):
+                return ProxyAction(
+                    to_client=_jsonrpc_error(
+                        request_id,
+                        INVALID_REQUEST,
+                        "duplicate outstanding JSON-RPC request id",
+                    )
+                )
+            return ProxyAction(to_server=_ensure_newline(raw_line))
+
+        if method != "tools/call":
+            if isinstance(method, str) and request_id is not None:
+                key = _request_key(request_id)
+                if not self._reserve_request_id(key, request_type="passthrough"):
+                    return ProxyAction(
+                        to_client=_jsonrpc_error(
+                            request_id,
+                            INVALID_REQUEST,
+                            "duplicate outstanding JSON-RPC request id",
+                        )
+                    )
+            return ProxyAction(to_server=_ensure_newline(raw_line))
+
         if request_id is None:
             return ProxyAction(
                 to_client=_jsonrpc_error(
@@ -129,12 +162,22 @@ class MCPMessageProcessor:
                 )
             )
 
+        request_key = _request_key(request_id)
+        if self._request_id_in_use(request_key):
+            return ProxyAction(
+                to_client=_jsonrpc_error(
+                    request_id,
+                    INVALID_REQUEST,
+                    "duplicate outstanding JSON-RPC request id",
+                )
+            )
+
         call = ToolCall(
             tool_name=tool_name,
             arguments=arguments,
             agent_id=self.agent_id,
             source=self.source,
-            call_id=_request_key(request_id),
+            call_id=request_key,
         )
         self._wait_for_pending_tool_inventory()
         known_tool = self.ledger.get_tool_inventory(self.source, tool_name) if self.ledger else None
@@ -161,7 +204,8 @@ class MCPMessageProcessor:
                 )
             )
 
-        self._pending_calls[_request_key(request_id)] = call
+        with self._condition:
+            self._pending_calls[request_key] = call
         return ProxyAction(to_server=_ensure_newline(raw_line))
 
     def handle_server_line(self, raw_line: bytes) -> ProxyAction:
@@ -177,13 +221,18 @@ class MCPMessageProcessor:
         if not isinstance(message, dict):
             return ProxyAction(to_client=_ensure_newline(raw_line))
 
+        method = message.get("method")
         request_id = message.get("id")
         redacted = redact_value(message) if self.policy.redact_secret_outputs else message
-        if request_id is None:
+        if method in {"notifications/tools/list_changed", "tools/list_changed"}:
+            self._invalidate_tool_inventory()
+            self._notify_inventory_updated()
+            return ProxyAction(to_client=_encode_json_rpc(redacted))
+        if request_id is None or isinstance(method, str):
             return ProxyAction(to_client=_encode_json_rpc(redacted))
 
-        call = self._pending_calls.pop(_request_key(request_id), None)
-        if call is None and self._is_pending_tool_list(request_id):
+        request_type, call = self._complete_request_id(_request_key(request_id))
+        if request_type == "tools/list":
             self._record_tool_inventory(message)
             self._notify_inventory_updated()
             return ProxyAction(to_client=_encode_json_rpc(redacted))
@@ -210,9 +259,11 @@ class MCPMessageProcessor:
             return
         result = message.get("result")
         if not isinstance(result, dict):
+            self._invalidate_tool_inventory()
             return
         tools = result.get("tools")
         if not isinstance(tools, list):
+            self._invalidate_tool_inventory()
             return
         inventory: list[ToolInventoryItem] = []
         for tool in tools:
@@ -242,14 +293,32 @@ class MCPMessageProcessor:
             )
         self.ledger.replace_tool_inventory(self.source, inventory)
 
+    def _invalidate_tool_inventory(self) -> None:
+        if self.ledger is not None:
+            self.ledger.replace_tool_inventory(self.source, [])
+
     def _evaluate_call(
         self,
         call: ToolCall,
         known_tool: ToolInventoryItem | None,
     ) -> PolicyDecision:
-        if known_tool is None or not _inventory_expired(known_tool, self.inventory_ttl_seconds):
-            known_capabilities = known_tool.capabilities if known_tool is not None else None
-            return self.policy.evaluate(call, known_capabilities=known_capabilities)
+        if known_tool is None:
+            fallback_decision = self.policy.evaluate(call)
+            if fallback_decision.decision != Decision.ALLOW:
+                return fallback_decision
+            return PolicyDecision(
+                decision=Decision.REQUIRE_APPROVAL,
+                reason=(
+                    "MCP tool inventory is unavailable; refresh tools/list before calling "
+                    f"'{call.tool_name}'"
+                ),
+                rule_id="inventory.unavailable",
+                capabilities=fallback_decision.capabilities,
+                redacted_arguments=redact_mapping(call.arguments),
+            )
+
+        if not _inventory_expired(known_tool, self.inventory_ttl_seconds):
+            return self.policy.evaluate(call, known_capabilities=known_tool.capabilities)
 
         fallback_decision = self.policy.evaluate(call)
         if fallback_decision.decision != Decision.ALLOW:
@@ -280,13 +349,42 @@ class MCPMessageProcessor:
             redacted_arguments=redact_mapping(call.arguments),
         )
 
-    def _is_pending_tool_list(self, request_id: object) -> bool:
+    def _request_id_in_use(self, key: str) -> bool:
         with self._condition:
-            key = _request_key(request_id)
-            if key not in self._pending_tool_lists:
+            return (
+                key in self._pending_calls
+                or key in self._pending_tool_lists
+                or key in self._pending_passthrough
+            )
+
+    def _reserve_request_id(self, key: str, *, request_type: str) -> bool:
+        with self._condition:
+            if (
+                key in self._pending_calls
+                or key in self._pending_tool_lists
+                or key in self._pending_passthrough
+            ):
                 return False
-            self._pending_tool_lists.remove(key)
+            if request_type == "tools/list":
+                self._pending_tool_lists.add(key)
+            elif request_type == "passthrough":
+                self._pending_passthrough.add(key)
+            else:
+                raise ValueError(f"unsupported request type: {request_type}")
             return True
+
+    def _complete_request_id(self, key: str) -> tuple[str | None, ToolCall | None]:
+        with self._condition:
+            call = self._pending_calls.pop(key, None)
+            if call is not None:
+                return "tools/call", call
+            if key in self._pending_tool_lists:
+                self._pending_tool_lists.remove(key)
+                return "tools/list", None
+            if key in self._pending_passthrough:
+                self._pending_passthrough.remove(key)
+                return "passthrough", None
+            return None, None
 
     def _notify_inventory_updated(self) -> None:
         with self._condition:
@@ -295,9 +393,13 @@ class MCPMessageProcessor:
     def _wait_for_pending_tool_inventory(self) -> None:
         if self.inventory_wait_timeout_seconds <= 0:
             return
+        deadline = time.monotonic() + self.inventory_wait_timeout_seconds
         with self._condition:
-            if self._pending_tool_lists:
-                self._condition.wait(timeout=self.inventory_wait_timeout_seconds)
+            while self._pending_tool_lists:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return
+                self._condition.wait(timeout=remaining)
 
 
 class MCPStdioProxy:
@@ -310,6 +412,7 @@ class MCPStdioProxy:
         max_message_bytes: int = 1_000_000,
         shutdown_timeout_seconds: float = 2.0,
         inventory_ttl_seconds: float = DEFAULT_INVENTORY_TTL_SECONDS,
+        server_id: str | None = None,
     ) -> None:
         if not server_command:
             raise ValueError("server command is required")
@@ -320,10 +423,13 @@ class MCPStdioProxy:
         if inventory_ttl_seconds < 0:
             raise ValueError("inventory_ttl_seconds cannot be negative")
         self.server_command = server_command
+        source = mcp_source_id(server_command, server_id)
+        self.server_id = source.removeprefix("mcp_stdio:")
         self.processor = MCPMessageProcessor(
             policy=policy,
             ledger=ledger,
             agent_id=agent_id,
+            source=source,
             inventory_ttl_seconds=inventory_ttl_seconds,
         )
         self.max_message_bytes = max_message_bytes
@@ -353,17 +459,34 @@ class MCPStdioProxy:
         )
         server_thread.start()
         client_thread.start()
-        client_thread.join()
-        drain_state.mark_activity()
-        self._wait_or_stop_server(process, drain_state)
-        server_thread.join(timeout=max(5.0, self.shutdown_timeout_seconds * 4))
+        while (
+            process.poll() is None
+            and client_thread.is_alive()
+            and not drain_state.completed.is_set()
+        ):
+            time.sleep(0.01)
+        forced_shutdown = False
+        if process.poll() is None and not client_thread.is_alive():
+            drain_state.mark_activity()
+            forced_shutdown = self._wait_or_stop_server(process, drain_state)
+        elif process.poll() is None and drain_state.completed.is_set():
+            forced_shutdown = True
+            _terminate_process_group(process)
+            try:
+                process.wait(timeout=self.shutdown_timeout_seconds)
+            except subprocess.TimeoutExpired:
+                _kill_process_group(process)
+                process.wait()
+        server_thread.join(timeout=max(1.0, self.shutdown_timeout_seconds * 2))
+        if forced_shutdown:
+            return 1
         return process.returncode if process.returncode is not None else 1
 
     def _wait_or_stop_server(
         self,
         process: subprocess.Popen[bytes],
         drain_state: _OutputDrainState,
-    ) -> None:
+    ) -> bool:
         hard_deadline = time.monotonic() + max(5.0, self.shutdown_timeout_seconds * 4)
         while process.poll() is None:
             if time.monotonic() >= hard_deadline:
@@ -375,17 +498,18 @@ class MCPStdioProxy:
             time.sleep(0.01)
 
         if process.poll() is not None:
-            return
+            return False
 
         _terminate_process_group(process)
         try:
             process.wait(timeout=self.shutdown_timeout_seconds)
-            return
+            return True
         except subprocess.TimeoutExpired:
             pass
 
         _kill_process_group(process)
         process.wait()
+        return True
 
     def _relay_client_to_server(
         self,
@@ -519,9 +643,7 @@ def _decision_error_data(decision: PolicyDecision) -> dict[str, object]:
 
 
 def _encode_json_rpc(payload: object) -> bytes:
-    return (json.dumps(redact_value(payload), separators=(",", ":"), sort_keys=True) + "\n").encode(
-        "utf-8"
-    )
+    return (json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
 
 
 def _ensure_newline(raw_line: bytes) -> bytes:

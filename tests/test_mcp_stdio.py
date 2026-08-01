@@ -14,8 +14,11 @@ from agentguard.mcp_stdio import (
     APPROVAL_REQUIRED,
     POLICY_DENIED,
     MCPMessageProcessor,
+    MCPStdioProxy,
     _iter_bounded_lines,
     _write_and_flush,
+    derive_server_id,
+    mcp_source_id,
 )
 from agentguard.models import ApprovalGrant, Capability, Decision, RiskLevel, ToolInventoryItem
 from agentguard.policy import Policy
@@ -23,6 +26,17 @@ from agentguard.policy import Policy
 
 def _loads(payload: bytes) -> dict:
     return json.loads(payload.decode("utf-8"))
+
+
+def test_server_identity_is_stable_and_isolates_inventory(tmp_path: Path) -> None:
+    command = ["python", "server.py", "--tenant", "alpha"]
+    expected = derive_server_id(command)
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    proxy = MCPStdioProxy(command, Policy(), ledger)
+
+    assert proxy.server_id == expected
+    assert proxy.processor.source == mcp_source_id(command)
+    assert mcp_source_id(command, "filesystem-prod") == "mcp_stdio:filesystem-prod"
 
 
 def test_tools_list_passes_through() -> None:
@@ -154,6 +168,15 @@ def test_approval_grant_does_not_override_deny(tmp_path: Path) -> None:
 def test_allowed_call_is_correlated_and_response_is_redacted(tmp_path: Path) -> None:
     synthetic_token = b"sk-" + b"abcdefghijklmnopqrstuvwxyz"
     ledger = AuditLedger(tmp_path / "audit.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="read_file",
+                capabilities=(Capability.FILESYSTEM_READ,),
+            )
+        ]
+    )
     processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
     call_line = (
         b'{"jsonrpc":"2.0","id":3,"method":"tools/call",'
@@ -358,7 +381,13 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
     ledger_path = tmp_path / "audit.sqlite"
     fake_server = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
     policy_path.write_text(
-        "denied_capabilities:\n  - credential_access\nrequire_approval_capabilities:\n  - shell_execution\n  - production_mutation",
+        (
+            "denied_capabilities:\n"
+            "  - credential_access\n"
+            "require_approval_capabilities:\n"
+            "  - shell_execution\n"
+            "  - production_mutation"
+        ),
         encoding="utf-8",
     )
     payload = "\n".join(
@@ -438,7 +467,9 @@ def test_mcp_proxy_drains_high_volume_server_output(
     fake_server = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
     burst_count = 600
     payload = (
-        json.dumps(
+        json.dumps({"jsonrpc": "2.0", "id": 20, "method": "tools/list", "params": {}})
+        + "\n"
+        + json.dumps(
             {
                 "jsonrpc": "2.0",
                 "id": 21,
@@ -480,7 +511,7 @@ def test_mcp_proxy_drains_high_volume_server_output(
     final_response = responses[-1]
 
     assert process.returncode == 0, process.stderr.decode("utf-8")
-    assert len(responses) == burst_count + 1
+    assert len(responses) == burst_count + 2
     assert len(progress_messages) == burst_count
     assert progress_messages[0]["params"]["index"] == 0
     assert progress_messages[-1]["params"]["index"] == burst_count - 1
@@ -518,3 +549,121 @@ def test_mcp_proxy_terminates_server_that_ignores_stdin_eof(tmp_path: Path) -> N
 
     assert process.returncode != 0
     assert process.stdout == b""
+
+
+def test_duplicate_outstanding_request_id_is_rejected() -> None:
+    processor = MCPMessageProcessor(policy=Policy())
+    first = processor.handle_client_line(
+        b'{"jsonrpc":"2.0","id":41,"method":"tools/list","params":{}}\n'
+    )
+    duplicate = processor.handle_client_line(
+        b'{"jsonrpc":"2.0","id":41,"method":"resources/list","params":{}}\n'
+    )
+
+    assert first.to_server is not None
+    assert duplicate.to_server is None
+    assert _loads(duplicate.to_client or b"{}")["error"]["code"] == -32600
+
+
+def test_passthrough_request_id_cannot_collide_with_tool_call(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="read_file",
+                capabilities=(Capability.FILESYSTEM_READ,),
+            )
+        ]
+    )
+    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    passthrough = processor.handle_client_line(
+        b'{"jsonrpc":"2.0","id":"same","method":"resources/list","params":{}}\n'
+    )
+    collision = processor.handle_client_line(
+        b'{"jsonrpc":"2.0","id":"same","method":"tools/call",'
+        b'"params":{"name":"read_file","arguments":{"path":"README.md"}}}\n'
+    )
+
+    assert passthrough.to_server is not None
+    assert collision.to_server is None
+    assert _loads(collision.to_client or b"{}")["error"]["code"] == -32600
+
+
+def test_server_initiated_request_does_not_consume_client_request_correlation(
+    tmp_path: Path,
+) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="read_file",
+                capabilities=(Capability.FILESYSTEM_READ,),
+            )
+        ]
+    )
+    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    call = processor.handle_client_line(
+        b'{"jsonrpc":"2.0","id":52,"method":"tools/call",'
+        b'"params":{"name":"read_file","arguments":{"path":"README.md"}}}\n'
+    )
+    server_request = processor.handle_server_line(
+        b'{"jsonrpc":"2.0","id":52,"method":"sampling/createMessage","params":{}}\n'
+    )
+    response = processor.handle_server_line(
+        b'{"jsonrpc":"2.0","id":52,"result":{"content":"ok"}}\n'
+    )
+
+    assert call.to_server is not None
+    assert _loads(server_request.to_client or b"{}")["method"] == "sampling/createMessage"
+    assert _loads(response.to_client or b"{}")["result"]["content"] == "ok"
+    assert ledger.list_events()[0].decision == Decision.ALLOW
+
+
+def test_tools_list_changed_notification_invalidates_cached_inventory(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="read_file",
+                capabilities=(Capability.FILESYSTEM_READ,),
+            )
+        ]
+    )
+    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+
+    notification = processor.handle_server_line(
+        b'{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}\n'
+    )
+    call = processor.handle_client_line(
+        b'{"jsonrpc":"2.0","id":61,"method":"tools/call",'
+        b'"params":{"name":"read_file","arguments":{"path":"README.md"}}}\n'
+    )
+
+    assert notification.to_client is not None
+    assert ledger.get_tool_inventory("mcp_stdio", "read_file") is None
+    assert _loads(call.to_client or b"{}")["error"]["data"]["rule_id"] == "inventory.unavailable"
+
+
+def test_failed_tools_list_refresh_invalidates_cached_inventory(tmp_path: Path) -> None:
+    ledger = AuditLedger(tmp_path / "audit.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="read_file",
+                capabilities=(Capability.FILESYSTEM_READ,),
+            )
+        ]
+    )
+    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    processor.handle_client_line(
+        b'{"jsonrpc":"2.0","id":62,"method":"tools/list","params":{}}\n'
+    )
+    processor.handle_server_line(
+        b'{"jsonrpc":"2.0","id":62,"error":{"code":-32603,"message":"failed"}}\n'
+    )
+
+    assert ledger.get_tool_inventory("mcp_stdio", "read_file") is None

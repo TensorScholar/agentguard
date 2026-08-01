@@ -54,3 +54,28 @@ def test_real_mcp_smoke_pin_matches_release_documentation() -> None:
     assert 'FILESYSTEM_VERSION = "2026.1.14"' in smoke
     assert "@modelcontextprotocol/server-filesystem@2026.1.14" in release
     assert "2025.8.21" not in smoke + release
+
+
+def test_sbom_generator_emits_rc2_cyclonedx(tmp_path: Path) -> None:
+    import json
+    import os
+    import subprocess
+    import sys
+
+    output = tmp_path / "sbom.cdx.json"
+    environment = dict(os.environ, SOURCE_DATE_EPOCH="1700000000")
+    subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "generate_sbom.py"), "--output", str(output)],
+        check=True,
+        cwd=REPO_ROOT,
+        env=environment,
+    )
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["bomFormat"] == "CycloneDX"
+    assert payload["specVersion"] == "1.6"
+    assert payload["metadata"]["component"]["version"] == "0.2.0rc2"
+    assert {component["name"] for component in payload["components"]} >= {
+        "cryptography",
+        "pydantic",
+        "PyYAML",
+    }

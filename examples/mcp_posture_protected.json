@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "finance": {
+      "command": "agentguard",
+      "args": [
+        "mcp-proxy",
+        "--server-id",
+        "finance-prod",
+        "--",
+        "python",
+        "finance_server.py"
+      ]
+    }
+  }
+}

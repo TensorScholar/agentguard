@@ -23,6 +23,21 @@ class ReceiptVerificationError(ValueError):
     pass
 
 
+MAX_DECISION_TTL_SECONDS = 3600
+MAX_CLOCK_SKEW_SECONDS = 300
+
+
+def budget_is_within(candidate: ExecutionBudget, ceiling: ExecutionBudget) -> bool:
+    for field_name in ExecutionBudget.model_fields:
+        candidate_value = getattr(candidate, field_name)
+        ceiling_value = getattr(ceiling, field_name)
+        if ceiling_value is None:
+            continue
+        if candidate_value is None or candidate_value > ceiling_value:
+            return False
+    return True
+
+
 def _is_timezone_aware(value: datetime) -> bool:
     return value.tzinfo is not None and value.utcoffset() is not None
 
@@ -43,6 +58,10 @@ def issue_decision_receipt(
     mode: EnforcementMode = EnforcementMode.ENFORCE,
 ) -> DecisionReceipt:
     now = now or datetime.now(UTC)
+    if ttl_seconds < 1 or ttl_seconds > MAX_DECISION_TTL_SECONDS:
+        raise ReceiptVerificationError("receipt.ttl_invalid")
+    if not _is_timezone_aware(now):
+        raise ReceiptVerificationError("receipt.timestamp_invalid")
     selected = evaluation.selected_rule
     ceiling = (
         selected.credential
@@ -88,6 +107,8 @@ def verify_decision_receipt(
     clock_skew_seconds: int = 0,
 ) -> None:
     now = now or datetime.now(UTC)
+    if clock_skew_seconds < 0 or clock_skew_seconds > MAX_CLOCK_SKEW_SECONDS:
+        raise ReceiptVerificationError("receipt.clock_skew_invalid")
     if not _is_timezone_aware(now) or not all(
         _is_timezone_aware(value)
         for value in (receipt.issued_at, receipt.not_before, receipt.expires_at)
@@ -99,7 +120,11 @@ def verify_decision_receipt(
         raise ReceiptVerificationError("receipt.signature_invalid") from exc
     if not verifier.verify(receipt.key_id, canonical_bytes(_unsigned(receipt)), signature):
         raise ReceiptVerificationError("receipt.signature_invalid")
+    if (receipt.expires_at - receipt.issued_at).total_seconds() > MAX_DECISION_TTL_SECONDS:
+        raise ReceiptVerificationError("receipt.ttl_invalid")
     skew = timedelta(seconds=clock_skew_seconds)
+    if receipt.issued_at > now + skew:
+        raise ReceiptVerificationError("receipt.not_yet_valid")
     if now + skew < receipt.not_before:
         raise ReceiptVerificationError("receipt.not_yet_valid")
     if now - skew > receipt.expires_at:
@@ -148,6 +173,16 @@ def issue_approval_receipt(
         raise ReceiptVerificationError("approval.decision_not_pending")
     verify_intent_binding(intent, decision_receipt)
     now = now or datetime.now(UTC)
+    if not _is_timezone_aware(now):
+        raise ReceiptVerificationError("approval.timestamp_invalid")
+    if ttl_seconds < 1:
+        raise ReceiptVerificationError("approval.ttl_invalid")
+    selected_budget = approved_budget or decision_receipt.execution_budget
+    if not budget_is_within(selected_budget, decision_receipt.execution_budget):
+        raise ReceiptVerificationError("approval.budget_exceeds_decision")
+    expires_at = min(now + timedelta(seconds=ttl_seconds), decision_receipt.expires_at)
+    if now < decision_receipt.not_before or expires_at <= now:
+        raise ReceiptVerificationError("approval.validity_exceeds_decision")
     approval = ApprovalReceipt(
         approval_id="apr_" + uuid4().hex,
         decision_id=decision_receipt.decision_id,
@@ -157,11 +192,11 @@ def issue_approval_receipt(
         approved_action_digest=decision_receipt.action_digest,
         approved_resource_digest=decision_receipt.resource_digest,
         approved_arguments_digest=decision_receipt.arguments_digest,
-        approved_budget=approved_budget or decision_receipt.execution_budget,
+        approved_budget=selected_budget,
         reason=reason,
         maximum_uses=maximum_uses,
         issued_at=now,
-        expires_at=now + timedelta(seconds=ttl_seconds),
+        expires_at=expires_at,
         key_id=signer.key_id,
         signature="",
     )
@@ -197,8 +232,17 @@ def verify_approval_receipt(
         or approval.trace_id != decision_receipt.trace_id
     ):
         raise ReceiptVerificationError("approval.decision_binding_mismatch")
-    if approval.expires_at < now:
+    if approval.issued_at > now:
+        raise ReceiptVerificationError("approval.not_yet_valid")
+    if approval.expires_at <= now:
         raise ReceiptVerificationError("approval.expired")
+    if (
+        approval.issued_at < decision_receipt.not_before
+        or approval.expires_at > decision_receipt.expires_at
+    ):
+        raise ReceiptVerificationError("approval.validity_exceeds_decision")
+    if not budget_is_within(approval.approved_budget, decision_receipt.execution_budget):
+        raise ReceiptVerificationError("approval.budget_exceeds_decision")
     if approval.approved_action_digest != digest(intent.action):
         raise ReceiptVerificationError("approval.action_digest_mismatch")
     if approval.approved_resource_digest != (digest(intent.resource) if intent.resource else None):

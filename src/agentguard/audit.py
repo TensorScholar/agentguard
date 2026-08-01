@@ -7,6 +7,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from agentguard.security.files import ensure_private_file
+
 from .models import (
     ApprovalGrant,
     AuditChainVerification,
@@ -17,6 +19,7 @@ from .models import (
     ToolCall,
     ToolInventoryItem,
 )
+from .secrets import redact_mapping, redact_text
 
 AUDIT_CHAIN_GENESIS = "0" * 64
 
@@ -24,14 +27,28 @@ AUDIT_CHAIN_GENESIS = "0" * 64
 class AuditLedger:
     def __init__(self, path: Path) -> None:
         self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_private_file(self.path)
         self._init_schema()
 
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path, timeout=10)
+        connection.execute("PRAGMA busy_timeout=10000")
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA trusted_schema=OFF")
+        connection.execute("PRAGMA synchronous=FULL")
+        connection.execute("PRAGMA secure_delete=ON")
+        return connection
+
     def record(self, event: AuditEvent) -> None:
-        with sqlite3.connect(self.path) as conn:
+        sanitized = replace(
+            event,
+            reason=redact_text(event.reason)[0],
+            arguments=redact_mapping(event.arguments),
+        )
+        with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             previous_hash = _latest_audit_hash(conn)
-            event_hash = audit_event_hash(event, previous_hash)
+            event_hash = audit_event_hash(sanitized, previous_hash)
             conn.execute(
                 """
                 INSERT INTO audit_events (
@@ -41,23 +58,23 @@ class AuditLedger:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    event.event_id,
-                    event.timestamp.isoformat(),
-                    event.agent_id,
-                    event.source,
-                    event.tool_name,
-                    event.call_id,
-                    event.decision.value,
-                    event.reason,
-                    event.rule_id,
-                    _canonical_json(event.arguments),
+                    sanitized.event_id,
+                    sanitized.timestamp.isoformat(),
+                    sanitized.agent_id,
+                    sanitized.source,
+                    sanitized.tool_name,
+                    sanitized.call_id,
+                    sanitized.decision.value,
+                    sanitized.reason,
+                    sanitized.rule_id,
+                    _canonical_json(sanitized.arguments),
                     previous_hash,
                     event_hash,
                 ),
             )
 
     def list_events(self) -> list[AuditEvent]:
-        with sqlite3.connect(self.path) as conn:
+        with self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT event_id, timestamp, agent_id, source, tool_name, call_id,
@@ -69,7 +86,7 @@ class AuditLedger:
         return [_audit_event_from_row(row) for row in rows]
 
     def verify_chain(self) -> AuditChainVerification:
-        with sqlite3.connect(self.path) as conn:
+        with self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT event_id, timestamp, agent_id, source, tool_name, call_id,
@@ -120,19 +137,75 @@ class AuditLedger:
             head_hash=expected_previous_hash,
         )
 
+    def sanitize_and_rechain(self) -> AuditChainVerification:
+        """Redact retained legacy events and rebuild their local hash chain.
+
+        This is deliberately explicit because rebuilding a chain changes its head and therefore
+        invalidates any external anchor created before the operation.
+        """
+
+        expected_previous_hash = AUDIT_CHAIN_GENESIS
+        checked_events = 0
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT rowid, event_id, timestamp, agent_id, source, tool_name, call_id,
+                           decision, reason, rule_id, arguments_json
+                    FROM audit_events
+                    ORDER BY rowid ASC
+                    """
+                ).fetchall()
+                for row in rows:
+                    checked_events += 1
+                    event = _audit_event_from_row(row[1:])
+                    sanitized = replace(
+                        event,
+                        reason=redact_text(event.reason)[0],
+                        arguments=redact_mapping(event.arguments),
+                    )
+                    event_hash = audit_event_hash(sanitized, expected_previous_hash)
+                    conn.execute(
+                        """
+                        UPDATE audit_events
+                        SET reason = ?, arguments_json = ?, previous_hash = ?, event_hash = ?
+                        WHERE rowid = ?
+                        """,
+                        (
+                            sanitized.reason,
+                            _canonical_json(sanitized.arguments),
+                            expected_previous_hash,
+                            event_hash,
+                            row[0],
+                        ),
+                    )
+                    expected_previous_hash = event_hash
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn.execute("VACUUM")
+        return AuditChainVerification(
+            ok=True,
+            checked_events=checked_events,
+            head_hash=expected_previous_hash,
+        )
+
     def upsert_tool_inventory(self, tools: list[ToolInventoryItem]) -> None:
         if not tools:
             return
-        with sqlite3.connect(self.path) as conn:
+        with self._connect() as conn:
             _upsert_tool_inventory(conn, tools)
 
     def replace_tool_inventory(self, source: str, tools: list[ToolInventoryItem]) -> None:
-        with sqlite3.connect(self.path) as conn:
+        with self._connect() as conn:
             conn.execute("DELETE FROM tool_inventory WHERE source = ?", (source,))
             _upsert_tool_inventory(conn, tools)
 
     def list_tool_inventory(self) -> list[ToolInventoryItem]:
-        with sqlite3.connect(self.path) as conn:
+        with self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT source, name, description, input_schema_json, output_schema_json,
@@ -157,7 +230,7 @@ class AuditLedger:
         ]
 
     def get_tool_inventory(self, source: str, name: str) -> ToolInventoryItem | None:
-        with sqlite3.connect(self.path) as conn:
+        with self._connect() as conn:
             row = conn.execute(
                 """
                 SELECT source, name, description, input_schema_json, output_schema_json,
@@ -186,7 +259,7 @@ class AuditLedger:
             raise ValueError("approval grant max_uses must be greater than zero")
         if grant.expires_at <= grant.created_at:
             raise ValueError("approval grant expires_at must be after created_at")
-        with sqlite3.connect(self.path) as conn:
+        with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO approval_grants (
@@ -202,7 +275,7 @@ class AuditLedger:
         now = datetime.now(UTC).isoformat()
         where = "" if include_expired else "WHERE expires_at >= ? AND used_count < max_uses"
         params: tuple[str, ...] = () if include_expired else (now,)
-        with sqlite3.connect(self.path) as conn:
+        with self._connect() as conn:
             rows = conn.execute(
                 f"""
                 SELECT grant_id, created_at, expires_at, agent_id, source, tool_name,
@@ -218,7 +291,8 @@ class AuditLedger:
     def consume_approval_grant(self, call: ToolCall) -> ApprovalGrant | None:
         now = datetime.now(UTC).isoformat()
         arguments_hash = hash_tool_arguments(call.arguments)
-        with sqlite3.connect(self.path) as conn:
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
                 """
                 SELECT grant_id, created_at, expires_at, agent_id, source, tool_name,
@@ -236,6 +310,7 @@ class AuditLedger:
                 (call.agent_id, call.source, call.tool_name, arguments_hash, now),
             ).fetchone()
             if row is None:
+                conn.execute("ROLLBACK")
                 return None
             grant = _approval_grant_from_row(row)
             result = conn.execute(
@@ -247,11 +322,13 @@ class AuditLedger:
                 (grant.grant_id,),
             )
             if result.rowcount != 1:
+                conn.execute("ROLLBACK")
                 return None
+            conn.execute("COMMIT")
         return replace(grant, used_count=grant.used_count + 1)
 
     def _init_schema(self) -> None:
-        with sqlite3.connect(self.path) as conn:
+        with self._connect() as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS audit_events (

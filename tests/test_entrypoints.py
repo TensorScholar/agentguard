@@ -19,7 +19,7 @@ def test_package_version_matches_pyproject() -> None:
 
 def test_python_module_entrypoint_reports_version() -> None:
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(REPO_ROOT)
+    env["PYTHONPATH"] = str(REPO_ROOT / "src")
 
     process = subprocess.run(
         [sys.executable, "-m", "agentguard", "--version"],

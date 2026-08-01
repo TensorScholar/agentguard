@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import BinaryIO, Iterator
 
 from agentguard.application import AgentGuardService
 from agentguard.domain import Effect, EnforcementMode, PolicyDocument, Principal
@@ -165,11 +170,20 @@ class MCPStdioProcessor:
 
 
 class MCPStdioProxy:
-    def __init__(self, processor: MCPStdioProcessor, server_command: list[str]) -> None:
+    def __init__(
+        self,
+        processor: MCPStdioProcessor,
+        server_command: list[str],
+        *,
+        shutdown_timeout_seconds: float = 2.0,
+    ) -> None:
         if not server_command:
             raise ValueError("server command is required")
+        if shutdown_timeout_seconds < 0:
+            raise ValueError("shutdown_timeout_seconds cannot be negative")
         self.processor = processor
         self.server_command = server_command
+        self.shutdown_timeout_seconds = shutdown_timeout_seconds
 
     def run(self) -> int:
         process = subprocess.Popen(
@@ -180,16 +194,147 @@ class MCPStdioProxy:
             start_new_session=True,
         )
         assert process.stdin and process.stdout
-        for line in sys.stdin.buffer:
-            result = self.processor.process_client(line)
-            if result.to_client:
-                sys.stdout.buffer.write(result.to_client)
-                sys.stdout.buffer.flush()
-            if result.to_server:
-                process.stdin.write(result.to_server)
-                process.stdin.flush()
-        process.stdin.close()
-        for line in process.stdout:
-            sys.stdout.buffer.write(line)
-            sys.stdout.buffer.flush()
-        return process.wait(timeout=10)
+        output_lock = threading.Lock()
+        client_done = threading.Event()
+        server_done = threading.Event()
+
+        client_thread = threading.Thread(
+            target=self._relay_client,
+            args=(sys.stdin.buffer, process.stdin, sys.stdout.buffer, output_lock, client_done),
+            daemon=True,
+        )
+        server_thread = threading.Thread(
+            target=self._relay_server,
+            args=(process.stdout, sys.stdout.buffer, output_lock, server_done),
+            daemon=True,
+        )
+        server_thread.start()
+        client_thread.start()
+
+        deadline: float | None = None
+        while process.poll() is None:
+            if server_done.is_set():
+                _terminate_process(process)
+                deadline = time.monotonic() + self.shutdown_timeout_seconds
+                break
+            if client_done.is_set():
+                deadline = time.monotonic() + self.shutdown_timeout_seconds
+                break
+            time.sleep(0.01)
+
+        if deadline is not None:
+            while process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+        forced = False
+        if process.poll() is None:
+            forced = True
+            _terminate_process(process)
+            try:
+                process.wait(timeout=self.shutdown_timeout_seconds)
+            except subprocess.TimeoutExpired:
+                _kill_process(process)
+                process.wait()
+
+        server_thread.join(timeout=max(1.0, self.shutdown_timeout_seconds * 2))
+        if forced or not server_done.is_set():
+            return 1
+        return process.returncode if process.returncode is not None else 1
+
+    def _relay_client(
+        self,
+        client: BinaryIO,
+        server: BinaryIO,
+        output: BinaryIO,
+        output_lock: threading.Lock,
+        completed: threading.Event,
+    ) -> None:
+        try:
+            for line in _bounded_lines(client, self.processor.max_message_bytes):
+                if line is None:
+                    _write_locked(
+                        output,
+                        error_response(None, -32600, "MCP message exceeds configured limit"),
+                        output_lock,
+                    )
+                    continue
+                result = self.processor.process_client(line)
+                if result.to_client is not None:
+                    _write_locked(output, result.to_client, output_lock)
+                if result.to_server is not None:
+                    try:
+                        server.write(result.to_server)
+                        server.flush()
+                    except BrokenPipeError:
+                        return
+        finally:
+            try:
+                server.close()
+            except BrokenPipeError:
+                pass
+            completed.set()
+
+    def _relay_server(
+        self,
+        server: BinaryIO,
+        output: BinaryIO,
+        output_lock: threading.Lock,
+        completed: threading.Event,
+    ) -> None:
+        try:
+            for line in _bounded_lines(server, self.processor.max_message_bytes):
+                if line is None:
+                    _write_locked(
+                        output,
+                        error_response(None, -32000, "MCP server message exceeds configured limit"),
+                        output_lock,
+                    )
+                    continue
+                _write_locked(output, line, output_lock)
+        finally:
+            completed.set()
+
+
+def _bounded_lines(stream: BinaryIO, maximum: int) -> Iterator[bytes | None]:
+    while True:
+        line = stream.readline(maximum + 1)
+        if line == b"":
+            return
+        if len(line) > maximum:
+            if not line.endswith(b"\n"):
+                while True:
+                    remainder = stream.readline(8192)
+                    if remainder == b"" or remainder.endswith(b"\n"):
+                        break
+            yield None
+            continue
+        yield line
+
+
+def _write_locked(output: BinaryIO, payload: bytes, lock: threading.Lock) -> None:
+    with lock:
+        output.write(payload)
+        output.flush()
+
+
+def _terminate_process(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        pass
+
+
+def _kill_process(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except ProcessLookupError:
+        pass

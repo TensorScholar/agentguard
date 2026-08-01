@@ -224,7 +224,44 @@ class CredentialGrant(StrictModel):
     def validate_times(self) -> CredentialGrant:
         if self.issued_at >= self.expires_at:
             raise ValueError("credential grant times are inconsistent")
+        if self.mode == "opaque_handle" and self.credential_handle is None:
+            raise ValueError("opaque credential grants require a handle")
+        if self.mode == "brokered_execution" and self.credential_handle is not None:
+            raise ValueError("brokered execution grants cannot expose a handle")
         return self
+
+
+class AuditCheckpoint(StrictModel):
+    schema_version: Literal["1"] = "1"
+    checkpoint_id: str = Field(min_length=1, max_length=200)
+    ledger_id: str = Field(min_length=1, max_length=300)
+    event_count: int = Field(ge=0)
+    head_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    issued_at: datetime
+    key_id: str = Field(min_length=1, max_length=300)
+    signature: str
+
+    @field_validator("issued_at")
+    @classmethod
+    def aware_issued_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("audit checkpoint timestamp must be timezone-aware")
+        return value
+
+
+class EvidenceAttestation(StrictModel):
+    schema_version: Literal["1"] = "1"
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    issued_at: datetime
+    key_id: str = Field(min_length=1, max_length=300)
+    signature: str
+
+    @field_validator("issued_at")
+    @classmethod
+    def aware_issued_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("evidence attestation timestamp must be timezone-aware")
+        return value
 
 
 class ExecutionRequest(StrictModel):

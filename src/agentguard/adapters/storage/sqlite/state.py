@@ -7,6 +7,7 @@ from pathlib import Path
 
 from agentguard.domain import ApprovalReceipt, AuditEvent
 from agentguard.engine.canonical import canonical_bytes
+from agentguard.security.files import ensure_private_file
 
 GENESIS = "0" * 64
 SCHEMA = """
@@ -59,7 +60,7 @@ class IncompatibleStateDatabaseError(RuntimeError):
 class SQLiteState:
     def __init__(self, path: Path) -> None:
         self.path = path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_private_file(path)
         with self._connect() as c:
             existing_columns = {
                 str(row[1]) for row in c.execute("PRAGMA table_info(audit_events)").fetchall()
@@ -74,6 +75,10 @@ class SQLiteState:
     def _connect(self) -> sqlite3.Connection:
         c = sqlite3.connect(self.path, timeout=10, isolation_level=None)
         c.execute("PRAGMA busy_timeout=10000")
+        c.execute("PRAGMA foreign_keys=ON")
+        c.execute("PRAGMA trusted_schema=OFF")
+        c.execute("PRAGMA synchronous=FULL")
+        c.execute("PRAGMA secure_delete=ON")
         return c
 
     def consume(self, nonce: str, decision_id: str, consumed_at: datetime) -> bool:
@@ -207,7 +212,10 @@ class SQLiteState:
             event_hash = sha256(previous.encode() + canonical_bytes(base)).hexdigest()
             complete = base.model_copy(update={"event_hash": event_hash})
             c.execute(
-                "INSERT INTO audit_events(event_id,event_json,previous_hash,event_hash) VALUES(?,?,?,?)",
+                """
+                INSERT INTO audit_events(event_id,event_json,previous_hash,event_hash)
+                VALUES(?,?,?,?)
+                """,
                 (complete.event_id, complete.model_dump_json(), previous, event_hash),
             )
             c.execute("COMMIT")
@@ -217,6 +225,18 @@ class SQLiteState:
         with self._connect() as c:
             rows = c.execute("SELECT event_json FROM audit_events ORDER BY sequence").fetchall()
         return [AuditEvent.model_validate_json(r[0]) for r in rows]
+
+    def audit_head_at(self, event_count: int) -> str | None:
+        if event_count < 0:
+            raise ValueError("event_count cannot be negative")
+        if event_count == 0:
+            return GENESIS
+        with self._connect() as c:
+            row = c.execute(
+                "SELECT event_hash FROM audit_events WHERE sequence = ?",
+                (event_count,),
+            ).fetchone()
+        return str(row[0]) if row is not None else None
 
     def verify(self) -> tuple[bool, int, str, str | None]:
         previous = GENESIS

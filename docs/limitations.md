@@ -1,18 +1,25 @@
 # Limitations
 
-- The v2 MCP processor requires a trusted schema resolver. Without one, `tools/call` fails closed
-  with approval required; it does not discover tools by itself.
-- MCP audit order is causal per request, not a synthetic global order across independent requests.
-
-- Local SQLite nonce semantics are single-node, not distributed.
-- Canonical JSON supports the signed schema subset and rejects floats; it is JCS-oriented but this RC does not claim complete RFC 8785 implementation for arbitrary JSON numbers.
-- The HTTP module contains security validation primitives, not a full production reverse proxy.
-- Provenance is only as trustworthy as the adapter that assigns it.
-- Effect projection is supplied by a trusted adapter; ambiguous high-impact effects must not be treated as zero.
-- The Loadout adapter is a contract preview, not a live integration.
-- Approval-use and issuance state are local SQLite only; a distributed deployment needs a
-  transactional shared implementation. Interactive approval UX remains out of scope.
-- Local hash chaining detects modification of retained audit events but cannot prove tail
-  non-truncation without an externally anchored head.
-- Existing v0.1 SQLite audit files are retained as evidence and rejected by the v0.2 state adapter;
-  an in-place data migration is intentionally not provided in this release candidate.
+- AgentGuard enforces only traffic routed through an AgentGuard adapter. `mcp-posture` detects direct
+  routes in supplied configurations but cannot prove the absence of hidden, generated or network-level
+  bypass paths.
+- The v2 MCP processor requires a trusted, fresh schema resolver. Without one, `tools/call` fails
+  closed with approval required.
+- The HTTP module provides validation primitives, not a complete production Streamable HTTP proxy.
+- Provenance and verified identity are only as trustworthy as the adapter that supplies them.
+- Effect projection is adapter-supplied; ambiguous high-impact effects must never be projected as zero.
+- SQLite replay, approval and issuance semantics are single-node. Multi-replica deployment requires
+  a shared transactional repository.
+- Canonical JSON supports the signed schema subset and rejects floats; this RC does not claim full
+  RFC 8785 behavior for arbitrary JSON numbers.
+- Signed audit checkpoints detect retained-prefix mismatch only when exported to independently
+  controlled storage. Keeping the checkpoint beside the database adds little protection.
+- Evidence signature verification authenticates the manifest key, not the business truth of the
+  underlying event or the identity proofing process behind the signer.
+- The mock broker and Loadout adapter are contract previews, not live production integrations.
+- Interactive, identity-backed human approval UX is not included.
+- No external penetration test, long-duration soak test or production pilot has been completed.
+- RC2 changes were locally exercised on Linux/Python 3.13. Cross-platform jobs are defined in CI but
+  must run on the final Git commit before release promotion.
+- Legacy Policy v1 retains compatibility-oriented semantics, including an allow default for ordinary
+  known calls; production deployments should prefer Policy v2 and explicit allow rules.

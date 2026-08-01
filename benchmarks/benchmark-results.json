@@ -11,23 +11,23 @@
   ],
   "nonce_consumption": {
     "iterations": 1000,
-    "max_ms": 24.490495,
-    "median_ms": 0.8413245,
-    "p95_ms": 1.855806,
-    "p99_ms": 12.138159
+    "max_ms": 24.418054,
+    "median_ms": 0.9059745,
+    "p95_ms": 1.398134,
+    "p99_ms": 4.471785
   },
   "policy_evaluation": {
     "iterations": 5000,
-    "max_ms": 4.411712,
-    "median_ms": 0.1139895,
-    "p95_ms": 0.138726,
-    "p99_ms": 0.227458
+    "max_ms": 8.014433,
+    "median_ms": 0.117925,
+    "p95_ms": 0.146508,
+    "p99_ms": 0.22942
   },
   "receipt_verification": {
     "iterations": 5000,
-    "max_ms": 1.058512,
-    "median_ms": 0.143994,
-    "p95_ms": 0.165336,
-    "p99_ms": 0.194198
+    "max_ms": 1.700944,
+    "median_ms": 0.145616,
+    "p95_ms": 0.173778,
+    "p99_ms": 0.224924
   }
 }

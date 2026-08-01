@@ -84,6 +84,8 @@ def verify_credential_grant(
         raise CredentialVerificationError("credential.grant_verifier_unavailable")
     if grant.mode == "opaque_handle" and grant.credential_handle is None:
         raise CredentialVerificationError("credential.handle_missing")
+    if grant.mode == "brokered_execution" and grant.credential_handle is not None:
+        raise CredentialVerificationError("credential.handle_forbidden")
     if digest(grant.credential_handle) != grant.credential_handle_digest:
         raise CredentialVerificationError("credential.handle_digest_mismatch")
     try:
@@ -109,6 +111,8 @@ def verify_credential_grant(
     ttl = (grant.expires_at - grant.issued_at).total_seconds()
     if ttl > ceiling.maximum_ttl_seconds:
         raise CredentialVerificationError("credential.ttl_exceeds_decision")
+    if grant.issued_at < receipt.not_before or grant.expires_at > receipt.expires_at:
+        raise CredentialVerificationError("credential.validity_exceeds_decision")
     if grant.expires_at <= now:
         raise CredentialVerificationError("credential.expired")
     if grant.issued_at > now:

@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "project": "agentguard",
-  "version": "0.2.0rc1",
+  "version": "0.2.0rc2",
   "benchmark_type": "synthetic-local",
   "measures": [
     "deterministic Policy v2 evaluation",

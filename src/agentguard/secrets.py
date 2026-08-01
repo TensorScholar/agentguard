@@ -49,6 +49,16 @@ def redact_text(text: str) -> tuple[str, list[SecretFinding]]:
     return "".join(parts), findings
 
 
+_SENSITIVE_KEY = re.compile(
+    r"(?i)(?:^|[_\-.])(authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|"
+    r"token|secret|password|passwd|credential|private[_-]?key|client[_-]?secret|cookie)(?:$|[_\-.])"
+)
+
+
+def _sensitive_key(value: object) -> bool:
+    return bool(_SENSITIVE_KEY.search(str(value)))
+
+
 def redact_value(value: object) -> object:
     if isinstance(value, str):
         return redact_text(value)[0]
@@ -56,11 +66,24 @@ def redact_value(value: object) -> object:
         return [redact_value(item) for item in value]
     if isinstance(value, tuple):
         return tuple(redact_value(item) for item in value)
+    if isinstance(value, set):
+        return {redact_value(item) for item in value}
+    if isinstance(value, frozenset):
+        return frozenset(redact_value(item) for item in value)
     if isinstance(value, dict):
-        return {str(key): redact_value(item) for key, item in value.items()}
+        result: dict[str, object] = {}
+        for key, item in value.items():
+            normalized_key = str(key)
+            result[normalized_key] = (
+                "[REDACTED:sensitive_key]" if _sensitive_key(key) else redact_value(item)
+            )
+        return result
     return value
 
 
 def redact_mapping(value: dict[str, Any]) -> dict[str, Any]:
-    """Redact a mapping while retaining its type for policy and audit callers."""
-    return {str(key): redact_value(item) for key, item in value.items()}
+    """Redact values and values under security-sensitive keys recursively."""
+    redacted = redact_value(value)
+    if not isinstance(redacted, dict):
+        raise TypeError("redacted mapping unexpectedly changed type")
+    return redacted

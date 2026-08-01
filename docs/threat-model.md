@@ -23,4 +23,4 @@ header/body confusion and broker outage bypass.
 
 ## Explicit limitations
 
-Hash chaining detects modification of retained events but does not alone prove that the tail was not truncated. Export the audit head to an external location for truncation detection. Multi-replica nonce consumption requires a transactional shared store and is outside v0.2.0rc1.
+Hash chaining detects modification of retained events but does not alone prove that the tail was not truncated. Export the audit head to an external location for truncation detection. Multi-replica nonce consumption requires a transactional shared store and is outside the single-node RC boundary.

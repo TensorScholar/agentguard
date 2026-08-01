@@ -24,8 +24,15 @@ from agentguard.domain import (
     CredentialRequest,
     EnforcementMode,
 )
+from agentguard.engine.checkpoints import (
+    AuditCheckpointError,
+    issue_audit_checkpoint,
+    verify_audit_checkpoint_signature,
+)
 from agentguard.engine.execution import authorize_execution
 from agentguard.engine.policy import evaluate_policy
+from agentguard.posture import EnforcementStatus, scan_enforcement_posture
+from agentguard.security.files import read_regular_file, secure_atomic_write
 
 from .io import load_json_model, load_policy, write_json
 
@@ -58,7 +65,7 @@ def init(output: Path = Path(".agentguard"), force: bool = False) -> None:
         raise typer.BadParameter(f"refusing to overwrite non-empty {output}")
     output.mkdir(parents=True, exist_ok=True)
     policy = Path(__file__).parents[1] / "resources" / "default_policy_v2.yaml"
-    (output / "policy.yaml").write_text(policy.read_text(encoding="utf-8"), encoding="utf-8")
+    secure_atomic_write(output / "policy.yaml", read_regular_file(policy), mode=0o600)
     signer = Ed25519Signer.generate()
     signer.save_private(output / "decision-private.pem")
     signer.save_public(output / "decision-public.pem")
@@ -222,7 +229,7 @@ def verify_execution(
 def simulate(policy: Path, traces: Path) -> None:
     doc = load_policy(policy)
     counts = {"allow": 0, "deny": 0, "require_approval": 0, "invalid": 0}
-    for line in traces.read_text(encoding="utf-8").splitlines():
+    for line in read_regular_file(traces).decode("utf-8").splitlines():
         if not line.strip():
             continue
         try:
@@ -245,22 +252,126 @@ def audit_verify(ledger: Path = Path(".agentguard/audit.sqlite")) -> None:
 
 @app.command("evidence-build")
 def evidence_build(
-    request: Path, receipt: Path, grant: Path | None = None, output: Path = Path("evidence")
+    request: Path,
+    receipt: Path,
+    grant: Path | None = None,
+    output: Path = Path("evidence"),
+    key: Path | None = typer.Option(None, "--key"),
 ) -> None:
     artifacts = {
-        "action-intent.json": json.loads(request.read_text()),
-        "decision-receipt.json": json.loads(receipt.read_text()),
+        "action-intent.json": json.loads(read_regular_file(request)),
+        "decision-receipt.json": json.loads(read_regular_file(receipt)),
     }
     if grant:
-        artifacts["credential-grant.json"] = json.loads(grant.read_text())
-    build_bundle(output, artifacts)
+        artifacts["credential-grant.json"] = json.loads(read_regular_file(grant))
+    signer = Ed25519Signer.load_private(key) if key is not None else None
+    build_bundle(output, artifacts, signer=signer)
     console.print(f"Built evidence bundle at {output}")
 
 
 @app.command("evidence-verify")
-def evidence_verify(output: Path) -> None:
-    ok, count = verify_bundle(output)
-    console.print_json(data={"ok": ok, "checked_artifacts": count})
+def evidence_verify(
+    output: Path,
+    public_key: Path | None = typer.Option(None, "--public-key"),
+    require_signature: bool = typer.Option(False, "--require-signature"),
+) -> None:
+    verifier = Ed25519Verifier.from_public_file(public_key) if public_key is not None else None
+    ok, count = verify_bundle(
+        output,
+        verifier=verifier,
+        require_signature=require_signature,
+    )
+    console.print_json(
+        data={
+            "ok": ok,
+            "checked_artifacts": count,
+            "signature_verified": verifier is not None,
+        }
+    )
+
+
+@app.command("audit-checkpoint-create")
+def audit_checkpoint_create(
+    ledger: Path = Path(".agentguard/audit.sqlite"),
+    key: Path = Path(".agentguard/decision-private.pem"),
+    ledger_id: str = typer.Option("agentguard-local", "--ledger-id"),
+    output: Path = Path("audit-checkpoint.json"),
+) -> None:
+    state = SQLiteState(ledger)
+    ok, count, head, reason = state.verify()
+    if not ok:
+        raise typer.BadParameter(f"cannot checkpoint invalid audit chain: {reason}")
+    checkpoint = issue_audit_checkpoint(
+        ledger_id=ledger_id,
+        event_count=count,
+        head_hash=head,
+        signer=Ed25519Signer.load_private(key),
+    )
+    write_json(output, checkpoint)
+    console.print(f"Created signed audit checkpoint {checkpoint.checkpoint_id}")
+
+
+@app.command("audit-checkpoint-verify")
+def audit_checkpoint_verify(
+    checkpoint: Path,
+    ledger: Path = Path(".agentguard/audit.sqlite"),
+    public_key: Path = Path(".agentguard/decision-public.pem"),
+) -> None:
+    from agentguard.domain import AuditCheckpoint
+
+    value = load_json_model(checkpoint, AuditCheckpoint)
+    try:
+        verify_audit_checkpoint_signature(value, Ed25519Verifier.from_public_file(public_key))
+    except AuditCheckpointError as exc:
+        console.print_json(data={"ok": False, "reason": str(exc)})
+        raise typer.Exit(1) from exc
+    state = SQLiteState(ledger)
+    ok, current_count, _, reason = state.verify()
+    anchored_head = state.audit_head_at(value.event_count) if ok else None
+    matches = ok and anchored_head == value.head_hash
+    console.print_json(
+        data={
+            "ok": matches,
+            "ledger_id": value.ledger_id,
+            "checkpoint_events": value.event_count,
+            "current_events": current_count,
+            "reason": reason if not ok else (None if matches else "checkpoint.head_mismatch"),
+        }
+    )
+    if not matches:
+        raise typer.Exit(1)
+
+
+@app.command("mcp-posture")
+def mcp_posture(
+    config: list[Path] = typer.Option(..., "--config"),
+    output_format: str = typer.Option("markdown", "--format"),
+    fail_on_bypass: bool = typer.Option(False, "--fail-on-bypass"),
+) -> None:
+    if output_format not in {"json", "markdown"}:
+        raise typer.BadParameter("--format must be json or markdown")
+    report = scan_enforcement_posture(config)
+    if output_format == "json":
+        console.print_json(data=report.model_dump(mode="json"))
+    else:
+        table = Table("Server", "Status", "Configuration", "Reasons")
+        for route in report.routes:
+            table.add_row(
+                route.server_name,
+                route.status.value,
+                route.config_path,
+                ", ".join(route.reason_codes),
+            )
+        console.print(table)
+        console.print(
+            f"Protected: {report.protected_count} | Direct: {report.direct_count} | "
+            f"Ambiguous: {report.ambiguous_count} | Invalid: {report.invalid_count}"
+        )
+    if fail_on_bypass and (
+        report.has_bypass
+        or any(route.status != EnforcementStatus.PROTECTED for route in report.routes)
+    ):
+        raise typer.Exit(1)
 
 
 @app.command()

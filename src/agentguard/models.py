@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
+
+from .secrets import redact_mapping
 from uuid import uuid4
 
 
@@ -147,5 +149,9 @@ class AuditEvent:
             decision=decision.decision,
             reason=decision.reason,
             rule_id=decision.rule_id,
-            arguments=decision.redacted_arguments or call.arguments,
+            arguments=redact_mapping(
+                decision.redacted_arguments
+                if decision.redacted_arguments is not None
+                else call.arguments
+            ),
         )

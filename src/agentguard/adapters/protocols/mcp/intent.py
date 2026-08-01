@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from agentguard.domain import Action, ActionIntent, EffectProjection, Principal, ProvenanceLabel
+from agentguard.risk import classify_tool_definition
 
 
 def intent_from_tools_call(
@@ -27,15 +28,26 @@ def intent_from_tools_call(
     if not isinstance(arguments, dict):
         raise TypeError("tools/call arguments must be an object")
     request_id = str(message.get("id") or uuid4().hex)
+    schema = tool_schema if tool_schema is not None else {}
+    capabilities, _, _ = classify_tool_definition(
+        {"name": name, "inputSchema": schema}
+    )
+    projected_capabilities = frozenset(capability.value for capability in capabilities)
     return ActionIntent(
         request_id=request_id,
         trace_id=trace_id or "trc_" + uuid4().hex,
         principal=principal,
-        action=Action(protocol="mcp", server=server, tool=name, operation="call"),
+        action=Action(
+            protocol="mcp",
+            server=server,
+            tool=name,
+            operation="call",
+            capabilities=projected_capabilities,
+        ),
         provenance=provenance,
         provenance_verified=provenance_verified,
         effects=EffectProjection(),
         arguments=arguments,
-        tool_schema=tool_schema if tool_schema is not None else {},
+        tool_schema=schema,
         requested_at=datetime.now(UTC),
     )

@@ -13,11 +13,13 @@ jobs:
   mcp-security-gate:
     name: MCP security gate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Set up Python
@@ -26,7 +28,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install AgentGuard
-        run: python -m pip install -e .
+        run: python -m pip install -c requirements/runtime-validated.txt -e .
 
       - name: Run changed-config gate
         shell: bash
@@ -62,9 +64,10 @@ jobs:
 
       - name: Upload AgentGuard report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: agentguard-scan
           path: |
             agentguard-findings.json
             agentguard-summary.md
+          if-no-files-found: error

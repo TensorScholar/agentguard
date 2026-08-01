@@ -1,13 +1,18 @@
+from __future__ import annotations
+
+import argparse
 import json
 from pathlib import Path
 
 from agentguard.domain import (
     ActionIntent,
     ApprovalReceipt,
+    AuditCheckpoint,
     AuditEvent,
     CredentialGrant,
     CredentialRequest,
     DecisionReceipt,
+    EvidenceAttestation,
     ExecutionOutcome,
     ExecutionRequest,
     PolicyDocument,
@@ -24,12 +29,42 @@ MODELS = {
     "execution-request-v1": ExecutionRequest,
     "execution-outcome-v1": ExecutionOutcome,
     "audit-event-v1": AuditEvent,
+    "audit-checkpoint-v1": AuditCheckpoint,
+    "evidence-attestation-v1": EvidenceAttestation,
 }
 
-for name, model in MODELS.items():
-    target = ROOT / "schemas" / f"{name}.schema.json"
-    target.write_text(
-        json.dumps(model.model_json_schema(), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+
+def generated_schema(model: type[object]) -> str:
+    schema = getattr(model, "model_json_schema")()
+    return json.dumps(schema, indent=2, sort_keys=True) + "\n"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Fail without modifying files when generated schemas differ from the repository",
     )
-print(f"generated {len(MODELS)} schemas")
+    args = parser.parse_args()
+
+    stale: list[str] = []
+    for name, model in MODELS.items():
+        target = ROOT / "schemas" / f"{name}.schema.json"
+        expected = generated_schema(model)
+        if args.check:
+            if not target.is_file() or target.read_text(encoding="utf-8") != expected:
+                stale.append(str(target.relative_to(ROOT)))
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(expected, encoding="utf-8")
+
+    if stale:
+        raise SystemExit("stale generated schema(s): " + ", ".join(stale))
+    verb = "verified" if args.check else "generated"
+    print(f"{verb} {len(MODELS)} schemas")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

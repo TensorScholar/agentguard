@@ -13,7 +13,7 @@ runner = CliRunner()
 def test_version():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "0.2.0rc1" in result.stdout
+    assert "0.2.0rc2" in result.stdout
 
 
 def test_init_creates_keys_and_policy(tmp_path):
@@ -49,3 +49,134 @@ def test_explain_command(tmp_path):
     assert result.exit_code == 0, result.stdout
     assert "allow" in result.stdout.lower()
     assert "bounded-refund" in result.stdout
+
+
+def test_cli_signed_evidence_checkpoint_and_posture(tmp_path):
+    root = Path(__file__).parents[2]
+    workspace = tmp_path / "workspace"
+    assert runner.invoke(app, ["init", "--output", str(workspace)]).exit_code == 0
+
+    receipt = tmp_path / "receipt.json"
+    ledger = tmp_path / "audit.sqlite"
+    authorize_result = runner.invoke(
+        app,
+        [
+            "authorize",
+            str(root / "src/agentguard/resources/demo-intent.json"),
+            str(workspace / "policy.yaml"),
+            "--key",
+            str(workspace / "decision-private.pem"),
+            "--ledger",
+            str(ledger),
+            "--output",
+            str(receipt),
+        ],
+    )
+    assert authorize_result.exit_code == 0, authorize_result.stdout
+
+    evidence = tmp_path / "evidence"
+    build_result = runner.invoke(
+        app,
+        [
+            "evidence-build",
+            str(root / "src/agentguard/resources/demo-intent.json"),
+            str(receipt),
+            "--output",
+            str(evidence),
+            "--key",
+            str(workspace / "decision-private.pem"),
+        ],
+    )
+    assert build_result.exit_code == 0, build_result.stdout
+    verify_result = runner.invoke(
+        app,
+        [
+            "evidence-verify",
+            str(evidence),
+            "--public-key",
+            str(workspace / "decision-public.pem"),
+            "--require-signature",
+        ],
+    )
+    assert verify_result.exit_code == 0, verify_result.stdout
+    assert '"ok": true' in verify_result.stdout.lower()
+
+    checkpoint = tmp_path / "checkpoint.json"
+    create_result = runner.invoke(
+        app,
+        [
+            "audit-checkpoint-create",
+            "--ledger",
+            str(ledger),
+            "--key",
+            str(workspace / "decision-private.pem"),
+            "--output",
+            str(checkpoint),
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.stdout
+    checkpoint_result = runner.invoke(
+        app,
+        [
+            "audit-checkpoint-verify",
+            str(checkpoint),
+            "--ledger",
+            str(ledger),
+            "--public-key",
+            str(workspace / "decision-public.pem"),
+        ],
+    )
+    assert checkpoint_result.exit_code == 0, checkpoint_result.stdout
+
+    protected_result = runner.invoke(
+        app,
+        [
+            "mcp-posture",
+            "--config",
+            str(root / "examples/mcp_posture_protected.json"),
+            "--format",
+            "json",
+            "--fail-on-bypass",
+        ],
+    )
+    assert protected_result.exit_code == 0, protected_result.stdout
+
+    bypass_result = runner.invoke(
+        app,
+        [
+            "mcp-posture",
+            "--config",
+            str(root / "examples/mcp_posture_bypass.json"),
+            "--fail-on-bypass",
+        ],
+    )
+    assert bypass_result.exit_code == 1
+
+
+def test_cli_simulate_audit_verify_and_refuse_overwrite(tmp_path):
+    root = Path(__file__).parents[2]
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "existing").write_text("keep", encoding="utf-8")
+    overwrite = runner.invoke(app, ["init", "--output", str(workspace)])
+    assert overwrite.exit_code != 0
+
+    traces = tmp_path / "traces.jsonl"
+    valid = json.loads(
+        (root / "src/agentguard/resources/demo-intent.json").read_text(encoding="utf-8")
+    )
+    traces.write_text(json.dumps(valid) + "\nnot-json\n", encoding="utf-8")
+    simulation = runner.invoke(
+        app,
+        [
+            "simulate",
+            str(root / "src/agentguard/resources/default_policy_v2.yaml"),
+            str(traces),
+        ],
+    )
+    assert simulation.exit_code == 0, simulation.stdout
+    assert '"invalid": 1' in simulation.stdout
+
+    ledger = tmp_path / "empty.sqlite"
+    audit = runner.invoke(app, ["audit-verify", "--ledger", str(ledger)])
+    assert audit.exit_code == 0, audit.stdout

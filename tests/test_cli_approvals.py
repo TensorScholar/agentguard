@@ -165,3 +165,30 @@ def test_approve_call_rejects_invalid_ttl(tmp_path: Path, capsys: CaptureFixture
 
     assert exit_code == 2
     assert "--ttl-seconds must be greater than zero" in captured.err
+
+
+def test_approve_call_server_id_binds_grant_source(
+    tmp_path: Path, capsys: CaptureFixture[str]
+) -> None:
+    ledger_path = tmp_path / "audit.sqlite"
+
+    exit_code = main(
+        [
+            "approve-call",
+            "--ledger",
+            str(ledger_path),
+            "--tool",
+            "run_command",
+            "--server-id",
+            "filesystem-prod",
+            "--approved-by",
+            "security",
+            "--reason",
+            "bounded maintenance",
+        ]
+    )
+    capsys.readouterr()
+    grants = AuditLedger(ledger_path).list_approval_grants()
+
+    assert exit_code == 0
+    assert grants[0].source == "mcp_stdio:filesystem-prod"

@@ -15,7 +15,7 @@ from agentguard.compatibility.v1_demo import write_demo
 from agentguard.discovery import discover_config_paths, scan_configs
 from agentguard.doctor import render_doctor_markdown, run_doctor
 from agentguard.gate import scan_report_fails_gate
-from agentguard.mcp_stdio import DEFAULT_INVENTORY_TTL_SECONDS, MCPStdioProxy
+from agentguard.mcp_stdio import DEFAULT_INVENTORY_TTL_SECONDS, MCPStdioProxy, mcp_source_id
 from agentguard.models import (
     ApprovalGrant,
     AuditChainVerification,
@@ -36,6 +36,7 @@ from agentguard.render import (
     to_json,
 )
 from agentguard.secrets import redact_mapping, redact_value
+from agentguard.security.files import secure_atomic_write
 
 changed_config_paths = _changed_config_paths
 
@@ -131,6 +132,10 @@ def main(argv: list[str] | None = None) -> int:
     approve_parser.add_argument("--arg", action="append", default=[], help="Tool arg as key=value")
     approve_parser.add_argument("--agent-id", default="mcp-client")
     approve_parser.add_argument("--source", default="mcp_stdio")
+    approve_parser.add_argument(
+        "--server-id",
+        help="Bind the grant to mcp_stdio:<server-id>; overrides --source",
+    )
     approve_parser.add_argument("--approved-by", required=True)
     approve_parser.add_argument("--reason", required=True)
     approve_parser.add_argument("--ttl-seconds", type=float, default=300.0)
@@ -151,6 +156,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     mcp_parser.add_argument(
         "--agent-id", default="mcp-client", help="Agent/client label for audit logs"
+    )
+    mcp_parser.add_argument(
+        "--server-id",
+        help="Stable identity for this downstream server; defaults to a command digest",
     )
     mcp_parser.add_argument(
         "--max-message-bytes",
@@ -189,6 +198,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
 
+    sanitize_parser = subparsers.add_parser(
+        "sanitize-audit",
+        help="Redact retained legacy audit rows and rebuild the local hash chain",
+    )
+    sanitize_parser.add_argument(
+        "--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path"
+    )
+    sanitize_parser.add_argument(
+        "--acknowledge-anchor-reset",
+        action="store_true",
+        help="Required: confirms that existing external audit-head anchors will become invalid",
+    )
+    sanitize_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+
     args = parser.parse_args(argv)
     if args.command == "init":
         return _cmd_init(args)
@@ -214,6 +237,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_report(args)
     if args.command == "verify-audit":
         return _cmd_verify_audit(args)
+    if args.command == "sanitize-audit":
+        return _cmd_sanitize_audit(args)
     parser.error("unknown command")
     return 2
 
@@ -225,8 +250,11 @@ def _cmd_init(args: argparse.Namespace) -> int:
         sys.stderr.write("Use --force to replace it.\n")
         return 1
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(render_policy_pack(args.pack), encoding="utf-8")
+    secure_atomic_write(
+        output_path,
+        render_policy_pack(args.pack).encode("utf-8"),
+        mode=0o600,
+    )
     sys.stdout.write(f"Wrote {args.pack} policy to {output_path}\n")
     sys.stdout.write(
         f"Next: run agentguard mcp-proxy --policy {output_path} -- --your-mcp-server-command\n"
@@ -348,9 +376,10 @@ def _cmd_approve_call(args: argparse.Namespace) -> int:
 
     arguments = _parse_raw_args(args.arg)
     now = datetime.now(UTC)
+    source = f"mcp_stdio:{args.server_id}" if args.server_id else args.source
     grant = ApprovalGrant(
         agent_id=args.agent_id,
-        source=args.source,
+        source=source,
         tool_name=args.tool,
         arguments_hash=hash_tool_arguments(arguments),
         approved_by=args.approved_by,
@@ -407,6 +436,23 @@ def _cmd_verify_audit(args: argparse.Namespace) -> int:
     return 0 if verification.ok else 1
 
 
+def _cmd_sanitize_audit(args: argparse.Namespace) -> int:
+    if not args.acknowledge_anchor_reset:
+        sys.stderr.write(
+            "sanitize-audit rebuilds the chain and invalidates existing external anchors; "
+            "pass --acknowledge-anchor-reset to continue\n"
+        )
+        return 2
+    verification = AuditLedger(Path(args.ledger)).sanitize_and_rechain()
+    output = (
+        to_json(verification)
+        if args.format == "json"
+        else _render_audit_chain_verification_markdown(verification)
+    )
+    _write_output(output, None)
+    return 0
+
+
 def _cmd_mcp_proxy(args: argparse.Namespace) -> int:
     server_command = list(args.server_command)
     if server_command and server_command[0] == "--":
@@ -424,6 +470,10 @@ def _cmd_mcp_proxy(args: argparse.Namespace) -> int:
         max_message_bytes=args.max_message_bytes,
         shutdown_timeout_seconds=args.shutdown_timeout_seconds,
         inventory_ttl_seconds=args.inventory_ttl_seconds,
+        server_id=args.server_id,
+    )
+    sys.stderr.write(
+        f"AgentGuard MCP source identity: {mcp_source_id(server_command, args.server_id)}\n"
     )
     return proxy.run()
 
@@ -476,8 +526,8 @@ def _config_paths_from_args(args: argparse.Namespace) -> list[Path]:
 def _write_output(output: str, path: str | None) -> None:
     if path:
         output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(output if output.endswith("\n") else output + "\n", encoding="utf-8")
+        payload = output if output.endswith("\n") else output + "\n"
+        secure_atomic_write(output_path, payload.encode("utf-8"), mode=0o600)
         return
     sys.stdout.write(output)
     if not output.endswith("\n"):

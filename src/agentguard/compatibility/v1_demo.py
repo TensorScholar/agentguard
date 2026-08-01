@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentguard.policy_packs import render_policy_pack
+from agentguard.security.files import secure_atomic_write
 
 
 @dataclass(frozen=True)
@@ -21,7 +22,7 @@ def write_demo(output_dir: Path, force: bool = False) -> list[Path]:
     for item in demo_files(output_dir):
         path = output_dir / item.relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(item.content, encoding="utf-8")
+        secure_atomic_write(path, item.content.encode("utf-8"), mode=0o644)
         written.append(path)
     return written
 

@@ -1,0 +1,39 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "issued_at": {
+      "format": "date-time",
+      "title": "Issued At",
+      "type": "string"
+    },
+    "key_id": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Key Id",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "signature": {
+      "title": "Signature",
+      "type": "string"
+    }
+  },
+  "required": [
+    "manifest_sha256",
+    "issued_at",
+    "key_id",
+    "signature"
+  ],
+  "title": "EvidenceAttestation",
+  "type": "object"
+}

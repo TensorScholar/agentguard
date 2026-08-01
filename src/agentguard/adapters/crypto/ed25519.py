@@ -8,6 +8,8 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
+from agentguard.security.files import read_regular_file, secure_atomic_write
+
 
 class Ed25519Signer:
     def __init__(self, private_key: Ed25519PrivateKey, key_id: str = "local-ed25519") -> None:
@@ -29,27 +31,28 @@ class Ed25519Signer:
         return cls(Ed25519PrivateKey.generate(), key_id)
 
     def save_private(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(
+        secure_atomic_write(
+            path,
             self._private_key.private_bytes(
                 serialization.Encoding.PEM,
                 serialization.PrivateFormat.PKCS8,
                 serialization.NoEncryption(),
-            )
+            ),
+            mode=0o600,
         )
-        path.chmod(0o600)
 
     def save_public(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(
+        secure_atomic_write(
+            path,
             self.public_key().public_bytes(
                 serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
-            )
+            ),
+            mode=0o644,
         )
 
     @classmethod
     def load_private(cls, path: Path, key_id: str = "local-ed25519") -> Ed25519Signer:
-        key = serialization.load_pem_private_key(path.read_bytes(), password=None)
+        key = serialization.load_pem_private_key(read_regular_file(path), password=None)
         if not isinstance(key, Ed25519PrivateKey):
             raise TypeError("not an Ed25519 private key")
         return cls(key, key_id)
@@ -71,7 +74,7 @@ class Ed25519Verifier:
 
     @classmethod
     def from_public_file(cls, path: Path, key_id: str = "local-ed25519") -> Ed25519Verifier:
-        key = serialization.load_pem_public_key(path.read_bytes())
+        key = serialization.load_pem_public_key(read_regular_file(path))
         if not isinstance(key, Ed25519PublicKey):
             raise TypeError("not an Ed25519 public key")
         return cls({key_id: key})
@@ -107,7 +110,7 @@ class Ed25519BrokerGrantVerifier:
         broker_id: str,
         key_id: str = "mock-broker-ed25519",
     ) -> Ed25519BrokerGrantVerifier:
-        key = serialization.load_pem_public_key(path.read_bytes())
+        key = serialization.load_pem_public_key(read_regular_file(path))
         if not isinstance(key, Ed25519PublicKey):
             raise TypeError("not an Ed25519 public key")
         return cls({(broker_id, key_id): key})

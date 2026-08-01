@@ -76,6 +76,7 @@ def authorize_execution(
             verify_approval_receipt(approval, receipt, intent, verifier, now=now)
         except ReceiptVerificationError as exc:
             raise ExecutionGuardError(str(exc)) from exc
+        _check_budget(intent, approval.approved_budget)
     _check_budget(intent, receipt.execution_budget)
     if receipt.credential_ceiling is not None:
         if grant is None:

@@ -14,6 +14,7 @@ from agentguard.application import AgentGuardService
 from agentguard.compatibility.v1_demo import write_demo
 from agentguard.domain import ActionIntent, CredentialRequest, PolicyDocument
 from agentguard.engine.execution import ExecutionGuardError, authorize_execution
+from agentguard.security.files import secure_atomic_write
 
 RESOURCE_ROOT = Path(__file__).parent / "resources"
 
@@ -110,7 +111,7 @@ def create_demo(output: Path, force: bool = False) -> None:
         ("grant.json", grant.model_dump_json(indent=2)),
     ]
     for name, value in files:
-        (output / name).write_text(value + "\n", encoding="utf-8")
+        secure_atomic_write(output / name, (value + "\n").encode("utf-8"), mode=0o600)
     results = {
         "happy_path": "authorized",
         "argument_mutation": mutation_result,
@@ -118,7 +119,11 @@ def create_demo(output: Path, force: bool = False) -> None:
         "replay": replay_result,
         "audit": state.verify(),
     }
-    (output / "results.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    secure_atomic_write(
+        output / "results.json",
+        (json.dumps(results, indent=2) + "\n").encode("utf-8"),
+        mode=0o600,
+    )
     build_bundle(
         output / "evidence",
         {
@@ -127,13 +132,17 @@ def create_demo(output: Path, force: bool = False) -> None:
             "grant.json": grant,
             "results.json": results,
         },
+        signer=signer,
     )
     write_demo(output / "v1-compat")
-    (output / "README.md").write_text(
-        "# AgentGuard meeting demo\n\n"
-        "Shows a scoped authorization, opaque broker grant, argument-mutation rejection, "
-        "scope-inflation rejection, replay rejection, and verifiable evidence.\n",
-        encoding="utf-8",
+    secure_atomic_write(
+        output / "README.md",
+        (
+            "# AgentGuard meeting demo\n\n"
+            "Shows a scoped authorization, opaque broker grant, argument-mutation rejection, "
+            "scope-inflation rejection, replay rejection, and verifiable evidence.\n"
+        ).encode("utf-8"),
+        mode=0o600,
     )
 
 

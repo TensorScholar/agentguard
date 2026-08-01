@@ -33,6 +33,22 @@ def _set_matches(value: str, patterns: Iterable[str]) -> bool:
     return not patterns or any(fnmatchcase(value, p) for p in patterns)
 
 
+
+def _normalize_domain(value: str) -> str:
+    candidate = value.strip().rstrip(".").casefold()
+    if candidate.startswith("*."):
+        return "*." + candidate[2:].encode("idna").decode("ascii")
+    return candidate.encode("idna").decode("ascii")
+
+
+def _domain_matches(value: str, patterns: Iterable[str]) -> bool:
+    try:
+        normalized = _normalize_domain(value)
+        normalized_patterns = tuple(_normalize_domain(pattern) for pattern in patterns)
+    except UnicodeError:
+        return False
+    return any(fnmatchcase(normalized, pattern) for pattern in normalized_patterns)
+
 def rule_matches(rule: PolicyRule, intent: ActionIntent) -> bool:
     p = rule.principal
     if not _set_matches(intent.principal.agent_id, p.agent_ids):
@@ -72,7 +88,7 @@ def rule_matches(rule: PolicyRule, intent: ActionIntent) -> bool:
         if intent.resource is None or not intent.resource.recipient_domains:
             return False
         if not all(
-            any(fnmatchcase(d, p) for p in r.recipient_domains)
+            _domain_matches(d, r.recipient_domains)
             for d in intent.resource.recipient_domains
         ):
             return False
@@ -80,7 +96,7 @@ def rule_matches(rule: PolicyRule, intent: ActionIntent) -> bool:
         r.excluded_recipient_domains
         and intent.resource is not None
         and any(
-            any(fnmatchcase(d, p) for p in r.excluded_recipient_domains)
+            _domain_matches(d, r.excluded_recipient_domains)
             for d in intent.resource.recipient_domains
         )
     ):

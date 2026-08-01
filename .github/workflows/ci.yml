@@ -1,43 +1,104 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
+    name: Python ${{ matrix.python-version }} quality
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          python-version: "${{ matrix.python-version }}"
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
           cache: pip
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e '.[dev,http]'
-      - run: make check
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -c requirements/runtime-validated.txt -e '.[http]'
+          python -m pip install -r requirements/validation.txt
+      - name: Verify
+        run: make check
+
+  compatibility:
+    name: ${{ matrix.os }} / Python 3.13
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -c requirements/runtime-validated.txt -e '.[http]'
+          python -m pip install -r requirements/validation.txt
+      - name: Compile
+        run: python -m compileall -q src tests
+      - name: Test
+        run: python -m pytest
 
   package:
+    name: Package and clean-install smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          python-version: "3.12"
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
           cache: pip
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install build twine
-      - run: python -m build
-      - run: python -m twine check dist/*
-      - run: python -m venv /tmp/agentguard-wheel-smoke
-      - run: /tmp/agentguard-wheel-smoke/bin/python -m pip install dist/*.whl
-      - run: /tmp/agentguard-wheel-smoke/bin/agentguard --version
-      - run: /tmp/agentguard-wheel-smoke/bin/agentguard --help
-      - run: /tmp/agentguard-wheel-smoke/bin/agentguard demo --output /tmp/agentguard-demo
-      - run: /tmp/agentguard-wheel-smoke/bin/agentguard evidence-verify /tmp/agentguard-demo/evidence
-      - run: /tmp/agentguard-wheel-smoke/bin/python -m pip check
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/validation.txt
+          python -m build
+          python -m twine check dist/*
+      - name: Clean-install smoke
+        shell: bash
+        run: |
+          python -m venv /tmp/agentguard-wheel-smoke
+          /tmp/agentguard-wheel-smoke/bin/python -m pip install dist/*.whl
+          /tmp/agentguard-wheel-smoke/bin/agentguard --version
+          /tmp/agentguard-wheel-smoke/bin/agentguard --help >/dev/null
+          /tmp/agentguard-wheel-smoke/bin/agentguard demo --output /tmp/agentguard-demo
+          /tmp/agentguard-wheel-smoke/bin/agentguard evidence-verify /tmp/agentguard-demo/evidence
+          /tmp/agentguard-wheel-smoke/bin/python -m pip check
+      - name: Upload distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: agentguard-distributions
+          path: dist/*
+          if-no-files-found: error
