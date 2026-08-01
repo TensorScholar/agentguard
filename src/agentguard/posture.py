@@ -72,9 +72,7 @@ def scan_enforcement_posture(paths: list[Path]) -> EnforcementPostureReport:
     if duplicate_bypasses:
         routes = [
             route.model_copy(
-                update={
-                    "reason_codes": (*route.reason_codes, "mcp.parallel_direct_bypass")
-                }
+                update={"reason_codes": (*route.reason_codes, "mcp.parallel_direct_bypass")}
             )
             if route.status == EnforcementStatus.DIRECT
             and route.downstream_fingerprint in duplicate_bypasses

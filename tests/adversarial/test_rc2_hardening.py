@@ -46,15 +46,11 @@ def test_legacy_deny_never_persists_raw_secret_and_ledger_is_private(tmp_path: P
 def test_legacy_policy_blocks_encoded_path_and_raw_metadata_host() -> None:
     policy = Policy()
     encoded = policy.evaluate(ToolCall(tool_name="read_file", arguments={"path": "%2Eenv"}))
-    metadata = policy.evaluate(
-        ToolCall(tool_name="request", arguments={"host": "169.254.169.254"})
-    )
+    metadata = policy.evaluate(ToolCall(tool_name="request", arguments={"host": "169.254.169.254"}))
     decimal = policy.evaluate(
         ToolCall(
             tool_name="request",
-            arguments={
-                "host": str(int.from_bytes(bytes([169, 254, 169, 254]), "big"))
-            },
+            arguments={"host": str(int.from_bytes(bytes([169, 254, 169, 254]), "big"))},
         )
     )
 
@@ -147,7 +143,8 @@ def test_credential_grant_cannot_outlive_decision(intent, policy, signer) -> Non
 
 def test_v2_state_database_is_private(state) -> None:
     assert os.stat(state.path).st_mode & 0o777 == 0o600
-    with sqlite3.connect(state.path) as connection:
+    # Assert the connection-local pragma on the managed connection for cross-platform correctness.
+    with state._connect() as connection:
         assert connection.execute("PRAGMA secure_delete").fetchone()[0] == 1
 
 
@@ -178,6 +175,9 @@ def test_legacy_explicit_sanitizer_removes_retained_secret_and_rechains(tmp_path
     [
         "fe80::1",
         "::ffff:169.254.169.254",
+        "[::ffff:169.254.169.254]",
+        "http://[::ffff:169.254.169.254]/latest/meta-data",
+        "169.254.169.254",
         "0xA9FEA9FE",
         "0251.0376.0251.0376",
         "169.254.43518",
@@ -193,15 +193,11 @@ def test_legacy_policy_fails_closed_on_excessive_nested_encoding() -> None:
     for _ in range(12):
         value = value.replace("%", "%25").replace(".", "%2E")
 
-    path_decision = Policy().evaluate(
-        ToolCall(tool_name="read_file", arguments={"path": value})
-    )
+    path_decision = Policy().evaluate(ToolCall(tool_name="read_file", arguments={"path": value}))
     host_value = "169.254.169.254"
     for _ in range(12):
         host_value = host_value.replace("%", "%25").replace(".", "%2E")
-    host_decision = Policy().evaluate(
-        ToolCall(tool_name="request", arguments={"host": host_value})
-    )
+    host_decision = Policy().evaluate(ToolCall(tool_name="request", arguments={"host": host_value}))
 
     assert path_decision.rule_id == "input.excessive_encoding"
     assert host_decision.rule_id == "input.excessive_encoding"

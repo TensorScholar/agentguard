@@ -82,9 +82,7 @@ def build_bundle(
         attestation_bytes = canonical_bytes(attestation)
         secure_atomic_write(output / "attestation.json", attestation_bytes, mode=0o600)
         sums.append(f"{sha256(attestation_bytes).hexdigest()}  attestation.json")
-    secure_atomic_write(
-        output / "SHA256SUMS", ("\n".join(sums) + "\n").encode("utf-8"), mode=0o600
-    )
+    secure_atomic_write(output / "SHA256SUMS", ("\n".join(sums) + "\n").encode("utf-8"), mode=0o600)
     return output
 
 
@@ -110,8 +108,8 @@ def _sanitize(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_sanitize(item) for item in value]
     if isinstance(value, (set, frozenset)):
-        sanitized = [_sanitize(item) for item in value]
-        return sorted(sanitized, key=canonical_bytes)
+        sanitized_items = [_sanitize(item) for item in value]
+        return sorted(sanitized_items, key=canonical_bytes)
     return redact_value(value)
 
 
@@ -130,9 +128,11 @@ def verify_bundle(
     if not sums_path.is_file():
         raise EvidenceVerificationError("evidence.checksums_missing")
     checksums: dict[str, str] = {}
-    checksum_lines = read_regular_file(
-        sums_path, maximum_bytes=MAX_EVIDENCE_METADATA_BYTES
-    ).decode("utf-8").splitlines()
+    checksum_lines = (
+        read_regular_file(sums_path, maximum_bytes=MAX_EVIDENCE_METADATA_BYTES)
+        .decode("utf-8")
+        .splitlines()
+    )
     for line in checksum_lines:
         try:
             checksum, name = line.split("  ", 1)
@@ -221,9 +221,7 @@ def verify_bundle(
             raise EvidenceVerificationError(f"evidence.size_mismatch:{artifact_name}")
         if checked + 1 > MAX_EVIDENCE_ARTIFACTS:
             raise EvidenceVerificationError("evidence.too_many_artifacts")
-        data = read_regular_file(
-            artifact_path, maximum_bytes=MAX_EVIDENCE_ARTIFACT_BYTES
-        )
+        data = read_regular_file(artifact_path, maximum_bytes=MAX_EVIDENCE_ARTIFACT_BYTES)
         if expected_bytes != len(data):
             raise EvidenceVerificationError(f"evidence.size_mismatch:{artifact_name}")
         actual_digest = sha256(data).hexdigest()

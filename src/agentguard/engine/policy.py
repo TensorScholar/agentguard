@@ -33,7 +33,6 @@ def _set_matches(value: str, patterns: Iterable[str]) -> bool:
     return not patterns or any(fnmatchcase(value, p) for p in patterns)
 
 
-
 def _normalize_domain(value: str) -> str:
     candidate = value.strip().rstrip(".").casefold()
     if candidate.startswith("*."):
@@ -48,6 +47,7 @@ def _domain_matches(value: str, patterns: Iterable[str]) -> bool:
     except UnicodeError:
         return False
     return any(fnmatchcase(normalized, pattern) for pattern in normalized_patterns)
+
 
 def rule_matches(rule: PolicyRule, intent: ActionIntent) -> bool:
     p = rule.principal
@@ -88,8 +88,7 @@ def rule_matches(rule: PolicyRule, intent: ActionIntent) -> bool:
         if intent.resource is None or not intent.resource.recipient_domains:
             return False
         if not all(
-            _domain_matches(d, r.recipient_domains)
-            for d in intent.resource.recipient_domains
+            _domain_matches(d, r.recipient_domains) for d in intent.resource.recipient_domains
         ):
             return False
     if (

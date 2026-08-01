@@ -29,9 +29,7 @@ def intent_from_tools_call(
         raise TypeError("tools/call arguments must be an object")
     request_id = str(message.get("id") or uuid4().hex)
     schema = tool_schema if tool_schema is not None else {}
-    capabilities, _, _ = classify_tool_definition(
-        {"name": name, "inputSchema": schema}
-    )
+    capabilities, _, _ = classify_tool_definition({"name": name, "inputSchema": schema})
     projected_capabilities = frozenset(capability.value for capability in capabilities)
     return ActionIntent(
         request_id=request_id,

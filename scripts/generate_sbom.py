@@ -44,9 +44,7 @@ def _validated_components() -> list[dict[str, object]]:
                 "version": version,
                 "purl": f"pkg:pypi/{quote(normalized)}@{quote(version)}",
                 "scope": "required",
-                "properties": [
-                    {"name": "agentguard:validation-scope", "value": "direct-runtime"}
-                ],
+                "properties": [{"name": "agentguard:validation-scope", "value": "direct-runtime"}],
             }
         )
     return components

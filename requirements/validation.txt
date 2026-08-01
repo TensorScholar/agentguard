@@ -5,6 +5,6 @@ jsonschema==4.26.0
 mypy==1.20.2
 pip-audit==2.10.1
 pytest==9.1.1
-ruff==0.16.0
+ruff==0.15.22
 twine==7.0.0
 types-PyYAML==6.0.12.20260724

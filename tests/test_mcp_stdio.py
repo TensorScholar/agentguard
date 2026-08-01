@@ -659,9 +659,7 @@ def test_failed_tools_list_refresh_invalidates_cached_inventory(tmp_path: Path) 
         ]
     )
     processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
-    processor.handle_client_line(
-        b'{"jsonrpc":"2.0","id":62,"method":"tools/list","params":{}}\n'
-    )
+    processor.handle_client_line(b'{"jsonrpc":"2.0","id":62,"method":"tools/list","params":{}}\n')
     processor.handle_server_line(
         b'{"jsonrpc":"2.0","id":62,"error":{"code":-32603,"message":"failed"}}\n'
     )

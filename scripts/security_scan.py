@@ -31,10 +31,7 @@ for path in (ROOT / "src").rglob("*.py"):
                 (keyword.value for keyword in node.keywords if keyword.arg == "Loader"),
                 None,
             )
-            if not (
-                isinstance(loader, ast.Name)
-                and loader.id.startswith("_Strict")
-            ):
+            if not (isinstance(loader, ast.Name) and loader.id.startswith("_Strict")):
                 findings.append(f"{path.relative_to(ROOT)}:{node.lineno}: unsafe yaml.load")
 
 if findings:

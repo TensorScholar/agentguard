@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import ipaddress
 import posixpath
 import unicodedata
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
@@ -186,15 +186,25 @@ _POLICY_FIELDS = {
     "approval_exceptions",
 }
 _APPROVAL_EXCEPTION_FIELDS = {
-    "id", "reason", "expires_at", "approved_by", "tool", "capabilities", "capability"
+    "id",
+    "reason",
+    "expires_at",
+    "approved_by",
+    "tool",
+    "capabilities",
+    "capability",
 }
 
 
 class _StrictPolicyLoader(yaml.SafeLoader):
-    def compose_node(self, parent: object, index: object) -> yaml.Node:
-        if self.check_event(yaml.AliasEvent):
+    def compose_node(self, parent: yaml.Node | None, index: int) -> yaml.Node:
+        # types-PyYAML leaves Parser.check_event untyped despite its boolean contract.
+        if self.check_event(yaml.AliasEvent):  # type: ignore[no-untyped-call]
             raise ValueError("YAML aliases are not allowed in policy files")
-        return super().compose_node(parent, index)
+        node = super().compose_node(parent, index)
+        if node is None:
+            raise ValueError("YAML node composition returned no node")
+        return node
 
 
 def _construct_unique_mapping(
@@ -297,8 +307,7 @@ def _approval_exceptions_from_raw(value: object) -> tuple[ApprovalException, ...
         unknown = set(item) - _APPROVAL_EXCEPTION_FIELDS
         if unknown:
             raise ValueError(
-                f"approval_exceptions[{index}] has unknown field(s): "
-                + ", ".join(sorted(unknown))
+                f"approval_exceptions[{index}] has unknown field(s): " + ", ".join(sorted(unknown))
             )
         if "capabilities" in item and "capability" in item:
             raise ValueError(
@@ -385,7 +394,6 @@ def _rule_id_fragment(value: str) -> str:
     )
 
 
-
 def _first_excessively_encoded_value(arguments: dict[str, Any]) -> str | None:
     for value in _walk_values(arguments):
         if not isinstance(value, str) or "%" not in value:
@@ -395,6 +403,7 @@ def _first_excessively_encoded_value(arguments: dict[str, Any]) -> str | None:
         except ValueError:
             return value
     return None
+
 
 def _first_blocked_path(arguments: dict[str, Any], patterns: tuple[str, ...]) -> str | None:
     for value in _walk_values(arguments):
@@ -506,7 +515,9 @@ def _extract_hostname(value: str) -> str | None:
     if not candidate or any(character.isspace() for character in candidate):
         return None
 
-    literal = candidate[1:-1] if candidate.startswith("[") and candidate.endswith("]") else candidate
+    literal = (
+        candidate[1:-1] if candidate.startswith("[") and candidate.endswith("]") else candidate
+    )
     try:
         return _normalize_hostname(str(ipaddress.ip_address(literal)))
     except ValueError:
@@ -587,4 +598,9 @@ def _is_link_local_or_metadata(host: str) -> bool:
         address = ipaddress.ip_address(host)
     except ValueError:
         return False
-    return address.is_link_local or address in ipaddress.ip_network("100.100.100.200/32")
+    effective_address = address
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        effective_address = address.ipv4_mapped
+    return effective_address.is_link_local or effective_address == ipaddress.IPv4Address(
+        "100.100.100.200"
+    )

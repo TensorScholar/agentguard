@@ -1,1 +1,3 @@
-from .service import *
+from .service import AgentGuardService
+
+__all__ = ["AgentGuardService"]

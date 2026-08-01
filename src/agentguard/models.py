@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
+from uuid import uuid4
 
 from .secrets import redact_mapping
-from uuid import uuid4
 
 
 class RiskLevel(str, Enum):
