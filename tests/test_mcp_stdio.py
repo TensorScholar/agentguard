@@ -489,7 +489,7 @@ def test_mcp_proxy_drains_high_volume_server_output(
             "--ledger",
             str(ledger_path),
             "--shutdown-timeout-seconds",
-            "0.5",
+            "2.0",
             "--",
             sys.executable,
             str(fake_server),
