@@ -1,3 +1,9 @@
+from collections.abc import Callable
+from pathlib import Path
+
+import pytest
+
+import agentguard.adapters.crypto.ed25519 as ed25519_module
 from agentguard.adapters.crypto import (
     Ed25519Signer,
     Ed25519Verifier,
@@ -6,7 +12,19 @@ from agentguard.adapters.crypto import (
 )
 
 
-def test_key_file_round_trip(tmp_path):
+def test_key_file_round_trip(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    assert_private_file: Callable[[Path], bytes],
+) -> None:
+    secure_writer_calls: list[tuple[Path, int]] = []
+    original_secure_writer = ed25519_module.secure_atomic_write
+
+    def tracked_secure_writer(path: Path, data: bytes, *, mode: int = 0o600) -> None:
+        secure_writer_calls.append((path, mode))
+        original_secure_writer(path, data, mode=mode)
+
+    monkeypatch.setattr(ed25519_module, "secure_atomic_write", tracked_secure_writer)
     signer = Ed25519Signer.generate("k1")
     private = tmp_path / "private.pem"
     public = tmp_path / "public.pem"
@@ -16,7 +34,8 @@ def test_key_file_round_trip(tmp_path):
     verifier = Ed25519Verifier.from_public_file(public, "k1")
     payload = b"payload"
     assert verifier.verify("k1", payload, loaded.sign(payload))
-    assert oct(private.stat().st_mode & 0o777) == "0o600"
+    assert (private, 0o600) in secure_writer_calls
+    assert b"PRIVATE KEY" in assert_private_file(private)
 
 
 def test_unknown_key_is_false(signer):

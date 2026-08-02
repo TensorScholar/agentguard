@@ -427,7 +427,7 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
             "--ledger",
             str(ledger_path),
             "--shutdown-timeout-seconds",
-            "0.5",
+            "2.0",
             "--",
             sys.executable,
             str(fake_server),

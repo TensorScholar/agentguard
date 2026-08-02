@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+import agentguard.adapters.storage.sqlite.state as sqlite_state_module
+import agentguard.audit as audit_module
 from agentguard.adapters.broker import MockCredentialBroker
 from agentguard.adapters.crypto import Ed25519Signer
+from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.audit import AuditLedger
 from agentguard.domain import CredentialRequest, Effect, ExecutionBudget
 from agentguard.domain.policy import ActionMatcher, PolicyRule
@@ -29,7 +32,19 @@ from agentguard.policy import Policy, load_policy
 from agentguard.secrets import redact_mapping
 
 
-def test_legacy_deny_never_persists_raw_secret_and_ledger_is_private(tmp_path: Path) -> None:
+def test_legacy_deny_never_persists_raw_secret_and_ledger_is_private(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    assert_private_file: Callable[[Path], bytes],
+) -> None:
+    secure_writer_paths: list[Path] = []
+    original_secure_writer = audit_module.ensure_private_file
+
+    def tracked_secure_writer(path: Path) -> None:
+        secure_writer_paths.append(path)
+        original_secure_writer(path)
+
+    monkeypatch.setattr(audit_module, "ensure_private_file", tracked_secure_writer)
     token = "sk-" + "a" * 40
     ledger = AuditLedger(tmp_path / "audit.sqlite")
     call = ToolCall(tool_name="read_file", arguments={"api_key": token, "path": ".env"})
@@ -40,7 +55,8 @@ def test_legacy_deny_never_persists_raw_secret_and_ledger_is_private(tmp_path: P
 
     assert token.encode() not in ledger.path.read_bytes()
     assert ledger.list_events()[0].arguments["api_key"] == "[REDACTED:sensitive_key]"
-    assert os.stat(ledger.path).st_mode & 0o777 == 0o600
+    assert secure_writer_paths == [ledger.path]
+    assert assert_private_file(ledger.path).startswith(b"SQLite format 3\x00")
 
 
 def test_legacy_policy_blocks_encoded_path_and_raw_metadata_host() -> None:
@@ -141,8 +157,22 @@ def test_credential_grant_cannot_outlive_decision(intent, policy, signer) -> Non
         )
 
 
-def test_v2_state_database_is_private(state) -> None:
-    assert os.stat(state.path).st_mode & 0o777 == 0o600
+def test_v2_state_database_is_private(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    assert_private_file: Callable[[Path], bytes],
+) -> None:
+    secure_writer_paths: list[Path] = []
+    original_secure_writer = sqlite_state_module.ensure_private_file
+
+    def tracked_secure_writer(path: Path) -> None:
+        secure_writer_paths.append(path)
+        original_secure_writer(path)
+
+    monkeypatch.setattr(sqlite_state_module, "ensure_private_file", tracked_secure_writer)
+    state = SQLiteState(tmp_path / "state.sqlite")
+    assert secure_writer_paths == [state.path]
+    assert assert_private_file(state.path).startswith(b"SQLite format 3\x00")
     # Assert the connection-local pragma on the managed connection for cross-platform correctness.
     with state._connect() as connection:
         assert connection.execute("PRAGMA secure_delete").fetchone()[0] == 1

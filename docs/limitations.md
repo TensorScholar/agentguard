@@ -19,6 +19,10 @@
 - The mock broker and Loadout adapter are contract previews, not live production integrations.
 - Interactive, identity-backed human approval UX is not included.
 - No external penetration test, long-duration soak test or production pilot has been completed.
+- AgentGuard applies owner-only file modes on POSIX systems. On Windows, sensitive files inherit
+  NTFS ACLs from their containing directory; exact ACL hardening and verification require
+  deployment-level ACL configuration. AgentGuard does not claim that POSIX `0600` semantics can be
+  proven through `st_mode` on Windows.
 - RC2 changes were locally exercised on Linux/Python 3.13. Cross-platform jobs are defined in CI but
   must run on the final Git commit before release promotion.
 - Legacy Policy v1 retains compatibility-oriented semantics, including an allow default for ordinary

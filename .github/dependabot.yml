@@ -1,10 +1,12 @@
 version: 2
 updates:
+  # Version-update PRs are paused for the RC2 demonstration and can be re-enabled during the
+  # post-release maintenance window.
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     groups:
       python-runtime:
         dependency-type: production
@@ -15,4 +17,4 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
