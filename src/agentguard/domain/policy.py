@@ -66,6 +66,15 @@ class PolicyRule(StrictModel):
     execution_budget: ExecutionBudget = ExecutionBudget()
     reason_code: str | None = Field(default=None, max_length=300)
 
+    @model_validator(mode="after")
+    def deny_if_contains_requires_deny_effect(self) -> PolicyRule:
+        if self.provenance.deny_if_contains and self.effect != Effect.DENY:
+            raise ValueError(
+                "provenance.deny_if_contains is incompatible with rule effect "
+                f"'{self.effect.value}'; effect must be DENY"
+            )
+        return self
+
 
 class PolicyDefaults(StrictModel):
     effect: Literal[Effect.DENY] = Effect.DENY

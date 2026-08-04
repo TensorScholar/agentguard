@@ -18,6 +18,27 @@ from agentguard.domain.policy import EffectMatcher
 from agentguard.engine.policy import evaluate_policy
 
 
+def _policy_document_with_provenance_rule(
+    *, effect: Effect, deny_if_contains: list[str]
+) -> PolicyDocument:
+    return PolicyDocument.model_validate_json(
+        json.dumps(
+            {
+                "schema_version": "2",
+                "metadata": {"id": "provenance-policy", "revision": 1},
+                "defaults": {"effect": "deny"},
+                "rules": [
+                    {
+                        "id": "provenance-rule",
+                        "effect": effect.value,
+                        "provenance": {"deny_if_contains": deny_if_contains},
+                    }
+                ],
+            }
+        )
+    )
+
+
 def test_bounded_refund_allows(intent, policy):
     result = evaluate_policy(policy, intent)
     assert result.effect == Effect.ALLOW
@@ -214,3 +235,77 @@ def test_runtime_rejects_policy_copy_with_wider_rule_ttl(policy, intent):
     )
     with pytest.raises(ValueError, match="policy.credential_ttl_exceeds_default"):
         evaluate_policy(invalid, intent)
+
+
+@pytest.mark.parametrize("effect", [Effect.ALLOW, Effect.REQUIRE_APPROVAL])
+def test_policy_document_rejects_deny_if_contains_on_non_deny_rule(effect):
+    with pytest.raises(ValidationError) as exc_info:
+        _policy_document_with_provenance_rule(
+            effect=effect,
+            deny_if_contains=[ProvenanceLabel.EXTERNAL_EMAIL.value],
+        )
+
+    message = str(exc_info.value)
+    assert "provenance.deny_if_contains" in message
+    assert f"rule effect '{effect.value}'" in message
+    assert "effect must be DENY" in message
+
+
+def test_policy_document_accepts_deny_if_contains_on_deny_rule():
+    policy = _policy_document_with_provenance_rule(
+        effect=Effect.DENY,
+        deny_if_contains=[ProvenanceLabel.EXTERNAL_EMAIL.value],
+    )
+
+    assert policy.rules[0].effect == Effect.DENY
+    assert policy.rules[0].provenance.deny_if_contains == frozenset(
+        {ProvenanceLabel.EXTERNAL_EMAIL}
+    )
+
+
+def test_matching_deny_if_contains_provenance_selects_deny(intent):
+    policy = _policy_document_with_provenance_rule(
+        effect=Effect.DENY,
+        deny_if_contains=[ProvenanceLabel.EXTERNAL_EMAIL.value],
+    )
+    external = intent.model_copy(
+        update={"provenance": (ProvenanceLabel.EXTERNAL_EMAIL,), "provenance_verified": True}
+    )
+
+    result = evaluate_policy(policy, external)
+
+    assert result.effect == Effect.DENY
+    assert result.selected_rule is not None
+    assert result.selected_rule.id == "provenance-rule"
+
+
+def test_nonmatching_deny_if_contains_provenance_does_not_match_rule(intent):
+    policy = _policy_document_with_provenance_rule(
+        effect=Effect.DENY,
+        deny_if_contains=[ProvenanceLabel.EXTERNAL_EMAIL.value],
+    )
+    authenticated = intent.model_copy(
+        update={
+            "provenance": (ProvenanceLabel.AUTHENTICATED_USER_INPUT,),
+            "provenance_verified": True,
+        }
+    )
+
+    result = evaluate_policy(policy, authenticated)
+
+    assert result.effect == Effect.DENY
+    assert result.selected_rule is None
+
+
+@pytest.mark.parametrize("effect", [Effect.ALLOW, Effect.REQUIRE_APPROVAL, Effect.DENY])
+def test_policy_document_accepts_empty_deny_if_contains_for_every_effect(effect):
+    policy = _policy_document_with_provenance_rule(effect=effect, deny_if_contains=[])
+
+    assert policy.rules[0].effect == effect
+    assert policy.rules[0].provenance.deny_if_contains == frozenset()
+
+
+def test_existing_default_policy_fixture_remains_valid(policy):
+    reloaded = PolicyDocument.model_validate_json(policy.model_dump_json())
+
+    assert reloaded == policy
