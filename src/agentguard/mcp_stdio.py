@@ -499,6 +499,12 @@ class MCPStdioProxy:
 
         if process.poll() is not None:
             return False
+        if drain_state.completed.is_set():
+            try:
+                process.wait(timeout=self.shutdown_timeout_seconds)
+                return False
+            except subprocess.TimeoutExpired:
+                pass
 
         _terminate_process_group(process)
         try:

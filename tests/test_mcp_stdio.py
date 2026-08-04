@@ -6,6 +6,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -16,6 +17,7 @@ from agentguard.mcp_stdio import (
     MCPMessageProcessor,
     MCPStdioProxy,
     _iter_bounded_lines,
+    _OutputDrainState,
     _write_and_flush,
     derive_server_id,
     mcp_source_id,
@@ -456,6 +458,46 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
     # Causal order is defined within a call. Independent requests may interleave.
     assert events_by_call["2"] == [Decision.ALLOW, Decision.REDACT]
     assert events_by_call["3"] == [Decision.DENY]
+
+
+def test_wait_or_stop_server_allows_natural_exit_after_output_drain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NaturallyExitingProcess:
+        pid = 1234
+        returncode: int | None = None
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def wait(self, timeout: float | None = None) -> int:
+            assert timeout == 0.5
+            self.returncode = 0
+            return 0
+
+    proxy = MCPStdioProxy(
+        [sys.executable, "-c", "pass"],
+        Policy(),
+        AuditLedger(tmp_path / "audit.sqlite"),
+        shutdown_timeout_seconds=0.5,
+    )
+    drain_state = _OutputDrainState()
+    drain_state.completed.set()
+    monkeypatch.setattr(
+        "agentguard.mcp_stdio._terminate_process_group",
+        lambda _process: pytest.fail("naturally exiting server must not be terminated"),
+    )
+    process = NaturallyExitingProcess()
+
+    assert (
+        proxy._wait_or_stop_server(
+            cast(subprocess.Popen[bytes], process),
+            drain_state,
+        )
+        is False
+    )
+    assert process.returncode == 0
 
 
 @pytest.mark.parametrize("_iteration", range(3))
