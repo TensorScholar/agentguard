@@ -9,6 +9,7 @@ from agentguard.adapters.protocols.mcp import (
 from agentguard.application import AgentGuardService
 from agentguard.audit import AuditLedger
 from agentguard.engine.canonical import digest
+from agentguard.mcp_identity import mcp_source_id
 from agentguard.models import ToolInventoryItem
 from agentguard.ports import ResolvedToolSchema
 
@@ -51,7 +52,7 @@ def test_v1_inventory_resolves_actual_schema_for_v2(tmp_path):
     ledger.upsert_tool_inventory(
         [
             ToolInventoryItem(
-                source="mcp_stdio",
+                source=mcp_source_id([], "filesystem"),
                 name="read_file",
                 input_schema={"type": "object", "required": ["path"]},
                 output_schema={"type": "object"},
@@ -64,6 +65,137 @@ def test_v1_inventory_resolves_actual_schema_for_v2(tmp_path):
     assert resolved is not None
     assert resolved.schema["inputSchema"]["required"] == ["path"]
     assert resolved.schema_digest == digest(resolved.schema)
+
+
+def test_v2_schema_resolver_isolates_same_tool_name_by_server(tmp_path):
+    ledger = AuditLedger(tmp_path / "inventory.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source=mcp_source_id([], "server-a"),
+                name="run",
+                input_schema={"type": "object", "required": ["a"]},
+            ),
+            ToolInventoryItem(
+                source=mcp_source_id([], "server-b"),
+                name="run",
+                input_schema={"type": "object", "required": ["b"]},
+            ),
+        ]
+    )
+    resolver = AuditLedgerToolSchemaResolver(ledger)
+
+    server_a = resolver.resolve("server-a", "run")
+    server_b = resolver.resolve("server-b", "run")
+
+    assert server_a is not None
+    assert server_b is not None
+    assert server_a.schema["inputSchema"]["required"] == ["a"]
+    assert server_b.schema["inputSchema"]["required"] == ["b"]
+    assert server_a.schema_digest == digest(server_a.schema)
+    assert server_b.schema_digest == digest(server_b.schema)
+
+
+def test_v2_schema_resolver_never_uses_generic_or_other_server_inventory(tmp_path):
+    ledger = AuditLedger(tmp_path / "inventory.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="run",
+                input_schema={"type": "object", "required": ["generic"]},
+            ),
+            ToolInventoryItem(
+                source=mcp_source_id([], "server-a"),
+                name="run",
+                input_schema={"type": "object", "required": ["a"]},
+            ),
+        ]
+    )
+
+    resolved = AuditLedgerToolSchemaResolver(ledger).resolve("server-b", "run")
+
+    assert resolved is None
+
+
+def test_v2_schema_resolver_fails_closed_for_invalid_server_identity(tmp_path):
+    ledger = AuditLedger(tmp_path / "inventory.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source=mcp_source_id([], "filesystem"),
+                name="read_file",
+                input_schema={"type": "object"},
+            )
+        ]
+    )
+    resolver = AuditLedgerToolSchemaResolver(ledger)
+
+    for server in ("", " ", "file system", " filesystem"):
+        assert resolver.resolve(server, "read_file") is None
+
+
+def test_mcp_fails_closed_when_inventory_belongs_to_another_server(
+    tmp_path, policy, intent, signer, verifier, state
+):
+    ledger = AuditLedger(tmp_path / "inventory.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source="mcp_stdio",
+                name="read_file",
+                input_schema={"type": "object"},
+            ),
+            ToolInventoryItem(
+                source=mcp_source_id([], "server-a"),
+                name="read_file",
+                input_schema={"type": "object", "required": ["path"]},
+            ),
+        ]
+    )
+    processor = MCPStdioProcessor(
+        AgentGuardService(signer, verifier, state),
+        policy,
+        intent.principal,
+        "server-b",
+        schema_resolver=AuditLedgerToolSchemaResolver(ledger),
+    )
+    raw = b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_file","arguments":{}}}\n'
+
+    result = processor.process_client(raw)
+
+    assert result.to_server is None
+    assert result.to_client is not None
+    assert b"mcp.tool_schema_unavailable" in result.to_client
+
+
+def test_mcp_fails_closed_for_invalid_server_identity(
+    tmp_path, policy, intent, signer, verifier, state
+):
+    ledger = AuditLedger(tmp_path / "inventory.sqlite")
+    ledger.upsert_tool_inventory(
+        [
+            ToolInventoryItem(
+                source=mcp_source_id([], "filesystem"),
+                name="read_file",
+                input_schema={"type": "object"},
+            )
+        ]
+    )
+    processor = MCPStdioProcessor(
+        AgentGuardService(signer, verifier, state),
+        policy,
+        intent.principal,
+        "file system",
+        schema_resolver=AuditLedgerToolSchemaResolver(ledger),
+    )
+    raw = b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_file","arguments":{}}}\n'
+
+    result = processor.process_client(raw)
+
+    assert result.to_server is None
+    assert result.to_client is not None
+    assert b"mcp.tool_schema_unavailable" in result.to_client
 
 
 def test_mcp_denies_unknown_tool(policy, intent, signer, verifier, state):

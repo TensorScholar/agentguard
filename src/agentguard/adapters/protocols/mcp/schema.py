@@ -2,19 +2,24 @@ from __future__ import annotations
 
 from agentguard.audit import AuditLedger
 from agentguard.engine.canonical import digest
+from agentguard.mcp_identity import mcp_source_id
 from agentguard.ports import ResolvedToolSchema
 
 
 class AuditLedgerToolSchemaResolver:
     """Expose the preserved v0.1 MCP inventory through the v2 schema resolver port."""
 
-    def __init__(self, ledger: AuditLedger, *, source: str = "mcp_stdio") -> None:
+    def __init__(self, ledger: AuditLedger) -> None:
         self.ledger = ledger
-        self.source = source
 
     def resolve(self, server: str, tool: str) -> ResolvedToolSchema | None:
-        del server  # The configured inventory source identifies the concrete server connection.
-        item = self.ledger.get_tool_inventory(self.source, tool)
+        if server != server.strip():
+            return None
+        try:
+            source = mcp_source_id(server_command=[], server_id=server)
+        except ValueError:
+            return None
+        item = self.ledger.get_tool_inventory(source, tool)
         if item is None:
             return None
         schema = {

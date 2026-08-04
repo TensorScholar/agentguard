@@ -11,6 +11,12 @@ from typing import cast
 import pytest
 
 from agentguard.audit import AuditLedger, hash_tool_arguments
+from agentguard.mcp_identity import (
+    derive_server_id as shared_derive_server_id,
+)
+from agentguard.mcp_identity import (
+    mcp_source_id as shared_mcp_source_id,
+)
 from agentguard.mcp_stdio import (
     APPROVAL_REQUIRED,
     POLICY_DENIED,
@@ -32,13 +38,26 @@ def _loads(payload: bytes) -> dict:
 
 def test_server_identity_is_stable_and_isolates_inventory(tmp_path: Path) -> None:
     command = ["python", "server.py", "--tenant", "alpha"]
-    expected = derive_server_id(command)
+    expected = "2a22474ae5a02a69"
     ledger = AuditLedger(tmp_path / "audit.sqlite")
     proxy = MCPStdioProxy(command, Policy(), ledger)
 
+    assert derive_server_id is shared_derive_server_id
+    assert mcp_source_id is shared_mcp_source_id
     assert proxy.server_id == expected
-    assert proxy.processor.source == mcp_source_id(command)
+    assert proxy.processor.source == shared_mcp_source_id(command)
     assert mcp_source_id(command, "filesystem-prod") == "mcp_stdio:filesystem-prod"
+
+
+def test_shared_server_identity_preserves_validation_semantics() -> None:
+    assert mcp_source_id(["python"], " filesystem-prod ") == "mcp_stdio:filesystem-prod"
+
+    with pytest.raises(ValueError, match="server command is required"):
+        derive_server_id([])
+    with pytest.raises(ValueError, match="server command is required"):
+        mcp_source_id([], "")
+    with pytest.raises(ValueError, match="non-empty token without whitespace"):
+        mcp_source_id([], "file system")
 
 
 def test_tools_list_passes_through() -> None:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import signal
@@ -14,6 +13,12 @@ from datetime import UTC, datetime, timedelta
 from typing import BinaryIO
 
 from .audit import AuditLedger
+from .mcp_identity import (
+    derive_server_id as derive_server_id,
+)
+from .mcp_identity import (
+    mcp_source_id as mcp_source_id,
+)
 from .models import AuditEvent, Decision, PolicyDecision, ToolCall, ToolInventoryItem
 from .policy import Policy
 from .risk import classify_tool_definition
@@ -26,19 +31,6 @@ POLICY_DENIED = -32001
 APPROVAL_REQUIRED = -32002
 SERVER_PROTOCOL_ERROR = -32003
 DEFAULT_INVENTORY_TTL_SECONDS = 300.0
-
-
-def derive_server_id(server_command: list[str]) -> str:
-    if not server_command:
-        raise ValueError("server command is required")
-    return hashlib.sha256("\0".join(server_command).encode("utf-8")).hexdigest()[:16]
-
-
-def mcp_source_id(server_command: list[str], server_id: str | None = None) -> str:
-    resolved = (server_id or derive_server_id(server_command)).strip()
-    if not resolved or any(character.isspace() for character in resolved):
-        raise ValueError("server_id must be a non-empty token without whitespace")
-    return f"mcp_stdio:{resolved}"
 
 
 @dataclass(frozen=True)
