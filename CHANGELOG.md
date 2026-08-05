@@ -37,5 +37,5 @@
 - Added provenance-aware policy, tenant binding and blast-radius budgets.
 - Added Ed25519-signed decision receipts and execution-time digest binding.
 - Added atomic replay prevention and credential ceiling verification.
-- Added mock Loadout-style broker, correlated audit chain and evidence bundles.
+- Added a provider-neutral mock credential broker, correlated audit chain and evidence bundles.
 - Preserved an MCP stdio enforcement path and added HTTP transport security checks.

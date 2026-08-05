@@ -52,7 +52,7 @@ The latest audited implementation checkpoint is
 - AG-DX-001
 - AG-DX-002
 - AG-ARCH-001
-- AG-LOADOUT-001
+- AG-BROKER-001
 - AG-REL-001
 - AG-VAL-001
 

@@ -17,7 +17,7 @@ class MockCredentialBroker:
 
     def __init__(
         self,
-        name: str = "mock-loadout",
+        name: str = "mock-broker",
         signer: Ed25519Signer | None = None,
     ) -> None:
         self.name = name
