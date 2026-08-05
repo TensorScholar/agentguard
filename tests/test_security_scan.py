@@ -46,6 +46,11 @@ def test_security_scan_accepts_current_source_tree() -> None:
             "handler = pkcs7.pkcs7_decrypt_smime\n",
             "pkcs7_decrypt_smime",
         ),
+        (
+            "from cryptography.hazmat.primitives.serialization import pkcs7\n"
+            'handler = getattr(pkcs7, "pkcs7_decrypt_der")\n',
+            "pkcs7_decrypt_der",
+        ),
     ],
 )
 def test_security_scan_rejects_exception_invalidating_api_usage(

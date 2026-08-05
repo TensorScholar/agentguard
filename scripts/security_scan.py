@@ -80,6 +80,15 @@ def scan_file(path: Path, root: Path) -> list[str]:
 
 
 def _referenced_name(node: ast.AST) -> str | None:
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "getattr"
+        and len(node.args) >= 2
+        and isinstance(node.args[1], ast.Constant)
+        and isinstance(node.args[1].value, str)
+    ):
+        return node.args[1].value
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
