@@ -1,6 +1,6 @@
 # Direct runtime versions exercised by the original clean validation environment.
 # Use as a constraints file, not as a replacement for pyproject metadata.
-cryptography==48.0.1
+cryptography==49.0.0
 httpx==0.28.1
 pydantic==2.13.4
 PyYAML==6.0.3
