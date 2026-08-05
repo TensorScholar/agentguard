@@ -149,7 +149,14 @@ def main(argv: list[str] | None = None) -> int:
     approvals_parser.add_argument("--include-expired", action="store_true")
     approvals_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
 
-    mcp_parser = subparsers.add_parser("mcp-proxy", help="Proxy an MCP stdio server with policy")
+    mcp_parser = subparsers.add_parser(
+        "legacy-mcp-proxy",
+        help="Run the legacy v1 MCP stdio proxy compatibility path",
+        description=(
+            "Legacy v1 compatibility only. This command does not provide the secure v2 "
+            "execution boundary."
+        ),
+    )
     mcp_parser.add_argument("--policy", help="Path to policy.yaml")
     mcp_parser.add_argument(
         "--ledger", default=".agentguard/audit.sqlite", help="SQLite audit path"
@@ -231,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_approve_call(args)
     if args.command == "approvals":
         return _cmd_approvals(args)
-    if args.command == "mcp-proxy":
+    if args.command == "legacy-mcp-proxy":
         return _cmd_mcp_proxy(args)
     if args.command == "report":
         return _cmd_report(args)
@@ -257,7 +264,8 @@ def _cmd_init(args: argparse.Namespace) -> int:
     )
     sys.stdout.write(f"Wrote {args.pack} policy to {output_path}\n")
     sys.stdout.write(
-        f"Next: run agentguard mcp-proxy --policy {output_path} -- --your-mcp-server-command\n"
+        f"Next: run agentguard legacy-mcp-proxy --policy {output_path} "
+        "-- --your-mcp-server-command\n"
     )
     return 0
 
@@ -458,7 +466,7 @@ def _cmd_mcp_proxy(args: argparse.Namespace) -> int:
     if server_command and server_command[0] == "--":
         server_command = server_command[1:]
     if not server_command:
-        raise SystemExit("mcp-proxy requires a server command after --")
+        raise SystemExit("legacy-mcp-proxy requires a server command after --")
 
     policy = load_policy(args.policy)
     ledger = AuditLedger(Path(args.ledger))

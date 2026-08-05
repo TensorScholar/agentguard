@@ -41,11 +41,20 @@ app = typer.Typer(
     invoke_without_command=True,
     help="Decision-bound action integrity for AI agents",
     epilog=(
-        "Preserved v0.1 commands: doctor, scan, gate, check-call, proxy, approve-call, "
-        "approvals, mcp-proxy, report, verify-audit."
+        "The primary mcp-proxy command refuses execution until the secure v2 MCP "
+        "execution boundary is integrated. Explicit legacy v1 compatibility is available "
+        "only as legacy-mcp-proxy. Other preserved v0.1 commands: doctor, scan, gate, "
+        "check-call, proxy, approve-call, approvals, report, verify-audit."
     ),
 )
 console = Console()
+
+_MCP_PROXY_REFUSAL = (
+    "AgentGuard MCP execution refused: the secure v2 MCP execution path is not yet "
+    "integrated, so the primary 'mcp-proxy' command fails closed without starting the "
+    "server. The legacy v1 compatibility proxy is available only through "
+    "'agentguard legacy-mcp-proxy' and does not provide v2 execution guarantees."
+)
 
 
 @app.callback()
@@ -57,6 +66,21 @@ def main(
         raise typer.Exit()
     if ctx.invoked_subcommand is None:
         typer.echo(ctx.get_help())
+
+
+def refuse_mcp_proxy() -> int:
+    typer.echo(_MCP_PROXY_REFUSAL, err=True)
+    return 2
+
+
+@app.command(
+    "mcp-proxy",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+    help="Refuse MCP execution until the secure v2 execution path is integrated.",
+)
+def mcp_proxy_unavailable(ctx: typer.Context) -> None:
+    del ctx
+    raise typer.Exit(refuse_mcp_proxy())
 
 
 @app.command()

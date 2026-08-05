@@ -113,7 +113,7 @@ def test_mcp_proxy_with_pinned_filesystem_server(tmp_path: Path) -> None:
             sys.executable,
             "-m",
             "agentguard.cli",
-            "mcp-proxy",
+            "legacy-mcp-proxy",
             "--policy",
             str(policy_path),
             "--ledger",
