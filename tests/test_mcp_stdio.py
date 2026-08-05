@@ -16,6 +16,7 @@ from agentguard.mcp_stdio import (
     MCPMessageProcessor,
     MCPStdioProxy,
     _iter_bounded_lines,
+    _OutputDrainState,
     _write_and_flush,
     derive_server_id,
     mcp_source_id,
@@ -520,6 +521,38 @@ def test_mcp_proxy_drains_high_volume_server_output(
     assert [(event.tool_name, event.decision) for event in ledger.list_events()] == [
         ("burst", Decision.ALLOW)
     ]
+
+
+def test_wait_or_stop_server_allows_natural_exit_after_output_eof(
+    tmp_path: Path,
+) -> None:
+    proxy = MCPStdioProxy(
+        [sys.executable, "server.py"],
+        Policy(),
+        AuditLedger(tmp_path / "audit.sqlite"),
+        shutdown_timeout_seconds=0.25,
+    )
+    drain_state = _OutputDrainState()
+    drain_state.completed.set()
+
+    class NaturallyExitingProcess:
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+            self.wait_timeouts: list[float | None] = []
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.wait_timeouts.append(timeout)
+            self.returncode = 0
+            return 0
+
+    process = NaturallyExitingProcess()
+
+    assert proxy._wait_or_stop_server(process, drain_state) is False
+    assert process.returncode == 0
+    assert process.wait_timeouts == [0.25]
 
 
 def test_mcp_proxy_terminates_server_that_ignores_stdin_eof(tmp_path: Path) -> None:

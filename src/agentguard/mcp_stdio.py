@@ -470,13 +470,7 @@ class MCPStdioProxy:
             drain_state.mark_activity()
             forced_shutdown = self._wait_or_stop_server(process, drain_state)
         elif process.poll() is None and drain_state.completed.is_set():
-            forced_shutdown = True
-            _terminate_process_group(process)
-            try:
-                process.wait(timeout=self.shutdown_timeout_seconds)
-            except subprocess.TimeoutExpired:
-                _kill_process_group(process)
-                process.wait()
+            forced_shutdown = self._wait_or_stop_server(process, drain_state)
         server_thread.join(timeout=max(1.0, self.shutdown_timeout_seconds * 2))
         if forced_shutdown:
             return 1
@@ -499,6 +493,13 @@ class MCPStdioProxy:
 
         if process.poll() is not None:
             return False
+
+        if drain_state.completed.is_set():
+            try:
+                process.wait(timeout=self.shutdown_timeout_seconds)
+                return False
+            except subprocess.TimeoutExpired:
+                pass
 
         _terminate_process_group(process)
         try:
