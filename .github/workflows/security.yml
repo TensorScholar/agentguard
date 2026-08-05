@@ -39,4 +39,12 @@ jobs:
       - name: Static security scan
         run: python scripts/security_scan.py
       - name: Dependency audit
-        run: python -m pip_audit --progress-spinner off --timeout 60
+        # PYSEC-2026-3552 affects cryptography PKCS#7 decryption APIs.
+        # AgentGuard currently uses only Ed25519 APIs. Remove this exception
+        # when cryptography 50.0.0+ is available and validated, or before
+        # introducing any PKCS#7 decryption path.
+        run: |
+          python -m pip_audit \
+            --progress-spinner off \
+            --timeout 60 \
+            --ignore-vuln PYSEC-2026-3552
