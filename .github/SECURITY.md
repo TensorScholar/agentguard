@@ -8,11 +8,17 @@ Security fixes are evaluated for the current `main` branch and the latest mainta
 
 ## Report a vulnerability
 
-Do not open a public issue.
+Do not open a public issue containing vulnerability details.
 
-Use GitHub private vulnerability reporting when it is available. Otherwise contact the repository owner through a verified private channel.
+Use GitHub private vulnerability reporting:
 
-Include:
+1. Open the repository's **Security** tab.
+2. Select **Advisories**.
+3. Select **Report a vulnerability** and submit the report privately.
+
+If the private-reporting button is unavailable, open a minimal public issue titled `Private security contact request` without technical details, affected versions, reproduction steps, names, credentials, or evidence. The maintainer will provide a private channel before any sensitive information is shared.
+
+Include in the private report:
 
 - affected version or commit;
 - reproduction steps or a minimal proof of concept;
