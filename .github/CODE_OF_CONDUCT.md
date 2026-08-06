@@ -27,9 +27,11 @@ The following are not accepted:
 
 ## Reporting
 
-Report conduct concerns privately to the repository owner through a verified private channel. Do not place sensitive evidence in a public issue.
+Do not place incident details, names, screenshots, private messages, or other sensitive evidence in a public issue.
 
-A report should include the relevant links, dates, participants, and a factual description. Avoid speculation and unnecessary personal data.
+To request a private reporting channel, open a minimal issue titled `Private conduct report contact request` and include no incident details. The maintainer will provide a private channel before the report or evidence is shared, then close the public request.
+
+The private report should include the relevant links, dates, participants, and a factual description. Avoid speculation and unnecessary personal data.
 
 ## Enforcement
 
