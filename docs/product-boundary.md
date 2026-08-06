@@ -7,7 +7,7 @@ It owns action normalization, deterministic policy, authority ceilings, signed r
 It integrates with, but does not replace:
 
 - workload identity systems such as OIDC or SPIFFE
-- credential brokers and vaults such as Loadout or Vault
+- credential brokers and secret-management systems through provider-neutral adapters
 - agent frameworks and model providers
 - evaluation systems such as ProofDiff
 - policy-change regression tools such as PermitDiff

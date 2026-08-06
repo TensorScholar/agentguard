@@ -16,7 +16,7 @@
   controlled storage. Keeping the checkpoint beside the database adds little protection.
 - Evidence signature verification authenticates the manifest key, not the business truth of the
   underlying event or the identity proofing process behind the signer.
-- The mock broker and Loadout adapter are contract previews, not live production integrations.
+- The mock credential broker is limited to contract testing and demos; no live production credential-provider integration is included.
 - Interactive, identity-backed human approval UX is not included.
 - No external penetration test, long-duration soak test or production pilot has been completed.
 - AgentGuard applies owner-only file modes on POSIX systems. On Windows, sensitive files inherit

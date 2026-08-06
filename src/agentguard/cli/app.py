@@ -192,7 +192,7 @@ def verify_execution(
     approval: Path | None = None,
     public_key: Path = Path(".agentguard/decision-public.pem"),
     broker_public_key: Path = Path(".agentguard/broker-public.pem"),
-    broker: str = "mock-loadout",
+    broker: str = "mock-broker",
     ledger: Path = Path(".agentguard/audit.sqlite"),
 ) -> None:
     from agentguard.domain import CredentialGrant, DecisionReceipt

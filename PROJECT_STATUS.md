@@ -1,44 +1,73 @@
 # Project status
 
-AgentGuard v0.2.0rc2 is a hardened, locally validated release candidate for decision-bound agent
-actions and MCP enforcement coverage. It is not a production-certified identity, credential vault,
+AgentGuard v0.2.0rc2 is an auditable release candidate for deterministic action
+authorization, MCP mediation, bounded credential grants and tamper-evident
+evidence. It is not a production-certified identity system, credential vault,
 distributed authorization service or operating-system sandbox.
 
-## Demonstrated in this repository
+## Validated capabilities
 
 - strict Policy v2 and ActionIntent validation;
 - deterministic default-deny authorization and deny precedence;
-- complete signed intent binding and execution-time policy revalidation;
-- approval budgets constrained by the originating decision;
-- credential audience, scope, tenant, TTL and decision-window ceilings;
-- atomic single-use credential issuance, approval consumption and nonce consumption;
-- fresh MCP schema/inventory resolution with missing, stale and changed states failing closed;
-- bounded and concurrent MCP stdio relay behavior;
-- stable per-server identities for MCP inventory and local approval grants;
-- configuration-level detection of direct and parallel MCP bypass routes;
-- defense-in-depth redaction before legacy audit persistence;
-- private SQLite/key/evidence file permissions and symlink-aware file handling;
-- retained legacy audit sanitization with explicit anchor invalidation acknowledgement;
+- signed decision receipts and bounded credential-grant verification;
+- atomic single-use approval and nonce state;
+- fresh, per-server MCP schema and inventory isolation;
+- fail-closed handling for missing, stale or changed MCP inventory;
+- bounded concurrent MCP stdio relay and shutdown behavior;
+- configuration posture checks for direct and parallel bypass routes;
+- secret redaction before audit persistence;
 - hash-chained audit records and signed external checkpoints;
-- closed-world evidence bundles with optional Ed25519 manifest attestations;
-- preserved v0.1 scanner, gate, reporting, doctor and compatibility commands;
-- generated JSON schemas, source distribution, wheel and container definition.
+- closed-world evidence bundles with optional Ed25519 attestations;
+- owner-only state permissions and symlink-aware filesystem handling;
+- explicit v0.1 compatibility surfaces;
+- generated schemas, source distribution, wheel and container definition.
 
-## Validation boundary
+## Latest verified implementation gate
 
-The RC2 source is validated locally on Linux with Python 3.13: 314 tests passed, one opt-in real-MCP
-smoke was skipped, and source-only branch-traced coverage reached 85.27% statements, 71.23% branches
-and 81.94% combined. The imported RC1 evidence contains successful macOS/Python 3.12 validation, but
-RC2 changes require their own public CI run on Linux, macOS and Windows. See
-`docs/validation-rc2.md` for the exact boundary.
+The latest audited implementation checkpoint is
+`a6d35fff57670b0bd27ec50f692505360aeabe27`.
 
-## Not demonstrated
+- Full test suite: 341 passed, 1 skipped.
+- Branch coverage: 83%.
+- Ruff: PASS.
+- Strict Mypy: PASS over 62 source files.
+- Generated schemas: PASS, 11 verified.
+- Real MCP filesystem smoke: SKIPPED.
+- Production readiness: NOT CLAIMED.
 
-- independent penetration test or formal verification;
-- production Streamable HTTP reverse proxy;
-- distributed nonce/approval state across replicas;
-- live credential-broker or Loadout sandbox integration;
-- end-to-end identity proofing and role-backed human approval UI;
-- proof that every undisclosed network route is intercepted;
-- production workload soak test and disaster-recovery exercise;
-- externally operated audit checkpoint storage.
+## Completed audit findings
+
+- AG-POL-001
+- AG-MCP-002
+- AG-MCP-001
+
+## Remaining audit findings
+
+- AG-EXEC-001
+- AG-CRED-001
+- AG-CAN-001
+- AG-RPC-001
+- AG-AUD-001
+- AG-AUD-002
+- AG-DX-001
+- AG-DX-002
+- AG-ARCH-001
+- AG-BROKER-001
+- AG-REL-001
+- AG-VAL-001
+
+## Primary blocker
+
+`AG-EXEC-001`: the implementation does not yet provide one integrated execution
+boundary that coherently binds authorization, execution-time revalidation,
+credential use, nonce consumption, protected action execution and terminal
+audit outcome.
+
+## Promotion boundary
+
+Promotion requires every remaining engineering and release gate to pass,
+including the integrated execution boundary, exact required GitHub status
+checks, real MCP interoperability, independent security review, deployment-
+specific validation and a controlled production pilot.
+
+A release candidate must not be represented as production-certified.

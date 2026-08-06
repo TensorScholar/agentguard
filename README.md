@@ -155,7 +155,5 @@ no-broker deployment profile, and a production pilot.
 
 See:
 
-- `docs/security-review-rc2.md`
-- `docs/market-gap-analysis.md`
 - `docs/production-deployment.md`
 - `docs/limitations.md`
