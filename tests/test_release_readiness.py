@@ -9,9 +9,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def test_release_trust_files_exist() -> None:
     expected = [
         "CHANGELOG.md",
-        "CONTRIBUTING.md",
+        ".github/CONTRIBUTING.md",
         "LICENSE",
-        "SECURITY.md",
+        ".github/SECURITY.md",
         "docs/RELEASE.md",
     ]
 
@@ -36,7 +36,7 @@ def test_project_urls_expose_trust_documents() -> None:
 
     assert urls["Repository"].endswith("/TensorScholar/agentguard")
     assert urls["Changelog"].endswith("/CHANGELOG.md")
-    assert urls["Security"].endswith("/SECURITY.md")
+    assert urls["Security"].endswith("/.github/SECURITY.md")
 
 
 def test_github_action_uploads_findings_and_summary() -> None:

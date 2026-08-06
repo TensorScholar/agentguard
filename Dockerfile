@@ -6,7 +6,8 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /build
-COPY pyproject.toml setup.py MANIFEST.in README.md LICENSE SECURITY.md ./
+COPY pyproject.toml setup.py MANIFEST.in README.md LICENSE ./
+COPY .github ./.github
 COPY src ./src
 COPY schemas ./schemas
 RUN python -m pip wheel --no-deps --wheel-dir /wheels .
