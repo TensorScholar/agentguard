@@ -70,3 +70,39 @@ def test_existing_v1_audit_database_is_never_overwritten(tmp_path: Path) -> None
         SQLiteState(path)
 
     assert "arguments_json" in path.read_bytes().decode("latin-1")
+
+
+def test_existing_v2_action_integrity_schema_upgrades_in_place(tmp_path: Path) -> None:
+    import sqlite3
+
+    path = tmp_path / "v2-state.sqlite"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE audit_events(
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT UNIQUE NOT NULL,
+                event_json TEXT NOT NULL,
+                previous_hash TEXT NOT NULL,
+                event_hash TEXT NOT NULL
+            );
+            CREATE TABLE agentguard_schema(
+                component TEXT PRIMARY KEY,
+                version INTEGER NOT NULL
+            );
+            INSERT INTO agentguard_schema(component, version)
+            VALUES('action_integrity', 3);
+            """
+        )
+
+    state = SQLiteState(path)
+    with sqlite3.connect(state.path) as connection:
+        version = connection.execute(
+            "SELECT version FROM agentguard_schema WHERE component = 'action_integrity'"
+        ).fetchone()
+        execution_table = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'executions'"
+        ).fetchone()
+
+    assert version == (4,)
+    assert execution_table == ("executions",)

@@ -42,6 +42,14 @@ class AuditEventType(str, Enum):
     RECEIPT_CONSUMED = "receipt.consumed"
 
 
+class ExecutionState(str, Enum):
+    RESERVED = "reserved"
+    DISPATCHING = "dispatching"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
+
 class ExecutionStatus(str, Enum):
     SUCCESS = "success"
     FAILURE = "failure"

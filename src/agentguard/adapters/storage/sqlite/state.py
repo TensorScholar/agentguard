@@ -5,8 +5,15 @@ from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
 
-from agentguard.domain import ApprovalReceipt, AuditEvent
+from agentguard.domain import (
+    ApprovalReceipt,
+    AuditEvent,
+    ExecutionRecord,
+    ExecutionState,
+    VerifiedExecution,
+)
 from agentguard.engine.canonical import canonical_bytes
+from agentguard.engine.execution import execution_authority_digest
 from agentguard.security.files import ensure_private_file
 
 GENESIS = "0" * 64
@@ -37,11 +44,27 @@ CREATE TABLE IF NOT EXISTS credential_issuance_claims(
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_single_use_credential_decision
 ON credential_issuance_claims(decision_id) WHERE single_use = 1;
+CREATE TABLE IF NOT EXISTS executions(
+ execution_id TEXT PRIMARY KEY,
+ decision_id TEXT UNIQUE NOT NULL,
+ nonce TEXT UNIQUE NOT NULL,
+ trace_id TEXT NOT NULL,
+ request_id TEXT NOT NULL,
+ intent_digest TEXT NOT NULL,
+ authority_digest TEXT NOT NULL,
+ state TEXT NOT NULL,
+ reserved_at TEXT NOT NULL,
+ dispatching_at TEXT,
+ completed_at TEXT,
+ provider_status INTEGER,
+ result_digest TEXT,
+ error_code TEXT
+);
 CREATE TABLE IF NOT EXISTS agentguard_schema(
  component TEXT PRIMARY KEY, version INTEGER NOT NULL
 );
-INSERT OR IGNORE INTO agentguard_schema(component, version) VALUES('action_integrity', 3);
-UPDATE agentguard_schema SET version = 3 WHERE component = 'action_integrity';
+INSERT OR IGNORE INTO agentguard_schema(component, version) VALUES('action_integrity', 4);
+UPDATE agentguard_schema SET version = 4 WHERE component = 'action_integrity';
 """
 
 V2_AUDIT_COLUMNS = {
@@ -51,6 +74,8 @@ V2_AUDIT_COLUMNS = {
     "previous_hash",
     "event_hash",
 }
+
+_TERMINAL_STATES = {ExecutionState.SUCCEEDED, ExecutionState.FAILED, ExecutionState.UNKNOWN}
 
 
 class IncompatibleStateDatabaseError(RuntimeError):
@@ -81,7 +106,31 @@ class SQLiteState:
         c.execute("PRAGMA secure_delete=ON")
         return c
 
+    @staticmethod
+    def _execution_record(row: sqlite3.Row | tuple[object, ...]) -> ExecutionRecord:
+        provider_status = row[10]
+        if provider_status is not None and not isinstance(provider_status, int):
+            raise ValueError("execution provider_status must be an integer")
+
+        return ExecutionRecord(
+            execution_id=str(row[0]),
+            decision_id=str(row[1]),
+            trace_id=str(row[2]),
+            request_id=str(row[3]),
+            intent_digest=str(row[4]),
+            authority_digest=str(row[5]),
+            state=ExecutionState(str(row[6])),
+            reserved_at=datetime.fromisoformat(str(row[7])),
+            dispatching_at=datetime.fromisoformat(str(row[8])) if row[8] is not None else None,
+            completed_at=datetime.fromisoformat(str(row[9])) if row[9] is not None else None,
+            provider_status=provider_status,
+            result_digest=str(row[11]) if row[11] is not None else None,
+            error_code=str(row[12]) if row[12] is not None else None,
+        )
+
     def consume(self, nonce: str, decision_id: str, consumed_at: datetime) -> bool:
+        """Legacy compatibility method; protected execution uses reserve_execution instead."""
+
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             try:
@@ -94,6 +143,195 @@ class SQLiteState:
             except sqlite3.IntegrityError:
                 c.execute("ROLLBACK")
                 return False
+
+    def reserve_execution(
+        self,
+        verified_execution: VerifiedExecution,
+        reserved_at: datetime,
+    ) -> str | None:
+        """Atomically claim the nonce/decision and create the durable RESERVED execution."""
+
+        with self._connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                c.execute(
+                    "INSERT INTO consumed_nonces(nonce,decision_id,consumed_at) VALUES(?,?,?)",
+                    (
+                        verified_execution.nonce,
+                        verified_execution.decision_id,
+                        reserved_at.isoformat(),
+                    ),
+                )
+                c.execute(
+                    """
+                    INSERT INTO executions(
+                        execution_id,decision_id,nonce,trace_id,request_id,intent_digest,
+                        authority_digest,state,reserved_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        verified_execution.execution_id,
+                        verified_execution.decision_id,
+                        verified_execution.nonce,
+                        verified_execution.trace_id,
+                        verified_execution.request_id,
+                        verified_execution.intent_digest,
+                        execution_authority_digest(verified_execution),
+                        ExecutionState.RESERVED.value,
+                        reserved_at.isoformat(),
+                    ),
+                )
+                c.execute("COMMIT")
+                return None
+            except sqlite3.IntegrityError:
+                c.execute("ROLLBACK")
+
+        with self._connect() as c:
+            authority_conflict = c.execute(
+                """
+                SELECT 1 FROM consumed_nonces WHERE nonce = ? OR decision_id = ? LIMIT 1
+                """,
+                (verified_execution.nonce, verified_execution.decision_id),
+            ).fetchone()
+            if authority_conflict is not None:
+                return "decision_receipt.replayed"
+            execution_conflict = c.execute(
+                "SELECT 1 FROM executions WHERE execution_id = ? LIMIT 1",
+                (verified_execution.execution_id,),
+            ).fetchone()
+            if execution_conflict is not None:
+                return "execution.id_conflict"
+        return "execution.reservation_conflict"
+
+    def mark_execution_dispatching(
+        self,
+        execution_id: str,
+        dispatching_at: datetime,
+    ) -> ExecutionRecord:
+        with self._connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            result = c.execute(
+                """
+                UPDATE executions
+                SET state = ?, dispatching_at = ?
+                WHERE execution_id = ? AND state = ?
+                """,
+                (
+                    ExecutionState.DISPATCHING.value,
+                    dispatching_at.isoformat(),
+                    execution_id,
+                    ExecutionState.RESERVED.value,
+                ),
+            )
+            if result.rowcount != 1:
+                c.execute("ROLLBACK")
+                raise RuntimeError("execution.not_reserved")
+            c.execute("COMMIT")
+        record = self.get_execution(execution_id)
+        if record is None:
+            raise RuntimeError("execution.record_missing")
+        return record
+
+    def finish_execution(
+        self,
+        execution_id: str,
+        terminal_state: ExecutionState,
+        *,
+        completed_at: datetime,
+        provider_status: int | None = None,
+        result_digest: str | None = None,
+        error_code: str | None = None,
+    ) -> ExecutionRecord:
+        if terminal_state not in _TERMINAL_STATES:
+            raise ValueError("execution.terminal_state_required")
+        with self._connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            result = c.execute(
+                """
+                UPDATE executions
+                SET state = ?, completed_at = ?, provider_status = ?,
+                    result_digest = ?, error_code = ?
+                WHERE execution_id = ? AND state = ?
+                """,
+                (
+                    terminal_state.value,
+                    completed_at.isoformat(),
+                    provider_status,
+                    result_digest,
+                    error_code,
+                    execution_id,
+                    ExecutionState.DISPATCHING.value,
+                ),
+            )
+            if result.rowcount != 1:
+                c.execute("ROLLBACK")
+                raise RuntimeError("execution.not_dispatching")
+            c.execute("COMMIT")
+        record = self.get_execution(execution_id)
+        if record is None:
+            raise RuntimeError("execution.record_missing")
+        return record
+
+    def get_execution(self, execution_id: str) -> ExecutionRecord | None:
+        with self._connect() as c:
+            row = c.execute(
+                """
+                SELECT execution_id,decision_id,trace_id,request_id,intent_digest,
+                       authority_digest,state,reserved_at,dispatching_at,completed_at,
+                       provider_status,result_digest,error_code
+                FROM executions WHERE execution_id = ?
+                """,
+                (execution_id,),
+            ).fetchone()
+        return self._execution_record(row) if row is not None else None
+
+    def list_executions(self) -> tuple[ExecutionRecord, ...]:
+        with self._connect() as c:
+            rows = c.execute(
+                """
+                SELECT execution_id,decision_id,trace_id,request_id,intent_digest,
+                       authority_digest,state,reserved_at,dispatching_at,completed_at,
+                       provider_status,result_digest,error_code
+                FROM executions ORDER BY reserved_at, execution_id
+                """
+            ).fetchall()
+        return tuple(self._execution_record(row) for row in rows)
+
+    def recover_incomplete_executions(self, recovered_at: datetime) -> tuple[ExecutionRecord, ...]:
+        """Conservatively terminalize stranded DISPATCHING executions as UNKNOWN.
+
+        RESERVED records are intentionally left untouched because no external dispatch had begun.
+        Terminal records are immutable and are never re-dispatched by recovery.
+        """
+
+        with self._connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            rows = c.execute(
+                "SELECT execution_id FROM executions WHERE state = ? ORDER BY reserved_at",
+                (ExecutionState.DISPATCHING.value,),
+            ).fetchall()
+            ids = [str(row[0]) for row in rows]
+            if ids:
+                c.executemany(
+                    """
+                    UPDATE executions
+                    SET state = ?, completed_at = ?, error_code = ?
+                    WHERE execution_id = ? AND state = ?
+                    """,
+                    [
+                        (
+                            ExecutionState.UNKNOWN.value,
+                            recovered_at.isoformat(),
+                            "execution.recovered_ambiguous_dispatch",
+                            execution_id,
+                            ExecutionState.DISPATCHING.value,
+                        )
+                        for execution_id in ids
+                    ],
+                )
+            c.execute("COMMIT")
+        records = [self.get_execution(execution_id) for execution_id in ids]
+        return tuple(record for record in records if record is not None)
 
     def register_approval(self, approval: ApprovalReceipt) -> None:
         with self._connect() as c:

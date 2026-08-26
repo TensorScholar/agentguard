@@ -3,8 +3,9 @@ from __future__ import annotations
 import pytest
 
 from agentguard.adapters.broker import MockCredentialBroker
+from agentguard.adapters.executor import DeterministicFakeExecutor
 from agentguard.application import AgentGuardService
-from agentguard.domain import CredentialRequest
+from agentguard.domain import CredentialRequest, ExecutionStatus
 from agentguard.engine.execution import ExecutionGuardError, authorize_execution
 
 
@@ -23,7 +24,14 @@ def test_authorize_broker_execute(intent, policy, signer, verifier, state):
         tenant_id=c.tenant_id,
     )
     grant = service.request_credential(intent, receipt, request, broker)
-    service.guard_execution(intent, receipt, grant, current_policy=policy)
+    outcome = service.execute_protected(
+        intent,
+        receipt,
+        grant,
+        DeterministicFakeExecutor(),
+        current_policy=policy,
+    )
+    assert outcome.status == ExecutionStatus.SUCCESS
     assert state.verify()[0]
 
 
@@ -41,26 +49,25 @@ def test_replay_is_blocked(intent, policy, signer, verifier, state):
         tenant_id=c.tenant_id,
     )
     broker = MockCredentialBroker()
+    service = AgentGuardService(signer, verifier, state, broker.verifier)
     grant = broker.issue(receipt, request)
-    authorize_execution(
+    executor = DeterministicFakeExecutor()
+    service.execute_protected(
         intent,
         receipt,
         grant,
-        verifier,
-        state,
-        broker_grant_verifier=broker.verifier,
+        executor,
         current_policy=policy,
     )
     with pytest.raises(ExecutionGuardError, match="replayed"):
-        authorize_execution(
+        service.execute_protected(
             intent,
             receipt,
             grant,
-            verifier,
-            state,
-            broker_grant_verifier=broker.verifier,
+            executor,
             current_policy=policy,
         )
+    assert len(executor.calls) == 1
 
 
 def test_argument_mutation_is_blocked(intent, policy, signer, verifier, state):

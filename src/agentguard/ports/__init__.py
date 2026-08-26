@@ -1,10 +1,14 @@
 from .interfaces import (
+    AmbiguousExecutionError,
     AuditRepository,
     BrokerGrantVerifier,
     Clock,
     CredentialBroker,
     CredentialIssuanceRepository,
+    DefiniteExecutionFailure,
+    ExecutionRepository,
     NonceRepository,
+    ProtectedExecutor,
     ResolvedToolSchema,
     SignatureVerifier,
     Signer,
@@ -13,12 +17,16 @@ from .interfaces import (
 )
 
 __all__ = [
+    "AmbiguousExecutionError",
     "AuditRepository",
     "BrokerGrantVerifier",
     "Clock",
     "CredentialBroker",
     "CredentialIssuanceRepository",
+    "DefiniteExecutionFailure",
+    "ExecutionRepository",
     "NonceRepository",
+    "ProtectedExecutor",
     "ResolvedToolSchema",
     "SignatureVerifier",
     "Signer",

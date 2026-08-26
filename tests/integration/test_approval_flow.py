@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from agentguard.adapters.broker import MockCredentialBroker
+from agentguard.adapters.executor import DeterministicFakeExecutor
 from agentguard.application import AgentGuardService
 from agentguard.domain import CredentialCeiling, CredentialRequest, Effect
 from agentguard.domain.policy import ActionMatcher, PolicyRule
@@ -52,10 +53,11 @@ def test_signed_approval_enables_broker_and_execution(intent, policy, signer, ve
         approval_id=approval.approval_id,
     )
     grant = service.request_credential(intent, receipt, request, broker, approval)
-    service.guard_execution(
+    service.execute_protected(
         intent,
         receipt,
         grant,
+        DeterministicFakeExecutor(),
         approval,
         current_policy=approval_policy(policy),
     )

@@ -1,4 +1,11 @@
-from .enums import AuditEventType, Effect, EnforcementMode, ExecutionStatus, ProvenanceLabel
+from .enums import (
+    AuditEventType,
+    Effect,
+    EnforcementMode,
+    ExecutionState,
+    ExecutionStatus,
+    ProvenanceLabel,
+)
 from .models import (
     Action,
     ActionIntent,
@@ -14,11 +21,15 @@ from .models import (
     EvidenceAttestation,
     ExecutionBudget,
     ExecutionOutcome,
+    ExecutionRecord,
     ExecutionRequest,
     Principal,
+    ProtectedExecutionResult,
     Resource,
     StrictModel,
     Subject,
+    VerifiedCredentialAuthority,
+    VerifiedExecution,
 )
 from .policy import (
     ActionMatcher,
@@ -53,12 +64,15 @@ __all__ = [
     "EvidenceAttestation",
     "ExecutionBudget",
     "ExecutionOutcome",
+    "ExecutionRecord",
     "ExecutionRequest",
+    "ExecutionState",
     "ExecutionStatus",
     "PolicyDefaults",
     "PolicyDocument",
     "PolicyMetadata",
     "PolicyRule",
+    "ProtectedExecutionResult",
     "Principal",
     "PrincipalMatcher",
     "ProvenanceLabel",
@@ -68,4 +82,6 @@ __all__ = [
     "StrictModel",
     "Subject",
     "SubjectMatcher",
+    "VerifiedCredentialAuthority",
+    "VerifiedExecution",
 ]

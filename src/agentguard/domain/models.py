@@ -5,7 +5,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .enums import AuditEventType, Effect, EnforcementMode, ExecutionStatus, ProvenanceLabel
+from .enums import (
+    AuditEventType,
+    Effect,
+    EnforcementMode,
+    ExecutionState,
+    ExecutionStatus,
+    ProvenanceLabel,
+)
 
 
 class StrictModel(BaseModel):
@@ -262,6 +269,82 @@ class EvidenceAttestation(StrictModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("evidence attestation timestamp must be timezone-aware")
         return value
+
+
+class VerifiedCredentialAuthority(StrictModel):
+    """Credential authority safe to retain and pass across the protected executor boundary."""
+
+    grant_id: str
+    issuance_id: str
+    mode: Literal["opaque_handle", "brokered_execution"]
+    credential_handle_digest: str
+    audience: str
+    scopes: frozenset[str]
+    tenant_id: str | None = None
+    expires_at: datetime
+    broker: str
+    broker_key_id: str
+
+    @field_validator("expires_at")
+    @classmethod
+    def aware_expires_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("verified credential expiry must be timezone-aware")
+        return value
+
+
+class VerifiedExecution(StrictModel):
+    """Immutable execution derived only from cryptographically and policy-validated inputs."""
+
+    execution_id: str = Field(min_length=1, max_length=200)
+    decision_id: str = Field(min_length=1, max_length=200)
+    request_id: str = Field(min_length=1, max_length=200)
+    trace_id: str = Field(min_length=1, max_length=200)
+    intent: ActionIntent
+    intent_digest: str
+    policy_digest: str
+    nonce: str = Field(min_length=1, repr=False)
+    approval_id: str | None = None
+    credential_authority: VerifiedCredentialAuthority | None = None
+    authorization_expires_at: datetime
+    verified_at: datetime
+
+    @field_validator("authorization_expires_at", "verified_at")
+    @classmethod
+    def aware_security_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("verified execution timestamps must be timezone-aware")
+        return value
+
+
+class ExecutionRecord(StrictModel):
+    execution_id: str
+    decision_id: str
+    trace_id: str
+    request_id: str
+    intent_digest: str
+    authority_digest: str
+    state: ExecutionState
+    reserved_at: datetime
+    dispatching_at: datetime | None = None
+    completed_at: datetime | None = None
+    provider_status: int | None = None
+    result_digest: str | None = None
+    error_code: str | None = None
+
+    @field_validator("reserved_at", "dispatching_at", "completed_at")
+    @classmethod
+    def aware_lifecycle_times(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("execution lifecycle timestamps must be timezone-aware")
+        return value
+
+
+class ProtectedExecutionResult(StrictModel):
+    status: ExecutionStatus
+    provider_status: int | None = None
+    result_digest: str | None = None
+    error_code: str | None = None
 
 
 class ExecutionRequest(StrictModel):

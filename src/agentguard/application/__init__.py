@@ -1,3 +1,3 @@
-from .service import AgentGuardService
+from .service import AgentGuardService, ExecutionPersistenceError
 
-__all__ = ["AgentGuardService"]
+__all__ = ["AgentGuardService", "ExecutionPersistenceError"]

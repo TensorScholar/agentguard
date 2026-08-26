@@ -211,18 +211,23 @@ def verify_execution(
         if g is not None
         else None
     )
-    state = SQLiteState(ledger)
+    # Preserve --ledger for CLI compatibility, but preflight verification is intentionally
+    # persistence-free and does not create or mutate execution state.
+    del ledger
     authorize_execution(
         intent,
         r,
         g,
         verifier,
-        state,
+        None,
         broker_grant_verifier=broker_verifier,
         approval=a,
         current_policy=current_policy,
     )
-    console.print("Execution authorized and receipt atomically consumed")
+    console.print(
+        "Execution authority verified; nonce not consumed. "
+        "Use protected execution to claim authority."
+    )
 
 
 @app.command()

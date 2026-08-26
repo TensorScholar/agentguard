@@ -10,6 +10,10 @@ from agentguard.domain import (
     CredentialGrant,
     CredentialRequest,
     DecisionReceipt,
+    ExecutionRecord,
+    ExecutionState,
+    ProtectedExecutionResult,
+    VerifiedExecution,
 )
 
 
@@ -49,6 +53,12 @@ class ToolSchemaResolver(Protocol):
 
 
 class NonceRepository(Protocol):
+    """Legacy nonce-consumption compatibility port.
+
+    New protected execution code must claim authority through ExecutionRepository.reserve_execution
+    so the nonce claim and durable RESERVED record are atomic.
+    """
+
     def consume(self, nonce: str, decision_id: str, consumed_at: datetime) -> bool: ...
 
 
@@ -75,6 +85,39 @@ class CredentialIssuanceRepository(Protocol):
     ) -> None: ...
 
 
+class ExecutionRepository(Protocol):
+    def reserve_execution(
+        self,
+        verified_execution: VerifiedExecution,
+        reserved_at: datetime,
+    ) -> str | None: ...
+
+    def mark_execution_dispatching(
+        self,
+        execution_id: str,
+        dispatching_at: datetime,
+    ) -> ExecutionRecord: ...
+
+    def finish_execution(
+        self,
+        execution_id: str,
+        terminal_state: ExecutionState,
+        *,
+        completed_at: datetime,
+        provider_status: int | None = None,
+        result_digest: str | None = None,
+        error_code: str | None = None,
+    ) -> ExecutionRecord: ...
+
+    def get_execution(self, execution_id: str) -> ExecutionRecord | None: ...
+
+    def list_executions(self) -> tuple[ExecutionRecord, ...]: ...
+
+    def recover_incomplete_executions(
+        self, recovered_at: datetime
+    ) -> tuple[ExecutionRecord, ...]: ...
+
+
 class AuditRepository(Protocol):
     def append(self, event: AuditEvent) -> AuditEvent: ...
     def verify(self) -> tuple[bool, int, str, str | None]: ...
@@ -84,9 +127,10 @@ class StateRepository(
     AuditRepository,
     NonceRepository,
     CredentialIssuanceRepository,
+    ExecutionRepository,
     Protocol,
 ):
-    """Atomic persistence required by the application service."""
+    """Persistence boundary for AgentGuard security state."""
 
 
 class CredentialBroker(Protocol):
@@ -96,3 +140,34 @@ class CredentialBroker(Protocol):
         request: CredentialRequest,
         approval: ApprovalReceipt | None = None,
     ) -> CredentialGrant: ...
+
+
+class ProtectedExecutor(Protocol):
+    """Trusted side-effect boundary.
+
+    Implementations receive only VerifiedExecution and must derive action, target, and arguments
+    from that immutable trusted representation rather than from caller-controlled raw request
+    material.
+    """
+
+    def execute(self, verified_execution: VerifiedExecution) -> ProtectedExecutionResult: ...
+
+
+class DefiniteExecutionFailure(RuntimeError):
+    def __init__(
+        self,
+        error_code: str,
+        *,
+        provider_status: int | None = None,
+        result_digest: str | None = None,
+    ) -> None:
+        super().__init__(error_code)
+        self.error_code = error_code
+        self.provider_status = provider_status
+        self.result_digest = result_digest
+
+
+class AmbiguousExecutionError(RuntimeError):
+    def __init__(self, error_code: str = "execution.outcome_ambiguous") -> None:
+        super().__init__(error_code)
+        self.error_code = error_code
