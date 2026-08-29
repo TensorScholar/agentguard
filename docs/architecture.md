@@ -86,3 +86,52 @@ ambiguous failure at or after the write attempt maps to `UNKNOWN`. `FAILED` is a
 classification, not a retry-safety assertion. Legitimate provider tool results are returned without
 generic output redaction; AgentGuard-owned credentials, signing material, and internal secrets are
 never inserted into those responses or raw execution state.
+
+## Signed execution attestations and reconciliation
+
+Phase 5C adds a portable evidence layer above the durable execution ledger. An
+`ExecutionAttestation` signs a canonical, secret-minimized payload containing the execution and
+decision correlation, intent and authority digests, policy digest when retained, lifecycle state,
+terminal metadata, the latest append-only reconciliation resolution, and the previous attestation
+digest. Raw tool arguments, credential handles, provider-operation identifiers, and provider
+responses are not embedded in the attestation.
+
+Attestations are signed with an explicit attestation signer and may be verified offline from the
+artifact plus a trusted public key. Attestations for one execution can form a digest-linked chain;
+issuing a later attestation after reconciliation does not invalidate or replace the earlier
+artifact.
+
+Reconciliation is deliberately separate from execution state. An execution that was durably
+classified `UNKNOWN` remains `UNKNOWN`; later provider evidence is stored as an immutable
+`ExecutionResolution` (`CONFIRMED_SUCCEEDED`, `CONFIRMED_FAILED`, `STILL_UNKNOWN`, `UNSUPPORTED`,
+or `CONFLICT`). Reconciliation never invokes a protected executor and never redispatches an action.
+Conflicting confirmed evidence is persisted as an explicit conflict rather than last-write-wins.
+Provider operation identifiers are persisted only as digests. Reconciliation evidence carries an
+explicit assurance level: `AGENTGUARD_SIGNED` for AgentGuard-authenticated observations,
+`PROVIDER_CORRELATED` for evidence tied to a provider operation without a trusted provider truth
+assertion, and `PROVIDER_VERIFIED` for evidence produced by a reconciler whose provider verification
+contract is independently trusted. Only `PROVIDER_VERIFIED` evidence may classify an `UNKNOWN`
+execution as `CONFIRMED_SUCCEEDED` or `CONFIRMED_FAILED`.
+
+## Delegated authority graph and capability leases
+
+Phase 5D adds signed `AuthorityGrant` nodes and bounded `CapabilityLease` execution authority.
+Root grants bind a principal to an explicit `CapabilityScope`. Delegated grants point to their
+parent, remain within the same tenant, cannot outlive the parent, and must monotonically attenuate
+the parent's capabilities, protocol/server/tool/operation/resource scope, call budget, and
+delegation properties.
+
+An authority-bearing `ActionIntent` contains only an `AuthorityReference`: leaf grant id, lease id,
+and digest of the verified root-to-leaf chain. Authorization and protected execution independently
+reload and verify the active chain, signatures, subject binding, scope, chain digest, and lease.
+`AgentGuardService(require_authority=True)` provides an opt-in fail-closed deployment mode in which
+a missing authority reference is rejected before policy evaluation; the default remains compatible
+with Phase 5A/5B callers that do not yet supply delegated authority.
+The lease use is consumed atomically in the same SQLite transaction that claims the decision nonce
+and creates the `RESERVED` execution record. This makes the last lease use a one-winner operation
+under concurrency.
+
+Revoking a grant recursively revokes active descendant grants and their active leases. Revocation
+therefore closes the race between a parent revocation and a later leaf execution reservation. The
+execution ledger stores only grant/lease identifiers and the chain digest; it does not persist the
+full graph inside each execution record.

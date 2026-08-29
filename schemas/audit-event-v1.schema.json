@@ -13,7 +13,15 @@
         "execution.failed",
         "execution.unknown",
         "receipt.rejected",
-        "receipt.consumed"
+        "receipt.consumed",
+        "execution.reconciliation.started",
+        "execution.reconciliation.resolved",
+        "execution.attestation.issued",
+        "authority.granted",
+        "authority.delegated",
+        "authority.revoked",
+        "authority.lease.issued",
+        "authority.lease.consumed"
       ],
       "title": "AuditEventType",
       "type": "string"

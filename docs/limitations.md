@@ -44,3 +44,32 @@
 - Legitimate provider tool output is not subjected to generic DLP/redaction by the protected MCP
   adapter. Secret minimization applies to AgentGuard-owned credentials, launch metadata, audit data,
   and execution evidence; generic provider-output DLP is outside this phase.
+- Execution attestations authenticate AgentGuard's canonical execution evidence; they do not prove
+  the truth of an external provider's unsigned evidence. `AGENTGUARD_SIGNED` and
+  `PROVIDER_CORRELATED` evidence cannot promote an ambiguous execution to a confirmed external
+  outcome. `PROVIDER_VERIFIED` reconciliation must be supplied only by a reconciler whose provider
+  verification contract is independently trusted.
+- Reconciliation is append-only and never redispatches. Generic MCP stdio has no provider-neutral
+  reconciliation API, so provider-specific reconcilers remain separate adapters rather than being
+  inferred from MCP transport behavior. The generic `reconcile-execution --evidence` CLI accepts
+  only non-confirming/manual evidence and rejects file-supplied `PROVIDER_VERIFIED` claims; confirmed
+  outcomes require a trusted provider-specific reconciler injected through the application port.
+- Authority grants are AgentGuard-signed capabilities, not a replacement for workload identity
+  proofing. The authority graph trusts the configured authority signing/verifying root.
+- Phase 5D authority is backward-compatible by default. Deployments that require every protected
+  action to carry a grant+lease must instantiate the service with `require_authority=True`; otherwise
+  authority-less Phase 5A/5B callers remain valid. This mode does not itself authenticate the caller
+  that supplies a `Principal`; workload identity proofing remains an external control.
+- Capability leases are enforced transactionally by the single-node SQLite repository. A future
+  multi-replica deployment requires an equivalent shared transactional lease-claim implementation.
+- Capability scopes use exact protocol/server/tool/operation/resource matching in this phase. More
+  expressive resource predicates must preserve monotonic attenuation and require separate review.
+- `maximum_calls` is treated as a conservatively allocated authority budget: child grants and leases
+  atomically reserve from their parent/grant budget. Revoked, expired, or unused allocations are not
+  automatically reclaimed in Phase 5D, avoiding accidental authority multiplication at the cost of
+  requiring a fresh grant when capacity was over-allocated.
+
+- Phase 5D authority references are enforced at the normalized `ActionIntent` / application-service
+  boundary. The protected Phase 5B MCP profile intentionally rejects unbound extension fields, so it
+  does not yet accept client-supplied delegated-authority metadata; a future MCP adapter mapping must
+  bind authority references explicitly rather than weakening the protected request-field allowlist.

@@ -1,0 +1,316 @@
+{
+  "$defs": {
+    "EvidenceTrustLevel": {
+      "enum": [
+        "agentguard_signed",
+        "provider_correlated",
+        "provider_verified"
+      ],
+      "title": "EvidenceTrustLevel",
+      "type": "string"
+    },
+    "ExecutionAttestationPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "attestation_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Attestation Id",
+          "type": "string"
+        },
+        "authority_digest": {
+          "title": "Authority Digest",
+          "type": "string"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "decision_id": {
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "dispatching_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dispatching At"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        },
+        "execution_id": {
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "execution_state": {
+          "$ref": "#/$defs/ExecutionState"
+        },
+        "intent_digest": {
+          "title": "Intent Digest",
+          "type": "string"
+        },
+        "issued_at": {
+          "format": "date-time",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "policy_digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policy Digest"
+        },
+        "previous_attestation_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previous Attestation Digest"
+        },
+        "provider_status": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Status"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "reserved_at": {
+          "format": "date-time",
+          "title": "Reserved At",
+          "type": "string"
+        },
+        "resolution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionResolution"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "result_digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result Digest"
+        },
+        "schema_version": {
+          "const": "1",
+          "default": "1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "trace_id": {
+          "title": "Trace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attestation_id",
+        "execution_id",
+        "decision_id",
+        "trace_id",
+        "request_id",
+        "intent_digest",
+        "authority_digest",
+        "execution_state",
+        "reserved_at",
+        "issued_at"
+      ],
+      "title": "ExecutionAttestationPayload",
+      "type": "object"
+    },
+    "ExecutionResolution": {
+      "additionalProperties": false,
+      "properties": {
+        "error_code": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        },
+        "evidence_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidence Digest",
+          "type": "string"
+        },
+        "execution_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "original_state": {
+          "$ref": "#/$defs/ExecutionState"
+        },
+        "provider_operation_id_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Operation Id Digest"
+        },
+        "reconciled_at": {
+          "format": "date-time",
+          "title": "Reconciled At",
+          "type": "string"
+        },
+        "resolution_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Resolution Id",
+          "type": "string"
+        },
+        "source": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ReconciliationStatus"
+        },
+        "trust_level": {
+          "$ref": "#/$defs/EvidenceTrustLevel"
+        }
+      },
+      "required": [
+        "resolution_id",
+        "execution_id",
+        "original_state",
+        "status",
+        "source",
+        "evidence_digest",
+        "trust_level",
+        "observed_at",
+        "reconciled_at"
+      ],
+      "title": "ExecutionResolution",
+      "type": "object"
+    },
+    "ExecutionState": {
+      "enum": [
+        "reserved",
+        "dispatching",
+        "succeeded",
+        "failed",
+        "unknown"
+      ],
+      "title": "ExecutionState",
+      "type": "string"
+    },
+    "ReconciliationStatus": {
+      "enum": [
+        "confirmed_succeeded",
+        "confirmed_failed",
+        "still_unknown",
+        "unsupported",
+        "conflict"
+      ],
+      "title": "ReconciliationStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "payload": {
+      "$ref": "#/$defs/ExecutionAttestationPayload"
+    },
+    "payload_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Payload Digest",
+      "type": "string"
+    },
+    "signature": {
+      "title": "Signature",
+      "type": "string"
+    },
+    "signer_key_id": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Signer Key Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "payload",
+    "payload_digest",
+    "signer_key_id",
+    "signature"
+  ],
+  "title": "ExecutionAttestation",
+  "type": "object"
+}

@@ -1,0 +1,275 @@
+{
+  "$defs": {
+    "CapabilityScope": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "delegable": {
+          "default": false,
+          "title": "Delegable",
+          "type": "boolean"
+        },
+        "maximum_calls": {
+          "default": 1,
+          "maximum": 1000000,
+          "minimum": 1,
+          "title": "Maximum Calls",
+          "type": "integer"
+        },
+        "maximum_delegation_depth": {
+          "default": 0,
+          "maximum": 16,
+          "minimum": 0,
+          "title": "Maximum Delegation Depth",
+          "type": "integer"
+        },
+        "operations": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operations"
+        },
+        "protocols": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Protocols"
+        },
+        "resource_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Ids"
+        },
+        "resource_types": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Types"
+        },
+        "servers": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Servers"
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tools"
+        }
+      },
+      "title": "CapabilityScope",
+      "type": "object"
+    },
+    "Principal": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "identity_issuer": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Identity Issuer"
+        },
+        "identity_verified": {
+          "default": false,
+          "title": "Identity Verified",
+          "type": "boolean"
+        },
+        "runtime_identity": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime Identity"
+        },
+        "tenant_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "workload_id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Workload Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "workload_id",
+        "tenant_id"
+      ],
+      "title": "Principal",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "depth": {
+      "maximum": 16,
+      "minimum": 0,
+      "title": "Depth",
+      "type": "integer"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "grant_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Grant Id",
+      "type": "string"
+    },
+    "issued_at": {
+      "format": "date-time",
+      "title": "Issued At",
+      "type": "string"
+    },
+    "issuer": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Issuer",
+      "type": "string"
+    },
+    "key_id": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Key Id",
+      "type": "string"
+    },
+    "parent_grant_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Grant Id"
+    },
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope": {
+      "$ref": "#/$defs/CapabilityScope"
+    },
+    "signature": {
+      "title": "Signature",
+      "type": "string"
+    },
+    "subject": {
+      "$ref": "#/$defs/Principal"
+    }
+  },
+  "required": [
+    "grant_id",
+    "issuer",
+    "subject",
+    "scope",
+    "depth",
+    "issued_at",
+    "expires_at",
+    "key_id",
+    "signature"
+  ],
+  "title": "AuthorityGrant",
+  "type": "object"
+}

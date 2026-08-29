@@ -80,6 +80,9 @@ def execution_authority_digest(verified: VerifiedExecution) -> str:
             "policy_digest": verified.policy_digest,
             "nonce_digest": digest(verified.nonce),
             "approval_id": verified.approval_id,
+            "authority_grant_id": verified.authority_grant_id,
+            "authority_lease_id": verified.authority_lease_id,
+            "authority_chain_digest": verified.authority_chain_digest,
             "credential_authority": verified.credential_authority,
             "authorization_expires_at": verified.authorization_expires_at,
         }
@@ -144,6 +147,11 @@ def validate_execution_authority(
         policy_digest=receipt.policy_digest,
         nonce=receipt.nonce,
         approval_id=approval.approval_id if approval is not None else None,
+        authority_grant_id=(intent.authority.grant_id if intent.authority is not None else None),
+        authority_lease_id=(intent.authority.lease_id if intent.authority is not None else None),
+        authority_chain_digest=(
+            intent.authority.chain_digest if intent.authority is not None else None
+        ),
         credential_authority=_constrain_credential_authority(grant),
         authorization_expires_at=receipt.expires_at,
         verified_at=now,

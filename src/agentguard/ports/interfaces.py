@@ -6,13 +6,19 @@ from typing import Any, Protocol
 
 from agentguard.domain import (
     ApprovalReceipt,
+    AttestationMetadata,
     AuditEvent,
+    AuthorityGrant,
+    AuthorityGrantRecord,
+    CapabilityLease,
     CredentialGrant,
     CredentialRequest,
     DecisionReceipt,
     ExecutionRecord,
+    ExecutionResolution,
     ExecutionState,
     ProtectedExecutionResult,
+    ReconciliationEvidence,
     VerifiedExecution,
 )
 
@@ -118,6 +124,45 @@ class ExecutionRepository(Protocol):
     ) -> tuple[ExecutionRecord, ...]: ...
 
 
+class ExecutionReconciler(Protocol):
+    def reconcile(self, execution: ExecutionRecord) -> ReconciliationEvidence: ...
+
+
+class ReconciliationRepository(Protocol):
+    def record_execution_resolution(
+        self,
+        execution_id: str,
+        evidence: ReconciliationEvidence,
+        reconciled_at: datetime,
+    ) -> ExecutionResolution: ...
+
+    def list_execution_resolutions(self, execution_id: str) -> tuple[ExecutionResolution, ...]: ...
+
+    def get_latest_execution_resolution(self, execution_id: str) -> ExecutionResolution | None: ...
+
+
+class AttestationRepository(Protocol):
+    def record_attestation_metadata(self, metadata: AttestationMetadata) -> None: ...
+
+    def get_latest_attestation_metadata(self, execution_id: str) -> AttestationMetadata | None: ...
+
+
+class AuthorityRepository(Protocol):
+    def store_authority_grant(self, grant: AuthorityGrant) -> None: ...
+
+    def get_authority_grant(self, grant_id: str) -> AuthorityGrantRecord | None: ...
+
+    def revoke_authority_grant(
+        self, grant_id: str, revoked_at: datetime, reason: str
+    ) -> AuthorityGrantRecord: ...
+
+    def store_capability_lease(self, lease: CapabilityLease) -> None: ...
+
+    def get_capability_lease(self, lease_id: str) -> CapabilityLease | None: ...
+
+    def revoke_capability_lease(self, lease_id: str, revoked_at: datetime) -> CapabilityLease: ...
+
+
 class AuditRepository(Protocol):
     def append(self, event: AuditEvent) -> AuditEvent: ...
     def verify(self) -> tuple[bool, int, str, str | None]: ...
@@ -128,6 +173,9 @@ class StateRepository(
     NonceRepository,
     CredentialIssuanceRepository,
     ExecutionRepository,
+    ReconciliationRepository,
+    AttestationRepository,
+    AuthorityRepository,
     Protocol,
 ):
     """Persistence boundary for AgentGuard security state."""

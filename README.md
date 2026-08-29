@@ -2,7 +2,7 @@
 
 **Deterministic action authorization and execution-integrity controls for AI agents.**
 
-> **Release status:** `v0.2.0rc2` is a hardened release candidate, not a production-certified release. The integrated secure v2 execution boundary remains the primary engineering blocker.
+> **Release status:** `v0.2.0rc2` remains a non-production-certified release candidate. The local development line now includes a validated protected MCP execution boundary, signed execution attestations, append-only reconciliation, and delegated capability leases; production promotion still requires external and operational validation.
 
 [![CI](https://github.com/TensorScholar/agentguard/actions/workflows/ci.yml/badge.svg)](https://github.com/TensorScholar/agentguard/actions/workflows/ci.yml)
 [![Security](https://github.com/TensorScholar/agentguard/actions/workflows/security.yml/badge.svg)](https://github.com/TensorScholar/agentguard/actions/workflows/security.yml)
@@ -31,7 +31,7 @@ Every protected MCP route passes through the enforcement path
 Retained evidence is redacted, integrity-checked, and optionally signed
 ```
 
-The repository implements the individual controls required for this objective. One integrated execution boundary that composes authorization, credential use, nonce consumption, protected execution, and terminal audit outcome is still open work.
+The development line now composes these controls through a protected execution boundary and can issue portable signed execution attestations. Ambiguous external outcomes remain explicit and may be reconciled later without rewriting history or redispatching the action.
 
 ## Architecture
 
@@ -51,6 +51,8 @@ flowchart LR
     R --> E[ExecutionGuard]
     G --> E
     E --> T[Protected tool or service]
+    E --> X[Execution attestation]
+    E --> Q[Append-only reconciliation]
     D --> L[Hash-chained audit ledger]
     E --> L
     L --> C[Signed checkpoint<br/>evidence bundle]
@@ -119,6 +121,10 @@ flowchart LR
 - Owner-only permissions for private keys, ledgers, and generated evidence on POSIX systems.
 - Hash-chained audit events, signed external checkpoints, and authenticated evidence manifests.
 - Compatibility commands for the preserved v0.1 scanner, gate, approval, proxy, and reporting workflows.
+- Portable Ed25519-signed execution attestations with offline verification and digest-linked history.
+- Append-only reconciliation for `UNKNOWN` outcomes without automatic redispatch or historical state rewriting.
+- Signed attenuating authority graphs with revocation cascades and bounded consumable capability leases.
+- Atomic capability-lease consumption in the same reservation transaction as execution nonce claiming.
 
 ## Quick start
 
@@ -191,8 +197,7 @@ A protocol adapter can enforce only traffic routed through it. Configuration sca
 
 ## Current limitations
 
-- The secure v2 execution controls are not yet composed into one integrated execution boundary.
-- SQLite replay, approval, and issuance semantics are single-node.
+- SQLite replay, approval, issuance, reconciliation, and capability-lease semantics are single-node.
 - The HTTP package provides validation primitives, not a complete production proxy.
 - No live production credential-provider adapter is included.
 - No identity-backed interactive approval service is included.

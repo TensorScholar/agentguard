@@ -21,24 +21,20 @@ AgentGuard `v0.2.0rc2` is a hardened release candidate for deterministic action 
 - hash-chained audit records and signed external checkpoints;
 - closed-world evidence bundles with optional Ed25519 attestations;
 - owner-only state permissions and symlink-aware filesystem handling;
-- generated schemas, package artifacts, and a non-root container definition.
+- generated schemas, package artifacts, and a non-root container definition;
+- signed execution attestations with offline verification;
+- append-only reconciliation with explicit conflicting-evidence handling;
+- signed authority delegation with monotonic attenuation and revocation cascades;
+- consumable capability leases atomically claimed with execution reservation.
 
-## Primary blocker
+## Current security boundary
 
-`AG-EXEC-001`: the project does not yet provide one integrated execution boundary that coherently binds:
+`AG-EXEC-001` is closed on the local development line: protected execution binds authorization, execution-time revalidation, atomic authority reservation, trusted dispatch, and durable `SUCCEEDED` / `FAILED` / `UNKNOWN` classification. The protected MCP v2 profile routes credential-free `tools/call` execution through that boundary.
 
-1. authorization;
-2. execution-time revalidation;
-3. credential use;
-4. approval and nonce consumption;
-5. protected action execution;
-6. terminal audit outcome.
-
-The individual controls exist, but a production claim requires one fail-closed orchestration path that proves they cannot be bypassed or reordered.
+Phase 5C adds signed portable execution attestations and append-only reconciliation for `UNKNOWN` outcomes. Phase 5D adds signed delegated authority graphs and transactionally consumed capability leases. These features strengthen evidence and runtime authority but do not constitute a production-readiness claim.
 
 ## Remaining findings
 
-- `AG-EXEC-001` — integrated execution boundary;
 - `AG-CRED-001` — production credential profile or explicit no-broker profile;
 - `AG-CAN-001` — canonicalization assurance;
 - `AG-RPC-001` — complete production HTTP/RPC boundary;

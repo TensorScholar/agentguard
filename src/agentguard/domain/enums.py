@@ -40,6 +40,14 @@ class AuditEventType(str, Enum):
     EXECUTION_UNKNOWN = "execution.unknown"
     RECEIPT_REJECTED = "receipt.rejected"
     RECEIPT_CONSUMED = "receipt.consumed"
+    EXECUTION_RECONCILIATION_STARTED = "execution.reconciliation.started"
+    EXECUTION_RECONCILED = "execution.reconciliation.resolved"
+    EXECUTION_ATTESTATION_ISSUED = "execution.attestation.issued"
+    AUTHORITY_GRANTED = "authority.granted"
+    AUTHORITY_DELEGATED = "authority.delegated"
+    AUTHORITY_REVOKED = "authority.revoked"
+    CAPABILITY_LEASE_ISSUED = "authority.lease.issued"
+    CAPABILITY_LEASE_CONSUMED = "authority.lease.consumed"
 
 
 class ExecutionState(str, Enum):
@@ -54,3 +62,29 @@ class ExecutionStatus(str, Enum):
     SUCCESS = "success"
     FAILURE = "failure"
     UNKNOWN = "unknown"
+
+
+class ReconciliationStatus(str, Enum):
+    CONFIRMED_SUCCEEDED = "confirmed_succeeded"
+    CONFIRMED_FAILED = "confirmed_failed"
+    STILL_UNKNOWN = "still_unknown"
+    UNSUPPORTED = "unsupported"
+    CONFLICT = "conflict"
+
+
+class EvidenceTrustLevel(str, Enum):
+    AGENTGUARD_SIGNED = "agentguard_signed"
+    PROVIDER_CORRELATED = "provider_correlated"
+    PROVIDER_VERIFIED = "provider_verified"
+
+
+class AuthorityGrantStatus(str, Enum):
+    ACTIVE = "active"
+    REVOKED = "revoked"
+
+
+class CapabilityLeaseStatus(str, Enum):
+    ACTIVE = "active"
+    EXHAUSTED = "exhausted"
+    REVOKED = "revoked"
+    EXPIRED = "expired"

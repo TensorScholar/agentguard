@@ -1,0 +1,71 @@
+{
+  "$defs": {
+    "CapabilityLeaseStatus": {
+      "enum": [
+        "active",
+        "exhausted",
+        "revoked",
+        "expired"
+      ],
+      "title": "CapabilityLeaseStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "grant_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Grant Id",
+      "type": "string"
+    },
+    "issued_at": {
+      "format": "date-time",
+      "title": "Issued At",
+      "type": "string"
+    },
+    "lease_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Lease Id",
+      "type": "string"
+    },
+    "maximum_uses": {
+      "maximum": 1000000,
+      "minimum": 1,
+      "title": "Maximum Uses",
+      "type": "integer"
+    },
+    "remaining_uses": {
+      "maximum": 1000000,
+      "minimum": 0,
+      "title": "Remaining Uses",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/CapabilityLeaseStatus",
+      "default": "active"
+    }
+  },
+  "required": [
+    "lease_id",
+    "grant_id",
+    "maximum_uses",
+    "remaining_uses",
+    "issued_at",
+    "expires_at"
+  ],
+  "title": "CapabilityLease",
+  "type": "object"
+}

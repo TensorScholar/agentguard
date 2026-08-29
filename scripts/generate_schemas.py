@@ -9,13 +9,19 @@ from agentguard.domain import (
     ApprovalReceipt,
     AuditCheckpoint,
     AuditEvent,
+    AuthorityGrant,
+    AuthorityReference,
+    CapabilityLease,
     CredentialGrant,
     CredentialRequest,
     DecisionReceipt,
     EvidenceAttestation,
+    ExecutionAttestation,
     ExecutionOutcome,
     ExecutionRequest,
+    ExecutionResolution,
     PolicyDocument,
+    ReconciliationEvidence,
 )
 
 ROOT = Path(__file__).parents[1]
@@ -31,6 +37,12 @@ MODELS = {
     "audit-event-v1": AuditEvent,
     "audit-checkpoint-v1": AuditCheckpoint,
     "evidence-attestation-v1": EvidenceAttestation,
+    "execution-attestation-v1": ExecutionAttestation,
+    "reconciliation-evidence-v1": ReconciliationEvidence,
+    "execution-resolution-v1": ExecutionResolution,
+    "authority-grant-v1": AuthorityGrant,
+    "capability-lease-v1": CapabilityLease,
+    "authority-reference-v1": AuthorityReference,
 }
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -9,17 +9,42 @@ from agentguard.domain import (
     ApprovalReceipt,
     AuditEvent,
     AuditEventType,
+    AuthorityGrant,
+    AuthorityGrantStatus,
+    AuthorityReference,
+    CapabilityLease,
+    CapabilityLeaseStatus,
+    CapabilityScope,
     CredentialGrant,
     CredentialRequest,
     DecisionReceipt,
     EnforcementMode,
+    ExecutionAttestation,
     ExecutionOutcome,
     ExecutionRecord,
+    ExecutionResolution,
     ExecutionState,
     ExecutionStatus,
     PolicyDocument,
+    Principal,
     ProtectedExecutionResult,
+    ReconciliationStatus,
     VerifiedExecution,
+)
+from agentguard.engine.attestation import (
+    attestation_metadata,
+    issue_execution_attestation,
+)
+from agentguard.engine.authority import (
+    AuthorityError,
+    authority_chain_digest,
+    validate_authority_chain,
+)
+from agentguard.engine.authority import (
+    delegate_authority as delegate_authority_grant,
+)
+from agentguard.engine.authority import (
+    issue_root_authority as issue_root_authority_grant,
 )
 from agentguard.engine.credentials import (
     CredentialVerificationError,
@@ -46,6 +71,7 @@ from agentguard.ports import (
     BrokerGrantVerifier,
     CredentialBroker,
     DefiniteExecutionFailure,
+    ExecutionReconciler,
     ProtectedExecutor,
     SignatureVerifier,
     Signer,
@@ -64,11 +90,16 @@ class AgentGuardService:
         verifier: SignatureVerifier,
         state: StateRepository,
         broker_grant_verifier: BrokerGrantVerifier | None = None,
+        authority_verifier: SignatureVerifier | None = None,
+        *,
+        require_authority: bool = False,
     ) -> None:
         self.signer = signer
         self.verifier = verifier
         self.state = state
         self.broker_grant_verifier = broker_grant_verifier
+        self.authority_verifier = authority_verifier or verifier
+        self.require_authority = require_authority
 
     def _event(self, event_type: AuditEventType, intent: ActionIntent, **kw: Any) -> AuditEvent:
         timestamp = kw.pop("timestamp", datetime.now(UTC))
@@ -82,6 +113,317 @@ class AgentGuardService:
             **kw,
         )
 
+    def _authority_event(
+        self,
+        event_type: AuditEventType,
+        *,
+        trace_id: str,
+        reason_code: str | None = None,
+        data: dict[str, str | int | bool | None] | None = None,
+    ) -> AuditEvent:
+        return AuditEvent(
+            event_id="evt_" + uuid4().hex,
+            event_type=event_type,
+            timestamp=datetime.now(UTC),
+            trace_id=trace_id,
+            source="agentguard",
+            reason_code=reason_code,
+            data=data or {},
+        )
+
+    def _load_authority_chain(self, grant_id: str) -> tuple[AuthorityGrant, ...]:
+        reversed_chain: list[AuthorityGrant] = []
+        visited: set[str] = set()
+        current_id: str | None = grant_id
+        while current_id is not None:
+            if current_id in visited or len(reversed_chain) > 16:
+                raise AuthorityError("authority.chain_cycle")
+            visited.add(current_id)
+            record = self.state.get_authority_grant(current_id)
+            if record is None:
+                raise AuthorityError("authority.grant_missing")
+            if record.status != AuthorityGrantStatus.ACTIVE:
+                raise AuthorityError("authority.grant_revoked")
+            reversed_chain.append(record.grant)
+            current_id = record.grant.parent_grant_id
+        return tuple(reversed(reversed_chain))
+
+    def _validate_intent_authority(
+        self,
+        intent: ActionIntent,
+        *,
+        allow_consumed_lease: bool = False,
+    ) -> tuple[AuthorityGrant, ...] | None:
+        reference = intent.authority
+        if reference is None:
+            if self.require_authority:
+                raise AuthorityError("authority.required")
+            return None
+        chain = self._load_authority_chain(reference.grant_id)
+        validate_authority_chain(chain, intent, self.authority_verifier)
+        if authority_chain_digest(chain) != reference.chain_digest:
+            raise AuthorityError("authority.chain_digest_mismatch")
+        lease = self.state.get_capability_lease(reference.lease_id)
+        if lease is None:
+            raise AuthorityError("authority.lease_missing")
+        if lease.grant_id != reference.grant_id:
+            raise AuthorityError("authority.lease_grant_mismatch")
+        now = datetime.now(UTC)
+        if lease.expires_at <= now:
+            raise AuthorityError("authority.lease_expired")
+        allowed_statuses = {CapabilityLeaseStatus.ACTIVE}
+        if allow_consumed_lease:
+            allowed_statuses.add(CapabilityLeaseStatus.EXHAUSTED)
+        if lease.status not in allowed_statuses:
+            raise AuthorityError("authority.lease_unavailable")
+        if not allow_consumed_lease and lease.remaining_uses < 1:
+            raise AuthorityError("authority.lease_exhausted")
+        return chain
+
+    def authority_reference(self, grant_id: str, lease_id: str) -> AuthorityReference:
+        chain = self._load_authority_chain(grant_id)
+        lease = self.state.get_capability_lease(lease_id)
+        if lease is None or lease.grant_id != grant_id:
+            raise AuthorityError("authority.lease_grant_mismatch")
+        return AuthorityReference(
+            grant_id=grant_id,
+            lease_id=lease_id,
+            chain_digest=authority_chain_digest(chain),
+        )
+
+    def issue_root_authority(
+        self,
+        subject: Principal,
+        scope: CapabilityScope,
+        authority_signer: Signer,
+        *,
+        ttl_seconds: int = 3600,
+        issuer: str = "agentguard",
+    ) -> AuthorityGrant:
+        grant = issue_root_authority_grant(
+            subject,
+            scope,
+            authority_signer,
+            ttl_seconds=ttl_seconds,
+            issuer=issuer,
+        )
+        self.state.store_authority_grant(grant)
+        self.state.append(
+            self._authority_event(
+                AuditEventType.AUTHORITY_GRANTED,
+                trace_id=grant.grant_id,
+                data={
+                    "grant_id": grant.grant_id,
+                    "subject_agent_id": grant.subject.agent_id,
+                    "maximum_calls": grant.scope.maximum_calls,
+                },
+            )
+        )
+        return grant
+
+    def delegate_authority(
+        self,
+        parent_grant_id: str,
+        delegator: Principal,
+        subject: Principal,
+        scope: CapabilityScope,
+        authority_signer: Signer,
+        *,
+        ttl_seconds: int = 1800,
+    ) -> AuthorityGrant:
+        parent_record = self.state.get_authority_grant(parent_grant_id)
+        if parent_record is None or parent_record.status != AuthorityGrantStatus.ACTIVE:
+            raise AuthorityError("authority.parent_not_active")
+        if delegator != parent_record.grant.subject:
+            raise AuthorityError("authority.delegator_mismatch")
+        grant = delegate_authority_grant(
+            parent_record.grant,
+            subject,
+            scope,
+            authority_signer,
+            self.authority_verifier,
+            ttl_seconds=ttl_seconds,
+        )
+        try:
+            self.state.store_authority_grant(grant)
+        except RuntimeError as exc:
+            if str(exc).startswith("authority."):
+                raise AuthorityError(str(exc)) from exc
+            raise
+        self.state.append(
+            self._authority_event(
+                AuditEventType.AUTHORITY_DELEGATED,
+                trace_id=grant.grant_id,
+                data={
+                    "grant_id": grant.grant_id,
+                    "parent_grant_id": parent_grant_id,
+                    "depth": grant.depth,
+                },
+            )
+        )
+        return grant
+
+    def revoke_authority(self, grant_id: str, *, reason: str) -> None:
+        record = self.state.revoke_authority_grant(grant_id, datetime.now(UTC), reason)
+        self.state.append(
+            self._authority_event(
+                AuditEventType.AUTHORITY_REVOKED,
+                trace_id=grant_id,
+                reason_code=reason,
+                data={"grant_id": record.grant.grant_id},
+            )
+        )
+
+    def issue_capability_lease(
+        self,
+        grant_id: str,
+        holder: Principal,
+        *,
+        maximum_uses: int,
+        ttl_seconds: int = 300,
+    ) -> CapabilityLease:
+        record = self.state.get_authority_grant(grant_id)
+        if record is None or record.status != AuthorityGrantStatus.ACTIVE:
+            raise AuthorityError("authority.grant_not_active")
+        if holder != record.grant.subject:
+            raise AuthorityError("authority.holder_mismatch")
+        now = datetime.now(UTC)
+        if now >= record.grant.expires_at:
+            raise AuthorityError("authority.grant_expired")
+        if maximum_uses < 1 or maximum_uses > record.grant.scope.maximum_calls:
+            raise AuthorityError("authority.lease_uses_exceed_scope")
+        if ttl_seconds < 1:
+            raise AuthorityError("authority.lease_ttl_invalid")
+        expires_at = min(
+            now + timedelta(seconds=ttl_seconds),
+            record.grant.expires_at,
+        )
+        lease = CapabilityLease(
+            lease_id="lease_" + uuid4().hex,
+            grant_id=grant_id,
+            maximum_uses=maximum_uses,
+            remaining_uses=maximum_uses,
+            issued_at=now,
+            expires_at=expires_at,
+            status=CapabilityLeaseStatus.ACTIVE,
+        )
+        try:
+            self.state.store_capability_lease(lease)
+        except RuntimeError as exc:
+            if str(exc).startswith("authority."):
+                raise AuthorityError(str(exc)) from exc
+            raise
+        self.state.append(
+            self._authority_event(
+                AuditEventType.CAPABILITY_LEASE_ISSUED,
+                trace_id=lease.lease_id,
+                data={
+                    "lease_id": lease.lease_id,
+                    "grant_id": grant_id,
+                    "maximum_uses": maximum_uses,
+                },
+            )
+        )
+        return lease
+
+    def revoke_capability_lease(self, lease_id: str) -> None:
+        lease = self.state.revoke_capability_lease(lease_id, datetime.now(UTC))
+        self.state.append(
+            self._authority_event(
+                AuditEventType.AUTHORITY_REVOKED,
+                trace_id=lease_id,
+                reason_code="authority.lease_revoked",
+                data={"lease_id": lease_id, "grant_id": lease.grant_id},
+            )
+        )
+
+    def reconcile_execution(
+        self,
+        execution_id: str,
+        reconciler: ExecutionReconciler,
+    ) -> ExecutionResolution:
+        execution = self.state.get_execution(execution_id)
+        if execution is None:
+            raise ExecutionGuardError("execution.record_missing")
+        if execution.state != ExecutionState.UNKNOWN:
+            raise ExecutionGuardError("reconciliation.execution_not_unknown")
+        self.state.append(
+            self._authority_event(
+                AuditEventType.EXECUTION_RECONCILIATION_STARTED,
+                trace_id=execution.trace_id,
+                data={"execution_id": execution_id},
+            )
+        )
+        evidence = reconciler.reconcile(execution)
+        if evidence.status == ReconciliationStatus.CONFLICT:
+            raise ExecutionGuardError("reconciliation.adapter_cannot_assert_conflict")
+        resolution = self.state.record_execution_resolution(
+            execution_id, evidence, datetime.now(UTC)
+        )
+        self.state.append(
+            AuditEvent(
+                event_id="evt_" + uuid4().hex,
+                event_type=AuditEventType.EXECUTION_RECONCILED,
+                timestamp=datetime.now(UTC),
+                trace_id=execution.trace_id,
+                request_id=execution.request_id,
+                decision_id=execution.decision_id,
+                execution_id=execution.execution_id,
+                source="agentguard",
+                reason_code=resolution.error_code,
+                data={
+                    "resolution_id": resolution.resolution_id,
+                    "status": resolution.status.value,
+                    "evidence_digest": resolution.evidence_digest,
+                    "trust_level": resolution.trust_level.value,
+                },
+            )
+        )
+        return resolution
+
+    def issue_execution_attestation(
+        self,
+        execution_id: str,
+        attestation_signer: Signer,
+    ) -> ExecutionAttestation:
+        execution = self.state.get_execution(execution_id)
+        if execution is None:
+            raise ExecutionGuardError("execution.record_missing")
+        resolution = self.state.get_latest_execution_resolution(execution_id)
+        previous = self.state.get_latest_attestation_metadata(execution_id)
+        attestation = issue_execution_attestation(
+            execution,
+            attestation_signer,
+            policy_digest=execution.policy_digest,
+            resolution=resolution,
+            previous_attestation_digest=(previous.payload_digest if previous is not None else None),
+        )
+        metadata = attestation_metadata(attestation)
+        try:
+            self.state.record_attestation_metadata(metadata)
+        except RuntimeError as exc:
+            if str(exc).startswith("attestation."):
+                raise ExecutionGuardError(str(exc)) from exc
+            raise
+        self.state.append(
+            AuditEvent(
+                event_id="evt_" + uuid4().hex,
+                event_type=AuditEventType.EXECUTION_ATTESTATION_ISSUED,
+                timestamp=attestation.payload.issued_at,
+                trace_id=execution.trace_id,
+                request_id=execution.request_id,
+                decision_id=execution.decision_id,
+                execution_id=execution.execution_id,
+                source="agentguard",
+                data={
+                    "attestation_id": metadata.attestation_id,
+                    "payload_digest": metadata.payload_digest,
+                    "signer_key_id": metadata.signer_key_id,
+                },
+            )
+        )
+        return attestation
+
     def authorize(
         self,
         intent: ActionIntent,
@@ -91,6 +433,7 @@ class AgentGuardService:
         ttl_seconds: int = 60,
     ) -> DecisionReceipt:
         self.state.append(self._event(AuditEventType.AUTHORIZATION_REQUESTED, intent))
+        self._validate_intent_authority(intent)
         evaluation = evaluate_policy(policy, intent)
         receipt = issue_decision_receipt(
             intent, evaluation, self.signer, ttl_seconds=ttl_seconds, mode=mode
@@ -248,6 +591,7 @@ class AgentGuardService:
         """Own validation, one-winner reservation, controlled dispatch, and durable outcome."""
 
         execution_id = "exec_" + uuid4().hex
+        self._validate_intent_authority(intent)
         verified = validate_execution_authority(
             intent,
             receipt,
@@ -278,6 +622,19 @@ class AgentGuardService:
                 },
             )
         )
+        if verified.authority_lease_id is not None:
+            self.state.append(
+                self._event(
+                    AuditEventType.CAPABILITY_LEASE_CONSUMED,
+                    intent,
+                    decision_id=receipt.decision_id,
+                    execution_id=execution_id,
+                    data={
+                        "lease_id": verified.authority_lease_id,
+                        "grant_id": verified.authority_grant_id,
+                    },
+                )
+            )
         return self._dispatch_reserved(verified, executor)
 
     def resume_reserved_execution(
@@ -298,6 +655,7 @@ class AgentGuardService:
             raise ExecutionGuardError("execution.record_missing")
         if record.state != ExecutionState.RESERVED:
             raise ExecutionGuardError("execution.not_reserved")
+        self._validate_intent_authority(intent, allow_consumed_lease=True)
         verified = validate_execution_authority(
             intent,
             receipt,

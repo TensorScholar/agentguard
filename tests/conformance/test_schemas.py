@@ -15,13 +15,19 @@ def test_generated_schemas_are_valid_json_schema():
         "approval-receipt-v1.schema.json",
         "audit-checkpoint-v1.schema.json",
         "audit-event-v1.schema.json",
+        "authority-grant-v1.schema.json",
+        "authority-reference-v1.schema.json",
+        "capability-lease-v1.schema.json",
         "credential-grant-v1.schema.json",
         "credential-request-v1.schema.json",
         "decision-receipt-v1.schema.json",
         "evidence-attestation-v1.schema.json",
+        "execution-attestation-v1.schema.json",
         "execution-outcome-v1.schema.json",
         "execution-request-v1.schema.json",
+        "execution-resolution-v1.schema.json",
         "policy-v2.schema.json",
+        "reconciliation-evidence-v1.schema.json",
     }
     assert {path.name for path in files} == expected
     for path in files:

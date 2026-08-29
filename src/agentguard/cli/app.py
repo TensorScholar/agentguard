@@ -17,15 +17,26 @@ from agentguard.adapters.crypto import (
 )
 from agentguard.adapters.evidence import build_bundle, verify_bundle
 from agentguard.adapters.protocols.mcp import MCPProtectedStdioProxy
+from agentguard.adapters.reconciliation import DeterministicReconciler
 from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService
 from agentguard.domain import (
     ActionIntent,
     ApprovalReceipt,
+    CapabilityScope,
     CredentialRequest,
     EnforcementMode,
+    EvidenceTrustLevel,
+    ExecutionAttestation,
     Principal,
+    ReconciliationEvidence,
+    ReconciliationStatus,
 )
+from agentguard.engine.attestation import (
+    AttestationVerificationError,
+    verify_execution_attestation,
+)
+from agentguard.engine.authority import AuthorityError
 from agentguard.engine.checkpoints import (
     AuditCheckpointError,
     issue_audit_checkpoint,
@@ -71,6 +82,12 @@ def init(output: Path = Path(".agentguard"), force: bool = False) -> None:
     signer = Ed25519Signer.generate()
     signer.save_private(output / "decision-private.pem")
     signer.save_public(output / "decision-public.pem")
+    attestation_signer = Ed25519Signer.generate("attestation-ed25519")
+    attestation_signer.save_private(output / "attestation-private.pem")
+    attestation_signer.save_public(output / "attestation-public.pem")
+    authority_signer = Ed25519Signer.generate("authority-ed25519")
+    authority_signer.save_private(output / "authority-private.pem")
+    authority_signer.save_public(output / "authority-public.pem")
     broker_signer = Ed25519Signer.generate("mock-broker-ed25519")
     broker_signer.save_private(output / "broker-private.pem")
     broker_signer.save_public(output / "broker-public.pem")
@@ -85,13 +102,23 @@ def authorize(
     ledger: Path = Path(".agentguard/audit.sqlite"),
     output: Path = Path("decision-receipt.json"),
     mode: EnforcementMode = EnforcementMode.ENFORCE,
+    authority_public_key: Path = typer.Option(
+        Path(".agentguard/authority-public.pem"), "--authority-public-key"
+    ),
 ) -> None:
     intent = load_json_model(request, ActionIntent)
     doc = load_policy(policy)
     signer = Ed25519Signer.load_private(key)
     verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
     state = SQLiteState(ledger)
-    receipt = AgentGuardService(signer, verifier, state).authorize(intent, doc, mode=mode)
+    authority_verifier = (
+        Ed25519Verifier.from_public_file(authority_public_key, key_id="authority-ed25519")
+        if intent.authority is not None
+        else None
+    )
+    receipt = AgentGuardService(
+        signer, verifier, state, authority_verifier=authority_verifier
+    ).authorize(intent, doc, mode=mode)
     write_json(output, receipt)
     console.print(f"{receipt.effect.value.upper()} — {receipt.decision_id}")
     if receipt.effect.value == "deny" and mode == EnforcementMode.ENFORCE:
@@ -347,6 +374,189 @@ def audit_checkpoint_verify(
     )
     if not matches:
         raise typer.Exit(1)
+
+
+@app.command("attest-execution")
+def attest_execution(
+    execution_id: str = typer.Option(..., "--execution-id"),
+    state: Path = typer.Option(Path(".agentguard/action-integrity.sqlite"), "--state"),
+    key: Path = typer.Option(Path(".agentguard/attestation-private.pem"), "--key"),
+    output: Path = typer.Option(Path("execution-attestation.json"), "--output"),
+) -> None:
+    signer = Ed25519Signer.load_private(key, key_id="attestation-ed25519")
+    verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
+    repository = SQLiteState(state)
+    service = AgentGuardService(signer, verifier, repository)
+    attestation = service.issue_execution_attestation(execution_id, signer)
+    write_json(output, attestation)
+    console.print(f"Issued execution attestation {attestation.payload.attestation_id}")
+
+
+@app.command("verify-attestation")
+def verify_attestation(
+    attestation: Path,
+    public_key: Path = typer.Option(Path(".agentguard/attestation-public.pem"), "--public-key"),
+) -> None:
+    value = load_json_model(attestation, ExecutionAttestation)
+    verifier = Ed25519Verifier.from_public_file(public_key, key_id=value.signer_key_id)
+    try:
+        verify_execution_attestation(value, verifier)
+    except AttestationVerificationError as exc:
+        console.print_json(data={"ok": False, "reason": str(exc)})
+        raise typer.Exit(1) from exc
+    console.print_json(
+        data={
+            "ok": True,
+            "attestation_id": value.payload.attestation_id,
+            "execution_id": value.payload.execution_id,
+            "execution_state": value.payload.execution_state.value,
+            "resolution": (
+                value.payload.resolution.status.value
+                if value.payload.resolution is not None
+                else None
+            ),
+            "payload_digest": value.payload_digest,
+            "signer_key_id": value.signer_key_id,
+        }
+    )
+
+
+@app.command("reconcile-execution")
+def reconcile_execution(
+    execution_id: str = typer.Option(..., "--execution-id"),
+    evidence: Path = typer.Option(..., "--evidence"),
+    state: Path = typer.Option(Path(".agentguard/action-integrity.sqlite"), "--state"),
+    key: Path = typer.Option(Path(".agentguard/decision-private.pem"), "--key"),
+) -> None:
+    value = load_json_model(evidence, ReconciliationEvidence)
+    if value.trust_level == EvidenceTrustLevel.PROVIDER_VERIFIED or value.status in {
+        ReconciliationStatus.CONFIRMED_SUCCEEDED,
+        ReconciliationStatus.CONFIRMED_FAILED,
+    }:
+        raise typer.BadParameter(
+            "file-supplied evidence cannot assert provider-verified outcomes; "
+            "use a trusted provider-specific reconciler"
+        )
+    signer = Ed25519Signer.load_private(key)
+    verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
+    service = AgentGuardService(signer, verifier, SQLiteState(state))
+    resolution = service.reconcile_execution(execution_id, DeterministicReconciler(value))
+    console.print_json(data=resolution.model_dump(mode="json"))
+
+
+@app.command("authority-issue-root")
+def authority_issue_root(
+    principal: Path = typer.Option(..., "--principal"),
+    scope: Path = typer.Option(..., "--scope"),
+    state: Path = typer.Option(Path(".agentguard/action-integrity.sqlite"), "--state"),
+    key: Path = typer.Option(Path(".agentguard/authority-private.pem"), "--key"),
+    ttl_seconds: int = typer.Option(3600, "--ttl-seconds", min=1, max=86400),
+    output: Path = typer.Option(Path("authority-grant.json"), "--output"),
+) -> None:
+    subject = load_json_model(principal, Principal)
+    capability_scope = load_json_model(scope, CapabilityScope)
+    signer = Ed25519Signer.load_private(key, key_id="authority-ed25519")
+    verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
+    service = AgentGuardService(signer, verifier, SQLiteState(state), authority_verifier=verifier)
+    grant = service.issue_root_authority(subject, capability_scope, signer, ttl_seconds=ttl_seconds)
+    write_json(output, grant)
+    console.print(f"Issued root authority {grant.grant_id}")
+
+
+@app.command("authority-delegate")
+def authority_delegate(
+    parent_grant_id: str = typer.Option(..., "--parent-grant-id"),
+    delegator: Path = typer.Option(..., "--delegator"),
+    principal: Path = typer.Option(..., "--principal"),
+    scope: Path = typer.Option(..., "--scope"),
+    state: Path = typer.Option(Path(".agentguard/action-integrity.sqlite"), "--state"),
+    key: Path = typer.Option(Path(".agentguard/authority-private.pem"), "--key"),
+    ttl_seconds: int = typer.Option(1800, "--ttl-seconds", min=1, max=86400),
+    output: Path = typer.Option(Path("delegated-authority-grant.json"), "--output"),
+) -> None:
+    delegator_principal = load_json_model(delegator, Principal)
+    subject = load_json_model(principal, Principal)
+    capability_scope = load_json_model(scope, CapabilityScope)
+    signer = Ed25519Signer.load_private(key, key_id="authority-ed25519")
+    verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
+    service = AgentGuardService(signer, verifier, SQLiteState(state), authority_verifier=verifier)
+    grant = service.delegate_authority(
+        parent_grant_id,
+        delegator_principal,
+        subject,
+        capability_scope,
+        signer,
+        ttl_seconds=ttl_seconds,
+    )
+    write_json(output, grant)
+    console.print(f"Delegated authority {grant.grant_id}")
+
+
+@app.command("authority-lease")
+def authority_lease(
+    grant_id: str = typer.Option(..., "--grant-id"),
+    holder: Path = typer.Option(..., "--holder"),
+    maximum_uses: int = typer.Option(..., "--maximum-uses", min=1),
+    ttl_seconds: int = typer.Option(300, "--ttl-seconds", min=1),
+    state: Path = typer.Option(Path(".agentguard/action-integrity.sqlite"), "--state"),
+    key: Path = typer.Option(Path(".agentguard/authority-private.pem"), "--key"),
+    output: Path = typer.Option(Path("capability-lease.json"), "--output"),
+) -> None:
+    holder_principal = load_json_model(holder, Principal)
+    signer = Ed25519Signer.load_private(key, key_id="authority-ed25519")
+    verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
+    service = AgentGuardService(signer, verifier, SQLiteState(state), authority_verifier=verifier)
+    lease = service.issue_capability_lease(
+        grant_id, holder_principal, maximum_uses=maximum_uses, ttl_seconds=ttl_seconds
+    )
+    write_json(output, lease)
+    console.print(f"Issued capability lease {lease.lease_id}")
+
+
+@app.command("authority-reference")
+def authority_reference(
+    grant_id: str = typer.Option(..., "--grant-id"),
+    lease_id: str = typer.Option(..., "--lease-id"),
+    state: Path = typer.Option(Path(".agentguard/action-integrity.sqlite"), "--state"),
+    key: Path = typer.Option(Path(".agentguard/authority-private.pem"), "--key"),
+    output: Path = typer.Option(Path("authority-reference.json"), "--output"),
+) -> None:
+    signer = Ed25519Signer.load_private(key, key_id="authority-ed25519")
+    verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
+    service = AgentGuardService(signer, verifier, SQLiteState(state), authority_verifier=verifier)
+    reference = service.authority_reference(grant_id, lease_id)
+    write_json(output, reference)
+    console.print(f"Created authority reference for {grant_id}")
+
+
+@app.command("authority-revoke")
+def authority_revoke(
+    grant_id: str = typer.Option(..., "--grant-id"),
+    reason: str = typer.Option(..., "--reason"),
+    state: Path = typer.Option(Path(".agentguard/action-integrity.sqlite"), "--state"),
+    key: Path = typer.Option(Path(".agentguard/authority-private.pem"), "--key"),
+) -> None:
+    signer = Ed25519Signer.load_private(key, key_id="authority-ed25519")
+    verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
+    service = AgentGuardService(signer, verifier, SQLiteState(state), authority_verifier=verifier)
+    try:
+        service.revoke_authority(grant_id, reason=reason)
+    except AuthorityError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.print(f"Revoked authority {grant_id} and active descendants")
+
+
+@app.command("authority-lease-revoke")
+def authority_lease_revoke(
+    lease_id: str = typer.Option(..., "--lease-id"),
+    state: Path = typer.Option(Path(".agentguard/action-integrity.sqlite"), "--state"),
+    key: Path = typer.Option(Path(".agentguard/authority-private.pem"), "--key"),
+) -> None:
+    signer = Ed25519Signer.load_private(key, key_id="authority-ed25519")
+    verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
+    service = AgentGuardService(signer, verifier, SQLiteState(state), authority_verifier=verifier)
+    service.revoke_capability_lease(lease_id)
+    console.print(f"Revoked capability lease {lease_id}")
 
 
 @app.command("mcp-posture")

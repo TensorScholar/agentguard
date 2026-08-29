@@ -57,6 +57,17 @@
           "title": "Arguments",
           "type": "object"
         },
+        "authority": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuthorityReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "delegation": {
           "anyOf": [
             {
@@ -273,6 +284,35 @@
         "signature"
       ],
       "title": "ApprovalReceipt",
+      "type": "object"
+    },
+    "AuthorityReference": {
+      "additionalProperties": false,
+      "properties": {
+        "chain_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Chain Digest",
+          "type": "string"
+        },
+        "grant_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Grant Id",
+          "type": "string"
+        },
+        "lease_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Lease Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "grant_id",
+        "lease_id",
+        "chain_digest"
+      ],
+      "title": "AuthorityReference",
       "type": "object"
     },
     "CredentialCeiling": {
