@@ -27,3 +27,20 @@
   must run on the final Git commit before release promotion.
 - Legacy Policy v1 retains compatibility-oriented semantics, including an allow default for ordinary
   known calls; production deployments should prefer Policy v2 and explicit allow rules.
+- `mcp-proxy-v2` currently targets only the repository's `2025-03-26`-era stdio interoperability
+  profile. It does not claim full MCP 2025-03-26 conformance and does not implement the MCP
+  2026-07-28 task/session modernization.
+- The protected v2 client method allowlist is limited to `initialize`, `notifications/initialized`,
+  `ping`, `tools/list`, `tools/call`, and translated `notifications/cancelled`. JSON-RPC batches and
+  unknown/custom client methods are unsupported and fail closed.
+- Protected MCP schema binding relies on process-instance-bound `tools/list` observations,
+  pagination completion, freshness, list-change invalidation, and a final observed digest check.
+  A server can still change hidden semantics without exposing a corresponding protocol/schema change;
+  AgentGuard does not claim cryptographic elimination of that residual TOCTOU assumption.
+- Credential-bound protected MCP execution is intentionally unavailable in Phase 5B. The protected
+  path does not use `MockCredentialBroker` as a substitute for a production credential injector.
+- `mcp-proxy-v2` uses separate v0.2 state (default `.agentguard/action-integrity.sqlite`) and does not
+  migrate or mutate the preserved v0.1 audit database.
+- Legitimate provider tool output is not subjected to generic DLP/redaction by the protected MCP
+  adapter. Secret minimization applies to AgentGuard-owned credentials, launch metadata, audit data,
+  and execution evidence; generic provider-output DLP is outside this phase.

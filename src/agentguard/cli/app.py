@@ -16,6 +16,7 @@ from agentguard.adapters.crypto import (
     Ed25519Verifier,
 )
 from agentguard.adapters.evidence import build_bundle, verify_bundle
+from agentguard.adapters.protocols.mcp import MCPProtectedStdioProxy
 from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService
 from agentguard.domain import (
@@ -23,6 +24,7 @@ from agentguard.domain import (
     ApprovalReceipt,
     CredentialRequest,
     EnforcementMode,
+    Principal,
 )
 from agentguard.engine.checkpoints import (
     AuditCheckpointError,
@@ -377,6 +379,54 @@ def mcp_posture(
         or any(route.status != EnforcementStatus.PROTECTED for route in report.routes)
     ):
         raise typer.Exit(1)
+
+
+@app.command(
+    "mcp-proxy-v2", context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
+)
+def mcp_proxy_v2(
+    ctx: typer.Context,
+    policy: Path = typer.Option(..., "--policy"),
+    key: Path = typer.Option(Path(".agentguard/decision-private.pem"), "--key"),
+    state: Path = typer.Option(Path(".agentguard/action-integrity.sqlite"), "--state"),
+    server_id: str = typer.Option(..., "--server-id"),
+    agent_id: str = typer.Option("mcp-client", "--agent-id"),
+    workload_id: str = typer.Option("mcp-stdio", "--workload-id"),
+    tenant_id: str = typer.Option("local", "--tenant-id"),
+    request_id_capacity: int = typer.Option(4096, "--request-id-capacity", min=1),
+    schema_ttl_seconds: float = typer.Option(300.0, "--schema-ttl-seconds", min=0.001),
+    execution_timeout_seconds: float = typer.Option(30.0, "--execution-timeout-seconds", min=0.001),
+    shutdown_timeout_seconds: float = typer.Option(2.0, "--shutdown-timeout-seconds", min=0.0),
+) -> None:
+    """Run the explicit ENFORCE-only protected MCP 2025-03-26 stdio profile."""
+    server_command = list(ctx.args)
+    if server_command and server_command[0] == "--":
+        server_command = server_command[1:]
+    if not server_command:
+        raise typer.BadParameter("mcp-proxy-v2 requires a server command after --")
+    document = load_policy(policy)
+    signer = Ed25519Signer.load_private(key)
+    verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
+    repository = SQLiteState(state)
+    service = AgentGuardService(signer, verifier, repository)
+    principal = Principal(
+        agent_id=agent_id,
+        workload_id=workload_id,
+        tenant_id=tenant_id,
+        identity_verified=False,
+    )
+    proxy = MCPProtectedStdioProxy(
+        service,
+        document,
+        principal,
+        server_id,
+        server_command,
+        request_id_capacity=request_id_capacity,
+        schema_ttl_seconds=schema_ttl_seconds,
+        execution_timeout_seconds=execution_timeout_seconds,
+        shutdown_timeout_seconds=shutdown_timeout_seconds,
+    )
+    raise typer.Exit(proxy.run())
 
 
 @app.command()
