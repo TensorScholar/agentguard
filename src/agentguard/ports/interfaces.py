@@ -17,6 +17,7 @@ from agentguard.domain import (
     ExecutionRecord,
     ExecutionResolution,
     ExecutionState,
+    PreparedExecution,
     ProtectedExecutionResult,
     ReconciliationEvidence,
     VerifiedExecution,
@@ -122,6 +123,21 @@ class ExecutionRepository(Protocol):
     def recover_incomplete_executions(
         self, recovered_at: datetime
     ) -> tuple[ExecutionRecord, ...]: ...
+
+    def store_prepared_execution(self, prepared: PreparedExecution) -> None: ...
+
+    def get_prepared_execution(self, prepared_id: str) -> PreparedExecution | None: ...
+
+    def cancel_prepared_execution(
+        self, prepared_id: str, cancelled_at: datetime
+    ) -> PreparedExecution: ...
+
+    def reserve_prepared_execution(
+        self,
+        prepared_id: str,
+        verified_execution: VerifiedExecution,
+        reserved_at: datetime,
+    ) -> str | None: ...
 
 
 class ExecutionReconciler(Protocol):

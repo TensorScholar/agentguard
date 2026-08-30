@@ -25,13 +25,17 @@ AgentGuard `v0.2.0rc2` is a hardened release candidate for deterministic action 
 - signed execution attestations with offline verification;
 - append-only reconciliation with explicit conflicting-evidence handling;
 - signed authority delegation with monotonic attenuation and revocation cascades;
-- consumable capability leases atomically claimed with execution reservation.
+- consumable capability leases atomically claimed with execution reservation;
+- signed field provenance and exact-value typed release receipts;
+- durable prepare/commit staging for policy-classified high-impact actions;
+- declared causal execution ancestry with secret-minimized graph reconstruction;
+- deterministic minimal-authority and policy-counterfactual analysis.
 
 ## Current security boundary
 
 `AG-EXEC-001` is closed on the local development line: protected execution binds authorization, execution-time revalidation, atomic authority reservation, trusted dispatch, and durable `SUCCEEDED` / `FAILED` / `UNKNOWN` classification. The protected MCP v2 profile routes credential-free `tools/call` execution through that boundary.
 
-Phase 5C adds signed portable execution attestations and append-only reconciliation for `UNKNOWN` outcomes. Phase 5D adds signed delegated authority graphs and transactionally consumed capability leases. These features strengthen evidence and runtime authority but do not constitute a production-readiness claim.
+Phase 5C adds signed portable execution attestations and append-only reconciliation for `UNKNOWN` outcomes. Phase 5D adds signed delegated authority graphs and transactionally consumed capability leases. Phase 5E adds field-level signed provenance and typed releases. Phase 5F adds durable staged execution and commit-time revalidation. Phase 5G adds declared causal ancestry and reconstructable secret-minimized execution graphs. Phase 5H adds deterministic least-authority and counterfactual policy analysis. These features strengthen runtime integrity and evidence but do not constitute a production-readiness claim.
 
 ## Remaining findings
 

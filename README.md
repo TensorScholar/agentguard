@@ -2,7 +2,7 @@
 
 **Deterministic action authorization and execution-integrity controls for AI agents.**
 
-> **Release status:** `v0.2.0rc2` remains a non-production-certified release candidate. The local development line now includes a validated protected MCP execution boundary, signed execution attestations, append-only reconciliation, and delegated capability leases; production promotion still requires external and operational validation.
+> **Release status:** `v0.2.0rc2` remains a non-production-certified release candidate. The development line includes the protected execution boundary, signed execution attestations, delegated capability leases, field-level provenance and typed releases, staged high-impact actions, declared causal execution graphs, and deterministic least-authority/policy analysis. Production promotion still requires external, provider-specific, and operational validation.
 
 [![CI](https://github.com/TensorScholar/agentguard/actions/workflows/ci.yml/badge.svg)](https://github.com/TensorScholar/agentguard/actions/workflows/ci.yml)
 [![Security](https://github.com/TensorScholar/agentguard/actions/workflows/security.yml/badge.svg)](https://github.com/TensorScholar/agentguard/actions/workflows/security.yml)
@@ -125,6 +125,10 @@ flowchart LR
 - Append-only reconciliation for `UNKNOWN` outcomes without automatic redispatch or historical state rewriting.
 - Signed attenuating authority graphs with revocation cascades and bounded consumable capability leases.
 - Atomic capability-lease consumption in the same reservation transaction as execution nonce claiming.
+- Signed field-level provenance with transformation lineage and exact-value typed releases consumed with execution reservation.
+- Staged high-impact execution with bounded prepare/commit windows, cancellation, and commit-time security revalidation.
+- Secret-minimized declared causal execution graphs with ancestry/depth/label enforcement across protected actions.
+- Deterministic minimal-authority and policy-counterfactual analysis that never overrides the enforcement engine.
 
 ## Quick start
 
@@ -197,7 +201,10 @@ A protocol adapter can enforce only traffic routed through it. Configuration sca
 
 ## Current limitations
 
-- SQLite replay, approval, issuance, reconciliation, and capability-lease semantics are single-node.
+- SQLite replay, approval, issuance, reconciliation, capability-lease, typed-release, staging, and causal-ledger semantics are single-node.
+- Field provenance and causal ancestry are only as complete as the trusted integration that declares and signs them; AgentGuard does not infer hidden dependencies from arbitrary external systems.
+- `REVERSIBLE` / `COMPENSATABLE` staging classifications do not provide generic provider-side undo; compensation requires a provider-specific contract.
+- Policy intelligence is deterministic advisory analysis. It does not synthesize or silently modify enforcement policy and does not place an LLM in the trusted decision path.
 - The HTTP package provides validation primitives, not a complete production proxy.
 - No live production credential-provider adapter is included.
 - No identity-backed interactive approval service is included.

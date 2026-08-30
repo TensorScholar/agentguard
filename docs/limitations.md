@@ -73,3 +73,23 @@
   boundary. The protected Phase 5B MCP profile intentionally rejects unbound extension fields, so it
   does not yet accept client-supplied delegated-authority metadata; a future MCP adapter mapping must
   bind authority references explicitly rather than weakening the protected request-field allowlist.
+
+
+- Field-level integrity depends on trustworthy provenance issuance. A valid signature proves that the configured
+  provenance authority made the statement; it does not independently prove the external-world truth of the
+  source label. Hidden or deliberately omitted dependencies outside the integration cannot be inferred.
+- Typed field releases are exact, short-lived execution exceptions and remain single-node transactional state in
+  the SQLite adapter. They do not sanitize, relabel, or erase historical taint. A distributed deployment requires
+  equivalent shared transactional single-use semantics.
+- Staged execution does not guarantee reversibility of an external side effect. `REVERSIBLE` and `COMPENSATABLE`
+  are policy/runtime classifications; actual undo or compensation requires a provider-specific implementation and
+  evidence model.
+- The causal graph contains declared protected execution ancestry. It does not inspect arbitrary application memory,
+  model hidden state, or external data stores to discover undeclared causal edges. Integrations must bind parent
+  execution identifiers when such dependencies exist.
+- Causal labels are inherited conservatively from declared parents and field-integrity evidence. The current model
+  intentionally favors false-positive blocking over implicit declassification; future declassification semantics
+  require a separately reviewed signed release mechanism.
+- Minimal-authority and policy-counterfactual outputs are advisory analyses. They do not create grants, edit policy,
+  or replace deterministic authorization. No generative model is trusted to make the final Phase 5H enforcement
+  decision.

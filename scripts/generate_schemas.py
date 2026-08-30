@@ -9,9 +9,11 @@ from agentguard.domain import (
     ApprovalReceipt,
     AuditCheckpoint,
     AuditEvent,
+    AuthorityAnalysis,
     AuthorityGrant,
     AuthorityReference,
     CapabilityLease,
+    CausalExecutionGraph,
     CredentialGrant,
     CredentialRequest,
     DecisionReceipt,
@@ -20,7 +22,11 @@ from agentguard.domain import (
     ExecutionOutcome,
     ExecutionRequest,
     ExecutionResolution,
+    FieldProvenanceStatement,
+    FieldReleaseReceipt,
+    PolicyDecisionAnalysis,
     PolicyDocument,
+    PreparedExecution,
     ReconciliationEvidence,
 )
 
@@ -43,6 +49,12 @@ MODELS = {
     "authority-grant-v1": AuthorityGrant,
     "capability-lease-v1": CapabilityLease,
     "authority-reference-v1": AuthorityReference,
+    "causal-execution-graph-v1": CausalExecutionGraph,
+    "field-provenance-statement-v1": FieldProvenanceStatement,
+    "field-release-receipt-v1": FieldReleaseReceipt,
+    "prepared-execution-v1": PreparedExecution,
+    "authority-analysis-v1": AuthorityAnalysis,
+    "policy-decision-analysis-v1": PolicyDecisionAnalysis,
 }
 
 

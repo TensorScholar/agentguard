@@ -68,6 +68,15 @@
           ],
           "default": null
         },
+        "causal_parent_execution_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Causal Parent Execution Ids",
+          "type": "array"
+        },
         "delegation": {
           "anyOf": [
             {
@@ -91,6 +100,24 @@
             "records_modified": null,
             "tool_calls": null
           }
+        },
+        "field_provenance": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FieldProvenanceStatement"
+          },
+          "maxItems": 64,
+          "title": "Field Provenance",
+          "type": "array"
+        },
+        "field_releases": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FieldReleaseReceipt"
+          },
+          "maxItems": 32,
+          "title": "Field Releases",
+          "type": "array"
         },
         "principal": {
           "$ref": "#/$defs/Principal"
@@ -491,6 +518,33 @@
           "title": "Arguments Digest",
           "type": "string"
         },
+        "causal_depth": {
+          "anyOf": [
+            {
+              "maximum": 64,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causal Depth"
+        },
+        "causal_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causal Digest"
+        },
         "credential_ceiling": {
           "anyOf": [
             {
@@ -533,6 +587,45 @@
           "format": "date-time",
           "title": "Expires At",
           "type": "string"
+        },
+        "field_integrity_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Integrity Digest"
+        },
+        "field_integrity_expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Integrity Expires At"
+        },
+        "field_release_set_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Release Set Digest"
         },
         "intent_digest": {
           "title": "Intent Digest",
@@ -604,6 +697,17 @@
         "signature": {
           "title": "Signature",
           "type": "string"
+        },
+        "staging_requirement": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StagingRequirement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "subject_digest": {
           "anyOf": [
@@ -906,6 +1010,278 @@
       "title": "ExecutionBudget",
       "type": "object"
     },
+    "FieldProvenanceStatement": {
+      "additionalProperties": false,
+      "properties": {
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "field_path": {
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^/",
+          "title": "Field Path",
+          "type": "string"
+        },
+        "issued_at": {
+          "format": "date-time",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Key Id",
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceLabel"
+          },
+          "minItems": 1,
+          "title": "Labels",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "parent_statement_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Parent Statement Ids",
+          "type": "array"
+        },
+        "request_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1",
+          "default": "1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "semantic_type": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Semantic Type",
+          "type": "string"
+        },
+        "signature": {
+          "title": "Signature",
+          "type": "string"
+        },
+        "statement_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Statement Id",
+          "type": "string"
+        },
+        "tenant_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "trace_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Trace Id",
+          "type": "string"
+        },
+        "transformation": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transformation"
+        },
+        "value_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Value Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "statement_id",
+        "request_id",
+        "trace_id",
+        "tenant_id",
+        "field_path",
+        "value_digest",
+        "semantic_type",
+        "labels",
+        "issued_at",
+        "expires_at",
+        "key_id",
+        "signature"
+      ],
+      "title": "FieldProvenanceStatement",
+      "type": "object"
+    },
+    "FieldReleaseReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "action_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Action Digest",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "field_path": {
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^/",
+          "title": "Field Path",
+          "type": "string"
+        },
+        "issued_at": {
+          "format": "date-time",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Key Id",
+          "type": "string"
+        },
+        "principal_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Principal Digest",
+          "type": "string"
+        },
+        "provenance_statement_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Provenance Statement Digest",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "release_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Release Id",
+          "type": "string"
+        },
+        "release_type": {
+          "$ref": "#/$defs/FieldReleaseType"
+        },
+        "request_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "resource_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Digest"
+        },
+        "schema_version": {
+          "const": "1",
+          "default": "1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "semantic_type": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Semantic Type",
+          "type": "string"
+        },
+        "signature": {
+          "title": "Signature",
+          "type": "string"
+        },
+        "subject_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subject Digest"
+        },
+        "tenant_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "trace_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Trace Id",
+          "type": "string"
+        },
+        "value_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Value Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "release_id",
+        "request_id",
+        "trace_id",
+        "tenant_id",
+        "principal_digest",
+        "action_digest",
+        "field_path",
+        "value_digest",
+        "provenance_statement_digest",
+        "semantic_type",
+        "release_type",
+        "reason",
+        "issued_at",
+        "expires_at",
+        "key_id",
+        "signature"
+      ],
+      "title": "FieldReleaseReceipt",
+      "type": "object"
+    },
+    "FieldReleaseType": {
+      "enum": [
+        "human_endorsement",
+        "system_attestation",
+        "verified_transformation"
+      ],
+      "title": "FieldReleaseType",
+      "type": "string"
+    },
     "Principal": {
       "additionalProperties": false,
       "properties": {
@@ -1048,6 +1424,50 @@
         "type"
       ],
       "title": "Resource",
+      "type": "object"
+    },
+    "ReversibilityMode": {
+      "enum": [
+        "reversible",
+        "compensatable",
+        "irreversible"
+      ],
+      "title": "ReversibilityMode",
+      "type": "string"
+    },
+    "StagingRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "maximum_commit_window_seconds": {
+          "default": 300,
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Maximum Commit Window Seconds",
+          "type": "integer"
+        },
+        "minimum_delay_seconds": {
+          "default": 0,
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Minimum Delay Seconds",
+          "type": "integer"
+        },
+        "require_fresh_approval": {
+          "default": false,
+          "title": "Require Fresh Approval",
+          "type": "boolean"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "reversibility": {
+          "$ref": "#/$defs/ReversibilityMode",
+          "default": "irreversible"
+        }
+      },
+      "title": "StagingRequirement",
       "type": "object"
     },
     "Subject": {

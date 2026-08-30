@@ -27,6 +27,37 @@ class ProvenanceLabel(str, Enum):
     UNVERIFIED = "unverified"
 
 
+class FieldReleaseType(str, Enum):
+    HUMAN_ENDORSEMENT = "human_endorsement"
+    SYSTEM_ATTESTATION = "system_attestation"
+    VERIFIED_TRANSFORMATION = "verified_transformation"
+
+
+class ReversibilityMode(str, Enum):
+    REVERSIBLE = "reversible"
+    COMPENSATABLE = "compensatable"
+    IRREVERSIBLE = "irreversible"
+
+
+class PreparedExecutionStatus(str, Enum):
+    PREPARED = "prepared"
+    COMMITTED = "committed"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class PolicyIntelligenceFindingType(str, Enum):
+    OVERPRIVILEGED_CAPABILITY = "overprivileged_capability"
+    OVERPRIVILEGED_PROTOCOL = "overprivileged_protocol"
+    OVERPRIVILEGED_SERVER = "overprivileged_server"
+    OVERPRIVILEGED_TOOL = "overprivileged_tool"
+    OVERPRIVILEGED_OPERATION = "overprivileged_operation"
+    OVERPRIVILEGED_RESOURCE_TYPE = "overprivileged_resource_type"
+    OVERPRIVILEGED_RESOURCE_ID = "overprivileged_resource_id"
+    EXCESS_CALL_BUDGET = "excess_call_budget"
+    UNNEEDED_DELEGATION = "unneeded_delegation"
+
+
 class AuditEventType(str, Enum):
     AUTHORIZATION_REQUESTED = "authorization.requested"
     AUTHORIZATION_DECIDED = "authorization.decided"
@@ -48,6 +79,11 @@ class AuditEventType(str, Enum):
     AUTHORITY_REVOKED = "authority.revoked"
     CAPABILITY_LEASE_ISSUED = "authority.lease.issued"
     CAPABILITY_LEASE_CONSUMED = "authority.lease.consumed"
+    FIELD_RELEASE_CONSUMED = "field.release.consumed"
+    EXECUTION_PREPARED = "execution.prepared"
+    EXECUTION_PREPARE_CANCELLED = "execution.prepare.cancelled"
+    EXECUTION_COMMITTED = "execution.committed"
+    CAUSAL_CONTEXT_BOUND = "execution.causal_context.bound"
 
 
 class ExecutionState(str, Enum):

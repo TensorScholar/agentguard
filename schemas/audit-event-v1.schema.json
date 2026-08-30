@@ -21,7 +21,12 @@
         "authority.delegated",
         "authority.revoked",
         "authority.lease.issued",
-        "authority.lease.consumed"
+        "authority.lease.consumed",
+        "field.release.consumed",
+        "execution.prepared",
+        "execution.prepare.cancelled",
+        "execution.committed",
+        "execution.causal_context.bound"
       ],
       "title": "AuditEventType",
       "type": "string"

@@ -28,7 +28,10 @@ from agentguard.domain import (
     EnforcementMode,
     EvidenceTrustLevel,
     ExecutionAttestation,
+    FieldProvenanceStatement,
+    FieldReleaseType,
     Principal,
+    ProvenanceLabel,
     ReconciliationEvidence,
     ReconciliationStatus,
 )
@@ -37,13 +40,26 @@ from agentguard.engine.attestation import (
     verify_execution_attestation,
 )
 from agentguard.engine.authority import AuthorityError
+from agentguard.engine.causal import (
+    CausalIntegrityError,
+    build_causal_execution_graph,
+)
 from agentguard.engine.checkpoints import (
     AuditCheckpointError,
     issue_audit_checkpoint,
     verify_audit_checkpoint_signature,
 )
 from agentguard.engine.execution import authorize_execution
+from agentguard.engine.field_integrity import (
+    issue_field_provenance_statement,
+    issue_field_release,
+    resolve_field_value,
+)
 from agentguard.engine.policy import evaluate_policy
+from agentguard.engine.policy_intelligence import (
+    analyze_authority,
+    analyze_policy_counterfactuals,
+)
 from agentguard.posture import EnforcementStatus, scan_enforcement_posture
 from agentguard.security.files import read_regular_file, secure_atomic_write
 
@@ -88,6 +104,12 @@ def init(output: Path = Path(".agentguard"), force: bool = False) -> None:
     authority_signer = Ed25519Signer.generate("authority-ed25519")
     authority_signer.save_private(output / "authority-private.pem")
     authority_signer.save_public(output / "authority-public.pem")
+    provenance_signer = Ed25519Signer.generate("provenance-ed25519")
+    provenance_signer.save_private(output / "provenance-private.pem")
+    provenance_signer.save_public(output / "provenance-public.pem")
+    release_signer = Ed25519Signer.generate("field-release-ed25519")
+    release_signer.save_private(output / "field-release-private.pem")
+    release_signer.save_public(output / "field-release-public.pem")
     broker_signer = Ed25519Signer.generate("mock-broker-ed25519")
     broker_signer.save_private(output / "broker-private.pem")
     broker_signer.save_public(output / "broker-public.pem")
@@ -105,6 +127,12 @@ def authorize(
     authority_public_key: Path = typer.Option(
         Path(".agentguard/authority-public.pem"), "--authority-public-key"
     ),
+    provenance_public_key: Path = typer.Option(
+        Path(".agentguard/provenance-public.pem"), "--provenance-public-key"
+    ),
+    field_release_public_key: Path = typer.Option(
+        Path(".agentguard/field-release-public.pem"), "--field-release-public-key"
+    ),
 ) -> None:
     intent = load_json_model(request, ActionIntent)
     doc = load_policy(policy)
@@ -116,8 +144,27 @@ def authorize(
         if intent.authority is not None
         else None
     )
+    evaluation = evaluate_policy(doc, intent)
+    needs_field_integrity = bool(intent.field_provenance or intent.field_releases) or any(
+        rule.field_integrity for rule in evaluation.matched_rules
+    )
+    provenance_verifier = (
+        Ed25519Verifier.from_public_file(provenance_public_key, key_id="provenance-ed25519")
+        if needs_field_integrity
+        else None
+    )
+    release_verifier = (
+        Ed25519Verifier.from_public_file(field_release_public_key, key_id="field-release-ed25519")
+        if needs_field_integrity
+        else None
+    )
     receipt = AgentGuardService(
-        signer, verifier, state, authority_verifier=authority_verifier
+        signer,
+        verifier,
+        state,
+        authority_verifier=authority_verifier,
+        provenance_verifier=provenance_verifier,
+        release_verifier=release_verifier,
     ).authorize(intent, doc, mode=mode)
     write_json(output, receipt)
     console.print(f"{receipt.effect.value.upper()} — {receipt.decision_id}")
@@ -223,6 +270,12 @@ def verify_execution(
     broker_public_key: Path = Path(".agentguard/broker-public.pem"),
     broker: str = "mock-broker",
     ledger: Path = Path(".agentguard/audit.sqlite"),
+    provenance_public_key: Path = typer.Option(
+        Path(".agentguard/provenance-public.pem"), "--provenance-public-key"
+    ),
+    field_release_public_key: Path = typer.Option(
+        Path(".agentguard/field-release-public.pem"), "--field-release-public-key"
+    ),
 ) -> None:
     from agentguard.domain import CredentialGrant, DecisionReceipt
 
@@ -240,9 +293,31 @@ def verify_execution(
         if g is not None
         else None
     )
-    # Preserve --ledger for CLI compatibility, but preflight verification is intentionally
-    # persistence-free and does not create or mutate execution state.
-    del ledger
+    evaluation = evaluate_policy(current_policy, intent)
+    needs_field_integrity = bool(intent.field_provenance or intent.field_releases) or any(
+        rule.field_integrity for rule in evaluation.matched_rules
+    )
+    provenance_verifier = (
+        Ed25519Verifier.from_public_file(provenance_public_key, key_id="provenance-ed25519")
+        if needs_field_integrity
+        else None
+    )
+    release_verifier = (
+        Ed25519Verifier.from_public_file(field_release_public_key, key_id="field-release-ed25519")
+        if needs_field_integrity
+        else None
+    )
+    causal_required = bool(intent.causal_parent_execution_ids) or any(
+        rule.causal is not None for rule in evaluation.matched_rules
+    )
+    execution_repository = None
+    if causal_required:
+        if not ledger.is_file():
+            raise typer.BadParameter(
+                "causal preflight requires an existing --ledger containing parent executions"
+            )
+        execution_repository = SQLiteState(ledger)
+    # Legacy/non-causal preflight remains persistence-free; no state is opened or created.
     authorize_execution(
         intent,
         r,
@@ -252,11 +327,118 @@ def verify_execution(
         broker_grant_verifier=broker_verifier,
         approval=a,
         current_policy=current_policy,
+        provenance_verifier=provenance_verifier,
+        release_verifier=release_verifier,
+        execution_repository=execution_repository,
     )
     console.print(
         "Execution authority verified; nonce not consumed. "
         "Use protected execution to claim authority."
     )
+
+
+@app.command("provenance-issue")
+def provenance_issue(
+    request: Path,
+    field_path: str = typer.Option(..., "--field-path"),
+    semantic_type: str = typer.Option(..., "--semantic-type"),
+    label: list[ProvenanceLabel] = typer.Option(..., "--label"),
+    key: Path = typer.Option(Path(".agentguard/provenance-private.pem"), "--key"),
+    ttl_seconds: int = typer.Option(300, "--ttl-seconds", min=1, max=3600),
+    parent_statement_id: list[str] = typer.Option([], "--parent-statement-id"),
+    transformation: str | None = typer.Option(None, "--transformation"),
+    output: Path = typer.Option(Path("field-provenance.json"), "--output"),
+) -> None:
+    intent = load_json_model(request, ActionIntent)
+    signer = Ed25519Signer.load_private(key, key_id="provenance-ed25519")
+    value = resolve_field_value(intent.arguments, field_path)
+    statement = issue_field_provenance_statement(
+        request_id=intent.request_id,
+        trace_id=intent.trace_id,
+        tenant_id=intent.principal.tenant_id,
+        field_path=field_path,
+        value=value,
+        semantic_type=semantic_type,
+        labels=frozenset(label),
+        signer=signer,
+        parent_statement_ids=tuple(parent_statement_id),
+        transformation=transformation,
+        ttl_seconds=ttl_seconds,
+    )
+    write_json(output, statement)
+    console.print(f"Issued signed provenance statement {statement.statement_id}")
+
+
+@app.command("field-release-issue")
+def field_release_issue(
+    request: Path,
+    statement: Path = typer.Option(..., "--statement"),
+    release_type: FieldReleaseType = typer.Option(..., "--release-type"),
+    reason: str = typer.Option(..., "--reason"),
+    key: Path = typer.Option(Path(".agentguard/field-release-private.pem"), "--key"),
+    ttl_seconds: int = typer.Option(120, "--ttl-seconds", min=1, max=900),
+    output: Path = typer.Option(Path("field-release.json"), "--output"),
+) -> None:
+    intent = load_json_model(request, ActionIntent)
+    provenance = load_json_model(statement, FieldProvenanceStatement)
+    signer = Ed25519Signer.load_private(key, key_id="field-release-ed25519")
+    release = issue_field_release(
+        intent,
+        provenance,
+        release_type=release_type,
+        reason=reason,
+        signer=signer,
+        ttl_seconds=ttl_seconds,
+    )
+    write_json(output, release)
+    console.print(f"Issued typed field release {release.release_id}")
+
+
+@app.command("causal-graph")
+def causal_graph(
+    execution_id: str = typer.Option(..., "--execution-id"),
+    state: Path = typer.Option(Path(".agentguard/action-integrity.sqlite"), "--state"),
+    output: Path | None = typer.Option(None, "--output"),
+) -> None:
+    if not state.is_file():
+        raise typer.BadParameter("causal graph requires an existing --state ledger")
+    try:
+        graph = build_causal_execution_graph(execution_id, SQLiteState(state))
+    except CausalIntegrityError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output is not None:
+        write_json(output, graph)
+    else:
+        console.print_json(data=graph.model_dump(mode="json"))
+
+
+@app.command("authority-analyze")
+def authority_analyze(
+    request: Path,
+    scope: Path = typer.Option(..., "--scope"),
+    output: Path | None = typer.Option(None, "--output"),
+) -> None:
+    intent = load_json_model(request, ActionIntent)
+    capability_scope = load_json_model(scope, CapabilityScope)
+    analysis = analyze_authority(intent, capability_scope)
+    if output is not None:
+        write_json(output, analysis)
+    else:
+        console.print_json(data=analysis.model_dump(mode="json"))
+
+
+@app.command("policy-counterfactual")
+def policy_counterfactual(
+    request: Path,
+    policy: Path,
+    output: Path | None = typer.Option(None, "--output"),
+) -> None:
+    intent = load_json_model(request, ActionIntent)
+    analysis = analyze_policy_counterfactuals(load_policy(policy), intent)
+    if output is not None:
+        write_json(output, analysis)
+    else:
+        console.print_json(data=analysis.model_dump(mode="json"))
 
 
 @app.command()

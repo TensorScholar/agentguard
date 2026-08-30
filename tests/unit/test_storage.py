@@ -104,7 +104,7 @@ def test_existing_v2_action_integrity_schema_upgrades_in_place(tmp_path: Path) -
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'executions'"
         ).fetchone()
 
-    assert version == (6,)
+    assert version == (9,)
     assert execution_table == ("executions",)
 
 
@@ -178,10 +178,40 @@ def test_phase5cd_migrates_existing_v4_execution_columns_without_losing_state(
     assert existing.authority_grant_id is None
     assert existing.authority_lease_id is None
     assert existing.authority_chain_digest is None
-    assert version == (6,)
+    assert existing.tenant_id is None
+    assert existing.principal_digest is None
+    assert existing.subject_digest is None
+    assert existing.field_integrity_digest is None
+    assert existing.field_release_set_digest is None
+    assert existing.field_integrity_expires_at is None
+    assert existing.causal_digest is None
+    assert existing.causal_depth == 0
+    assert existing.causal_labels == frozenset()
+    assert existing.causal_parent_execution_ids == ()
+    assert existing.prepared_id is None
+    assert version == (9,)
     assert {
         "policy_digest",
         "authority_grant_id",
         "authority_lease_id",
         "authority_chain_digest",
+        "tenant_id",
+        "principal_digest",
+        "subject_digest",
+        "field_integrity_digest",
+        "field_release_set_digest",
+        "field_integrity_expires_at",
+        "causal_digest",
+        "causal_depth",
+        "causal_labels_json",
+        "causal_parent_ids_json",
+        "prepared_id",
     } <= columns
+    with sqlite3.connect(state.path) as connection:
+        new_tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert {"consumed_field_releases", "prepared_executions"} <= new_tables

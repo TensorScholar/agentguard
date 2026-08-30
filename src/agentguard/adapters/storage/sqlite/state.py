@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime
 from hashlib import sha256
@@ -18,12 +19,18 @@ from agentguard.domain import (
     ExecutionRecord,
     ExecutionResolution,
     ExecutionState,
+    PreparedExecution,
+    PreparedExecutionStatus,
+    ProvenanceLabel,
     ReconciliationEvidence,
     ReconciliationStatus,
     VerifiedExecution,
 )
 from agentguard.engine.canonical import canonical_bytes, digest
-from agentguard.engine.execution import execution_authority_digest
+from agentguard.engine.execution import (
+    execution_authority_digest,
+    prepared_execution_binding_digest,
+)
 from agentguard.security.files import ensure_private_file
 
 GENESIS = "0" * 64
@@ -66,6 +73,17 @@ CREATE TABLE IF NOT EXISTS executions(
  authority_grant_id TEXT,
  authority_lease_id TEXT,
  authority_chain_digest TEXT,
+ tenant_id TEXT,
+ principal_digest TEXT,
+ subject_digest TEXT,
+ field_integrity_digest TEXT,
+ field_release_set_digest TEXT,
+ field_integrity_expires_at TEXT,
+ causal_digest TEXT,
+ causal_depth INTEGER NOT NULL DEFAULT 0,
+ causal_labels_json TEXT NOT NULL DEFAULT '[]',
+ causal_parent_ids_json TEXT NOT NULL DEFAULT '[]',
+ prepared_id TEXT,
  state TEXT NOT NULL,
  reserved_at TEXT NOT NULL,
  dispatching_at TEXT,
@@ -122,8 +140,30 @@ CREATE TABLE IF NOT EXISTS capability_leases(
  status TEXT NOT NULL,
  FOREIGN KEY(grant_id) REFERENCES authority_grants(grant_id)
 );
+CREATE TABLE IF NOT EXISTS consumed_field_releases(
+ release_id TEXT PRIMARY KEY,
+ execution_id TEXT NOT NULL,
+ consumed_at TEXT NOT NULL,
+ FOREIGN KEY(execution_id) REFERENCES executions(execution_id) DEFERRABLE INITIALLY DEFERRED
+);
+CREATE TABLE IF NOT EXISTS prepared_executions(
+ prepared_id TEXT PRIMARY KEY,
+ execution_id TEXT UNIQUE NOT NULL,
+ decision_id TEXT UNIQUE NOT NULL,
+ request_id TEXT NOT NULL,
+ trace_id TEXT NOT NULL,
+ intent_digest TEXT NOT NULL,
+ prepared_binding_digest TEXT NOT NULL,
+ field_integrity_digest TEXT,
+ causal_digest TEXT,
+ status TEXT NOT NULL,
+ reversibility TEXT NOT NULL,
+ prepared_at TEXT NOT NULL,
+ commit_not_before TEXT NOT NULL,
+ expires_at TEXT NOT NULL,
+ cancelled_at TEXT
+);
 INSERT OR IGNORE INTO agentguard_schema(component, version) VALUES('action_integrity', 6);
-UPDATE agentguard_schema SET version = 6 WHERE component = 'action_integrity';
 """
 
 V2_AUDIT_COLUMNS = {
@@ -154,21 +194,69 @@ class SQLiteState:
                     "existing SQLite audit state is not the v0.2 schema; "
                     "retain it as v0.1 evidence and choose a new database path"
                 )
-            c.executescript(SCHEMA)
-            execution_columns = {
-                str(row[1]) for row in c.execute("PRAGMA table_info(executions)").fetchall()
-            }
-            for column in (
-                "policy_digest",
-                "authority_grant_id",
-                "authority_lease_id",
-                "authority_chain_digest",
-            ):
-                if column not in execution_columns:
-                    c.execute(f"ALTER TABLE executions ADD COLUMN {column} TEXT")
+            # DDL, additive column migration, and version promotion are one transaction.
+            # ``executescript`` would implicitly commit, so execute the simple schema
+            # statements individually instead. Journal mode is connection-scoped and
+            # must be selected before the migration transaction begins.
+            c.execute("PRAGMA journal_mode=WAL")
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                for raw_statement in SCHEMA.split(";"):
+                    statement = raw_statement.strip()
+                    if not statement or statement.startswith("PRAGMA "):
+                        continue
+                    c.execute(statement)
+                version_row = c.execute(
+                    "SELECT version FROM agentguard_schema WHERE component = 'action_integrity'"
+                ).fetchone()
+                version = int(version_row[0]) if version_row is not None else 0
+                if version > 9:
+                    raise IncompatibleStateDatabaseError(
+                        "state database schema is newer than this AgentGuard build"
+                    )
+                execution_columns = {
+                    str(row[1]) for row in c.execute("PRAGMA table_info(executions)").fetchall()
+                }
+                text_columns = (
+                    "policy_digest",
+                    "authority_grant_id",
+                    "authority_lease_id",
+                    "authority_chain_digest",
+                    "tenant_id",
+                    "principal_digest",
+                    "subject_digest",
+                    "field_integrity_digest",
+                    "field_release_set_digest",
+                    "field_integrity_expires_at",
+                    "causal_digest",
+                    "prepared_id",
+                )
+                for column in text_columns:
+                    if column not in execution_columns:
+                        c.execute(f"ALTER TABLE executions ADD COLUMN {column} TEXT")
+                if "causal_depth" not in execution_columns:
+                    c.execute(
+                        "ALTER TABLE executions ADD COLUMN causal_depth INTEGER NOT NULL DEFAULT 0"
+                    )
+                if "causal_labels_json" not in execution_columns:
+                    c.execute(
+                        "ALTER TABLE executions ADD COLUMN causal_labels_json TEXT NOT NULL DEFAULT '[]'"
+                    )
+                if "causal_parent_ids_json" not in execution_columns:
+                    c.execute(
+                        "ALTER TABLE executions ADD COLUMN causal_parent_ids_json TEXT NOT NULL DEFAULT '[]'"
+                    )
+                c.execute(
+                    "UPDATE agentguard_schema SET version = 9 WHERE component = 'action_integrity'"
+                )
+                c.execute("COMMIT")
+            except Exception:
+                c.execute("ROLLBACK")
+                raise
 
     def _connect(self) -> sqlite3.Connection:
         c = sqlite3.connect(self.path, timeout=10, isolation_level=None)
+        c.row_factory = sqlite3.Row
         c.execute("PRAGMA busy_timeout=10000")
         c.execute("PRAGMA foreign_keys=ON")
         c.execute("PRAGMA trusted_schema=OFF")
@@ -178,28 +266,82 @@ class SQLiteState:
 
     @staticmethod
     def _execution_record(row: sqlite3.Row | tuple[object, ...]) -> ExecutionRecord:
-        provider_status = row[14]
+        if not isinstance(row, sqlite3.Row):
+            raise TypeError("execution rows must use sqlite3.Row")
+        provider_status = row["provider_status"]
         if provider_status is not None and not isinstance(provider_status, int):
             raise ValueError("execution provider_status must be an integer")
-
+        labels_raw = json.loads(str(row["causal_labels_json"] or "[]"))
+        if not isinstance(labels_raw, list) or not all(
+            isinstance(item, str) for item in labels_raw
+        ):
+            raise ValueError("execution causal labels are invalid")
+        parent_ids_raw = json.loads(str(row["causal_parent_ids_json"] or "[]"))
+        if not isinstance(parent_ids_raw, list) or not all(
+            isinstance(item, str) for item in parent_ids_raw
+        ):
+            raise ValueError("execution causal parent ids are invalid")
         return ExecutionRecord(
-            execution_id=str(row[0]),
-            decision_id=str(row[1]),
-            trace_id=str(row[2]),
-            request_id=str(row[3]),
-            intent_digest=str(row[4]),
-            authority_digest=str(row[5]),
-            policy_digest=str(row[6]) if row[6] is not None else None,
-            authority_grant_id=str(row[7]) if row[7] is not None else None,
-            authority_lease_id=str(row[8]) if row[8] is not None else None,
-            authority_chain_digest=str(row[9]) if row[9] is not None else None,
-            state=ExecutionState(str(row[10])),
-            reserved_at=datetime.fromisoformat(str(row[11])),
-            dispatching_at=(datetime.fromisoformat(str(row[12])) if row[12] is not None else None),
-            completed_at=(datetime.fromisoformat(str(row[13])) if row[13] is not None else None),
+            execution_id=str(row["execution_id"]),
+            decision_id=str(row["decision_id"]),
+            trace_id=str(row["trace_id"]),
+            request_id=str(row["request_id"]),
+            intent_digest=str(row["intent_digest"]),
+            authority_digest=str(row["authority_digest"]),
+            policy_digest=(str(row["policy_digest"]) if row["policy_digest"] is not None else None),
+            authority_grant_id=(
+                str(row["authority_grant_id"]) if row["authority_grant_id"] is not None else None
+            ),
+            authority_lease_id=(
+                str(row["authority_lease_id"]) if row["authority_lease_id"] is not None else None
+            ),
+            authority_chain_digest=(
+                str(row["authority_chain_digest"])
+                if row["authority_chain_digest"] is not None
+                else None
+            ),
+            tenant_id=str(row["tenant_id"]) if row["tenant_id"] is not None else None,
+            principal_digest=(
+                str(row["principal_digest"]) if row["principal_digest"] is not None else None
+            ),
+            subject_digest=(
+                str(row["subject_digest"]) if row["subject_digest"] is not None else None
+            ),
+            field_integrity_digest=(
+                str(row["field_integrity_digest"])
+                if row["field_integrity_digest"] is not None
+                else None
+            ),
+            field_release_set_digest=(
+                str(row["field_release_set_digest"])
+                if row["field_release_set_digest"] is not None
+                else None
+            ),
+            field_integrity_expires_at=(
+                datetime.fromisoformat(str(row["field_integrity_expires_at"]))
+                if row["field_integrity_expires_at"] is not None
+                else None
+            ),
+            causal_digest=(str(row["causal_digest"]) if row["causal_digest"] is not None else None),
+            causal_depth=int(row["causal_depth"] or 0),
+            causal_labels=frozenset(ProvenanceLabel(item) for item in labels_raw),
+            causal_parent_execution_ids=tuple(parent_ids_raw),
+            prepared_id=str(row["prepared_id"]) if row["prepared_id"] is not None else None,
+            state=ExecutionState(str(row["state"])),
+            reserved_at=datetime.fromisoformat(str(row["reserved_at"])),
+            dispatching_at=(
+                datetime.fromisoformat(str(row["dispatching_at"]))
+                if row["dispatching_at"] is not None
+                else None
+            ),
+            completed_at=(
+                datetime.fromisoformat(str(row["completed_at"]))
+                if row["completed_at"] is not None
+                else None
+            ),
             provider_status=provider_status,
-            result_digest=str(row[15]) if row[15] is not None else None,
-            error_code=str(row[16]) if row[16] is not None else None,
+            result_digest=str(row["result_digest"]) if row["result_digest"] is not None else None,
+            error_code=str(row["error_code"]) if row["error_code"] is not None else None,
         )
 
     def consume(self, nonce: str, decision_id: str, consumed_at: datetime) -> bool:
@@ -218,83 +360,115 @@ class SQLiteState:
                 c.execute("ROLLBACK")
                 return False
 
-    def reserve_execution(
-        self,
-        verified_execution: VerifiedExecution,
-        reserved_at: datetime,
-    ) -> str | None:
-        """Atomically claim the nonce/decision and create the durable RESERVED execution."""
+    @staticmethod
+    def _claim_execution_authority(
+        c: sqlite3.Connection, verified_execution: VerifiedExecution, reserved_at: datetime
+    ) -> None:
+        c.execute(
+            "INSERT INTO consumed_nonces(nonce,decision_id,consumed_at) VALUES(?,?,?)",
+            (
+                verified_execution.nonce,
+                verified_execution.decision_id,
+                reserved_at.isoformat(),
+            ),
+        )
+        if verified_execution.authority_lease_id is not None:
+            lease_update = c.execute(
+                """
+                UPDATE capability_leases
+                SET remaining_uses = remaining_uses - 1,
+                    status = CASE WHEN remaining_uses - 1 = 0 THEN ? ELSE status END
+                WHERE lease_id = ?
+                  AND grant_id = ?
+                  AND status = ?
+                  AND remaining_uses > 0
+                  AND expires_at > ?
+                  AND EXISTS (
+                      SELECT 1 FROM authority_grants g
+                      WHERE g.grant_id = capability_leases.grant_id
+                        AND g.status = ?
+                        AND g.expires_at > ?
+                  )
+                """,
+                (
+                    CapabilityLeaseStatus.EXHAUSTED.value,
+                    verified_execution.authority_lease_id,
+                    verified_execution.authority_grant_id,
+                    CapabilityLeaseStatus.ACTIVE.value,
+                    reserved_at.isoformat(),
+                    AuthorityGrantStatus.ACTIVE.value,
+                    reserved_at.isoformat(),
+                ),
+            )
+            if lease_update.rowcount != 1:
+                raise sqlite3.IntegrityError("authority.lease_unavailable")
+        for release_id in verified_execution.field_release_ids:
+            c.execute(
+                """
+                INSERT INTO consumed_field_releases(release_id,execution_id,consumed_at)
+                VALUES(?,?,?)
+                """,
+                (release_id, verified_execution.execution_id, reserved_at.isoformat()),
+            )
 
-        with self._connect() as c:
-            c.execute("BEGIN IMMEDIATE")
-            try:
-                c.execute(
-                    "INSERT INTO consumed_nonces(nonce,decision_id,consumed_at) VALUES(?,?,?)",
-                    (
-                        verified_execution.nonce,
-                        verified_execution.decision_id,
-                        reserved_at.isoformat(),
-                    ),
-                )
-                if verified_execution.authority_lease_id is not None:
-                    lease_update = c.execute(
-                        """
-                        UPDATE capability_leases
-                        SET remaining_uses = remaining_uses - 1,
-                            status = CASE WHEN remaining_uses - 1 = 0 THEN ? ELSE status END
-                        WHERE lease_id = ?
-                          AND grant_id = ?
-                          AND status = ?
-                          AND remaining_uses > 0
-                          AND expires_at > ?
-                          AND EXISTS (
-                              SELECT 1 FROM authority_grants g
-                              WHERE g.grant_id = capability_leases.grant_id
-                                AND g.status = ?
-                                AND g.expires_at > ?
-                          )
-                        """,
-                        (
-                            CapabilityLeaseStatus.EXHAUSTED.value,
-                            verified_execution.authority_lease_id,
-                            verified_execution.authority_grant_id,
-                            CapabilityLeaseStatus.ACTIVE.value,
-                            reserved_at.isoformat(),
-                            AuthorityGrantStatus.ACTIVE.value,
-                            reserved_at.isoformat(),
-                        ),
-                    )
-                    if lease_update.rowcount != 1:
-                        raise sqlite3.IntegrityError("authority.lease_unavailable")
-                c.execute(
-                    """
-                    INSERT INTO executions(
-                        execution_id,decision_id,nonce,trace_id,request_id,intent_digest,
-                        authority_digest,policy_digest,authority_grant_id,authority_lease_id,
-                        authority_chain_digest,state,reserved_at
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """,
-                    (
-                        verified_execution.execution_id,
-                        verified_execution.decision_id,
-                        verified_execution.nonce,
-                        verified_execution.trace_id,
-                        verified_execution.request_id,
-                        verified_execution.intent_digest,
-                        execution_authority_digest(verified_execution),
-                        verified_execution.policy_digest,
-                        verified_execution.authority_grant_id,
-                        verified_execution.authority_lease_id,
-                        verified_execution.authority_chain_digest,
-                        ExecutionState.RESERVED.value,
-                        reserved_at.isoformat(),
-                    ),
-                )
-                c.execute("COMMIT")
-                return None
-            except sqlite3.IntegrityError:
-                c.execute("ROLLBACK")
+    @staticmethod
+    def _insert_execution(
+        c: sqlite3.Connection, verified_execution: VerifiedExecution, reserved_at: datetime
+    ) -> None:
+        c.execute(
+            """
+            INSERT INTO executions(
+                execution_id,decision_id,nonce,trace_id,request_id,intent_digest,
+                authority_digest,policy_digest,authority_grant_id,authority_lease_id,
+                authority_chain_digest,tenant_id,principal_digest,subject_digest,
+                field_integrity_digest,field_release_set_digest,field_integrity_expires_at,
+                causal_digest,causal_depth,causal_labels_json,causal_parent_ids_json,prepared_id,state,reserved_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                verified_execution.execution_id,
+                verified_execution.decision_id,
+                verified_execution.nonce,
+                verified_execution.trace_id,
+                verified_execution.request_id,
+                verified_execution.intent_digest,
+                execution_authority_digest(verified_execution),
+                verified_execution.policy_digest,
+                verified_execution.authority_grant_id,
+                verified_execution.authority_lease_id,
+                verified_execution.authority_chain_digest,
+                verified_execution.intent.principal.tenant_id,
+                digest(verified_execution.intent.principal),
+                (
+                    digest(verified_execution.intent.subject)
+                    if verified_execution.intent.subject is not None
+                    else None
+                ),
+                verified_execution.field_integrity_digest,
+                verified_execution.field_release_set_digest,
+                (
+                    verified_execution.field_integrity_expires_at.isoformat()
+                    if verified_execution.field_integrity_expires_at is not None
+                    else None
+                ),
+                verified_execution.causal_digest,
+                verified_execution.causal_depth,
+                json.dumps(
+                    sorted(label.value for label in verified_execution.causal_labels),
+                    separators=(",", ":"),
+                ),
+                json.dumps(
+                    list(verified_execution.causal_parent_execution_ids), separators=(",", ":")
+                ),
+                verified_execution.prepared_id,
+                ExecutionState.RESERVED.value,
+                reserved_at.isoformat(),
+            ),
+        )
 
+    def _reservation_error(
+        self, verified_execution: VerifiedExecution, reserved_at: datetime
+    ) -> str:
         if verified_execution.authority_lease_id is not None:
             lease = self.get_capability_lease(verified_execution.authority_lease_id)
             if (
@@ -305,12 +479,19 @@ class SQLiteState:
                 or lease.expires_at <= reserved_at
             ):
                 return "authority.lease_unavailable"
-
+        if verified_execution.field_release_ids:
+            placeholders = ",".join("?" for _ in verified_execution.field_release_ids)
+            with self._connect() as c:
+                row = c.execute(
+                    f"SELECT release_id FROM consumed_field_releases "
+                    f"WHERE release_id IN ({placeholders}) LIMIT 1",
+                    verified_execution.field_release_ids,
+                ).fetchone()
+            if row is not None:
+                return "field_integrity.release_replayed"
         with self._connect() as c:
             authority_conflict = c.execute(
-                """
-                SELECT 1 FROM consumed_nonces WHERE nonce = ? OR decision_id = ? LIMIT 1
-                """,
+                "SELECT 1 FROM consumed_nonces WHERE nonce = ? OR decision_id = ? LIMIT 1",
                 (verified_execution.nonce, verified_execution.decision_id),
             ).fetchone()
             if authority_conflict is not None:
@@ -322,6 +503,177 @@ class SQLiteState:
             if execution_conflict is not None:
                 return "execution.id_conflict"
         return "execution.reservation_conflict"
+
+    def reserve_execution(
+        self,
+        verified_execution: VerifiedExecution,
+        reserved_at: datetime,
+    ) -> str | None:
+        """Atomically claim nonce, lease, typed releases, and durable RESERVED execution."""
+        with self._connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                self._claim_execution_authority(c, verified_execution, reserved_at)
+                self._insert_execution(c, verified_execution, reserved_at)
+                c.execute("COMMIT")
+                return None
+            except sqlite3.IntegrityError:
+                c.execute("ROLLBACK")
+        return self._reservation_error(verified_execution, reserved_at)
+
+    def store_prepared_execution(self, prepared: PreparedExecution) -> None:
+        with self._connect() as c:
+            c.execute(
+                """
+                INSERT INTO prepared_executions(
+                    prepared_id,execution_id,decision_id,request_id,trace_id,intent_digest,
+                    prepared_binding_digest,field_integrity_digest,causal_digest,status,reversibility,
+                    prepared_at,commit_not_before,expires_at,cancelled_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    prepared.prepared_id,
+                    prepared.execution_id,
+                    prepared.decision_id,
+                    prepared.request_id,
+                    prepared.trace_id,
+                    prepared.intent_digest,
+                    prepared.prepared_binding_digest,
+                    prepared.field_integrity_digest,
+                    prepared.causal_digest,
+                    prepared.status.value,
+                    prepared.reversibility.value,
+                    prepared.prepared_at.isoformat(),
+                    prepared.commit_not_before.isoformat(),
+                    prepared.expires_at.isoformat(),
+                    prepared.cancelled_at.isoformat() if prepared.cancelled_at else None,
+                ),
+            )
+
+    def get_prepared_execution(self, prepared_id: str) -> PreparedExecution | None:
+        from agentguard.domain import ReversibilityMode
+
+        with self._connect() as c:
+            row = c.execute(
+                "SELECT * FROM prepared_executions WHERE prepared_id = ?", (prepared_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return PreparedExecution(
+            prepared_id=str(row["prepared_id"]),
+            execution_id=str(row["execution_id"]),
+            decision_id=str(row["decision_id"]),
+            request_id=str(row["request_id"]),
+            trace_id=str(row["trace_id"]),
+            intent_digest=str(row["intent_digest"]),
+            prepared_binding_digest=str(row["prepared_binding_digest"]),
+            field_integrity_digest=(
+                str(row["field_integrity_digest"])
+                if row["field_integrity_digest"] is not None
+                else None
+            ),
+            causal_digest=(str(row["causal_digest"]) if row["causal_digest"] is not None else None),
+            status=PreparedExecutionStatus(str(row["status"])),
+            reversibility=ReversibilityMode(str(row["reversibility"])),
+            prepared_at=datetime.fromisoformat(str(row["prepared_at"])),
+            commit_not_before=datetime.fromisoformat(str(row["commit_not_before"])),
+            expires_at=datetime.fromisoformat(str(row["expires_at"])),
+            cancelled_at=(
+                datetime.fromisoformat(str(row["cancelled_at"]))
+                if row["cancelled_at"] is not None
+                else None
+            ),
+        )
+
+    def cancel_prepared_execution(
+        self, prepared_id: str, cancelled_at: datetime
+    ) -> PreparedExecution:
+        with self._connect() as c:
+            result = c.execute(
+                """
+                UPDATE prepared_executions SET status = ?, cancelled_at = ?
+                WHERE prepared_id = ? AND status = ?
+                """,
+                (
+                    PreparedExecutionStatus.CANCELLED.value,
+                    cancelled_at.isoformat(),
+                    prepared_id,
+                    PreparedExecutionStatus.PREPARED.value,
+                ),
+            )
+            if result.rowcount != 1:
+                raise RuntimeError("execution.prepared_not_active")
+        prepared = self.get_prepared_execution(prepared_id)
+        if prepared is None:
+            raise RuntimeError("execution.prepared_missing")
+        return prepared
+
+    def reserve_prepared_execution(
+        self,
+        prepared_id: str,
+        verified_execution: VerifiedExecution,
+        reserved_at: datetime,
+    ) -> str | None:
+        with self._connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                row = c.execute(
+                    "SELECT * FROM prepared_executions WHERE prepared_id = ?",
+                    (prepared_id,),
+                ).fetchone()
+                if row is None:
+                    c.execute("ROLLBACK")
+                    return "execution.prepared_missing"
+                if str(row["status"]) != PreparedExecutionStatus.PREPARED.value:
+                    c.execute("ROLLBACK")
+                    return "execution.prepared_not_active"
+                if datetime.fromisoformat(str(row["commit_not_before"])) > reserved_at:
+                    c.execute("ROLLBACK")
+                    return "execution.commit_too_early"
+                if datetime.fromisoformat(str(row["expires_at"])) <= reserved_at:
+                    c.execute(
+                        "UPDATE prepared_executions SET status = ? WHERE prepared_id = ?",
+                        (PreparedExecutionStatus.EXPIRED.value, prepared_id),
+                    )
+                    c.execute("COMMIT")
+                    return "execution.prepared_expired"
+                if (
+                    str(row["execution_id"]) != verified_execution.execution_id
+                    or str(row["decision_id"]) != verified_execution.decision_id
+                    or str(row["intent_digest"]) != verified_execution.intent_digest
+                    or str(row["prepared_binding_digest"])
+                    != prepared_execution_binding_digest(verified_execution)
+                    or (
+                        str(row["field_integrity_digest"])
+                        if row["field_integrity_digest"] is not None
+                        else None
+                    )
+                    != verified_execution.field_integrity_digest
+                    or (str(row["causal_digest"]) if row["causal_digest"] is not None else None)
+                    != verified_execution.causal_digest
+                ):
+                    c.execute("ROLLBACK")
+                    return "execution.prepared_binding_mismatch"
+                self._claim_execution_authority(c, verified_execution, reserved_at)
+                self._insert_execution(c, verified_execution, reserved_at)
+                updated = c.execute(
+                    """
+                    UPDATE prepared_executions SET status = ?
+                    WHERE prepared_id = ? AND status = ?
+                    """,
+                    (
+                        PreparedExecutionStatus.COMMITTED.value,
+                        prepared_id,
+                        PreparedExecutionStatus.PREPARED.value,
+                    ),
+                )
+                if updated.rowcount != 1:
+                    raise sqlite3.IntegrityError("execution.prepared_race")
+                c.execute("COMMIT")
+                return None
+            except sqlite3.IntegrityError:
+                c.execute("ROLLBACK")
+        return self._reservation_error(verified_execution, reserved_at)
 
     def mark_execution_dispatching(
         self,
@@ -335,16 +687,30 @@ class SQLiteState:
                 UPDATE executions
                 SET state = ?, dispatching_at = ?
                 WHERE execution_id = ? AND state = ?
+                  AND (field_integrity_expires_at IS NULL OR field_integrity_expires_at > ?)
                 """,
                 (
                     ExecutionState.DISPATCHING.value,
                     dispatching_at.isoformat(),
                     execution_id,
                     ExecutionState.RESERVED.value,
+                    dispatching_at.isoformat(),
                 ),
             )
             if result.rowcount != 1:
+                row = c.execute(
+                    "SELECT state,field_integrity_expires_at FROM executions WHERE execution_id = ?",
+                    (execution_id,),
+                ).fetchone()
                 c.execute("ROLLBACK")
+                if (
+                    row is not None
+                    and str(row["state"]) == ExecutionState.RESERVED.value
+                    and row["field_integrity_expires_at"] is not None
+                    and datetime.fromisoformat(str(row["field_integrity_expires_at"]))
+                    <= dispatching_at
+                ):
+                    raise RuntimeError("field_integrity.expired_before_dispatch")
                 raise RuntimeError("execution.not_reserved")
             c.execute("COMMIT")
         record = self.get_execution(execution_id)
@@ -398,8 +764,10 @@ class SQLiteState:
                 """
                 SELECT execution_id,decision_id,trace_id,request_id,intent_digest,
                        authority_digest,policy_digest,authority_grant_id,authority_lease_id,
-                       authority_chain_digest,state,reserved_at,dispatching_at,completed_at,
-                       provider_status,result_digest,error_code
+                       authority_chain_digest,tenant_id,principal_digest,subject_digest,
+                       field_integrity_digest,field_release_set_digest,field_integrity_expires_at,
+                       causal_digest,causal_depth,causal_labels_json,causal_parent_ids_json,prepared_id,state,reserved_at,
+                       dispatching_at,completed_at,provider_status,result_digest,error_code
                 FROM executions WHERE execution_id = ?
                 """,
                 (execution_id,),
@@ -412,8 +780,10 @@ class SQLiteState:
                 """
                 SELECT execution_id,decision_id,trace_id,request_id,intent_digest,
                        authority_digest,policy_digest,authority_grant_id,authority_lease_id,
-                       authority_chain_digest,state,reserved_at,dispatching_at,completed_at,
-                       provider_status,result_digest,error_code
+                       authority_chain_digest,tenant_id,principal_digest,subject_digest,
+                       field_integrity_digest,field_release_set_digest,field_integrity_expires_at,
+                       causal_digest,causal_depth,causal_labels_json,causal_parent_ids_json,prepared_id,state,reserved_at,
+                       dispatching_at,completed_at,provider_status,result_digest,error_code
                 FROM executions ORDER BY reserved_at, execution_id
                 """
             ).fetchall()

@@ -135,3 +135,61 @@ Revoking a grant recursively revokes active descendant grants and their active l
 therefore closes the race between a parent revocation and a later leaf execution reservation. The
 execution ledger stores only grant/lease identifiers and the chain digest; it does not persist the
 full graph inside each execution record.
+
+
+## Field-level context-to-execution integrity and typed releases
+
+Phase 5E binds security-sensitive action fields to signed `FieldProvenanceStatement` artifacts.
+A statement identifies the exact JSON-pointer field, semantic type, canonical value digest, request/trace/tenant
+context, provenance labels, validity window, and optional signed transformation parents. Derived statements must
+preserve every parent provenance label; a transformation therefore cannot relabel untrusted input as trusted.
+Only terminal statements for the same field/value satisfy a sink constraint, while their full ancestor chain is
+still verified for signature, context, expiry, fan-in, depth, and label inheritance.
+
+Matched policy rules contribute field constraints cumulatively. A higher-priority allow rule cannot erase a
+field-integrity requirement from another matched rule. Incompatible requirements fail closed. A
+`FieldReleaseReceipt` permits only an explicitly configured release type and is bound to the exact field,
+value digest, provenance statement, semantic type, principal, subject, action, resource, tenant, request and
+trace. Releases do not rewrite provenance labels. A release used for execution is consumed atomically with
+the decision nonce, capability lease, and durable execution reservation.
+
+The decision receipt and execution record bind secret-minimized field-integrity and release-set digests plus
+the effective integrity expiry. Execution attestations can carry those digests without embedding raw field
+values, provenance source content, or release contents.
+
+## Staged high-impact execution
+
+Phase 5F adds a durable `PreparedExecution` state for policy rules that require staging. Authorization may
+produce a staging requirement with a minimum delay, bounded commit window, reversibility classification, and
+optional fresh-approval requirement. `prepare_protected_execution` records an immutable prepared binding over
+the action security context; it does not dispatch externally.
+
+A commit reloads the prepared record, verifies that it is still PREPARED and inside its window, re-runs the
+full authorization/execution security checks, verifies the prepared binding, and then enters the ordinary
+protected reservation/dispatch path. When fresh approval is required, the approval identifier may change at
+commit while the prepared action binding remains fixed; the final execution authority digest still binds the
+actual approval used for dispatch. Cancellation and commit contend on durable state so only one terminal path
+wins. `REVERSIBLE` and `COMPENSATABLE` are control classifications, not a claim that AgentGuard can perform a
+generic provider-specific undo operation.
+
+## Declared causal execution graph
+
+Phase 5G binds protected actions to declared parent execution identifiers. Authorization resolves each parent
+from the durable execution ledger, rejects missing, non-terminal, cross-tenant, duplicate, or excessive-depth
+parents, inherits their causal labels, applies all matched causal constraints, and signs the resulting causal
+digest and depth into the decision receipt. The protected execution record persists the parent identifiers,
+causal digest, depth, labels, and tenant so execution-time revalidation cannot substitute a different ancestry.
+
+`build_causal_execution_graph` reconstructs a secret-minimized graph from those durable records and fails on
+missing nodes, cycles, or excessive traversal depth. The graph intentionally contains digests, states, labels,
+and declared edges rather than raw tool arguments. This proves integrity of ancestry supplied through the
+trusted AgentGuard integration; it does not discover undeclared dependencies in external systems.
+
+## Deterministic policy intelligence and minimal authority
+
+Phase 5H is advisory and deterministic. `derive_minimal_authority` constructs an exact single-use,
+non-delegable capability scope for one normalized action. `analyze_authority` compares a granted scope against
+that recommendation and reports over-broad capability, protocol, server, tool, operation, resource, call-budget,
+or delegation dimensions. `analyze_policy_counterfactuals` re-evaluates the deterministic policy after removing
+each matched rule and reports the resulting effect and selected rule. These functions never change the policy,
+issue authority, or override the enforcement result, and no LLM participates in the trusted decision path.

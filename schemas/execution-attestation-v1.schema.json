@@ -22,6 +22,26 @@
           "title": "Authority Digest",
           "type": "string"
         },
+        "causal_depth": {
+          "default": 0,
+          "maximum": 64,
+          "minimum": 0,
+          "title": "Causal Depth",
+          "type": "integer"
+        },
+        "causal_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causal Digest"
+        },
         "completed_at": {
           "anyOf": [
             {
@@ -71,6 +91,45 @@
         "execution_state": {
           "$ref": "#/$defs/ExecutionState"
         },
+        "field_integrity_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Integrity Digest"
+        },
+        "field_integrity_expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Integrity Expires At"
+        },
+        "field_release_set_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Release Set Digest"
+        },
         "intent_digest": {
           "title": "Intent Digest",
           "type": "string"
@@ -91,6 +150,19 @@
           ],
           "default": null,
           "title": "Policy Digest"
+        },
+        "prepared_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prepared Id"
         },
         "previous_attestation_digest": {
           "anyOf": [

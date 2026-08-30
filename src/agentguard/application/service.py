@@ -25,7 +25,10 @@ from agentguard.domain import (
     ExecutionResolution,
     ExecutionState,
     ExecutionStatus,
+    FieldIntegrityBinding,
     PolicyDocument,
+    PreparedExecution,
+    PreparedExecutionStatus,
     Principal,
     ProtectedExecutionResult,
     ReconciliationStatus,
@@ -46,6 +49,8 @@ from agentguard.engine.authority import (
 from agentguard.engine.authority import (
     issue_root_authority as issue_root_authority_grant,
 )
+from agentguard.engine.canonical import digest
+from agentguard.engine.causal import CausalIntegrityError, validate_causal_context
 from agentguard.engine.credentials import (
     CredentialVerificationError,
     validate_credential_request,
@@ -55,8 +60,10 @@ from agentguard.engine.execution import (
     ExecutionGuardError,
     authorize_execution,
     execution_authority_digest,
+    prepared_execution_binding_digest,
     validate_execution_authority,
 )
+from agentguard.engine.field_integrity import FieldIntegrityError, validate_field_integrity
 from agentguard.engine.policy import evaluate_policy
 from agentguard.engine.receipts import (
     ReceiptVerificationError,
@@ -91,6 +98,8 @@ class AgentGuardService:
         state: StateRepository,
         broker_grant_verifier: BrokerGrantVerifier | None = None,
         authority_verifier: SignatureVerifier | None = None,
+        provenance_verifier: SignatureVerifier | None = None,
+        release_verifier: SignatureVerifier | None = None,
         *,
         require_authority: bool = False,
     ) -> None:
@@ -99,6 +108,8 @@ class AgentGuardService:
         self.state = state
         self.broker_grant_verifier = broker_grant_verifier
         self.authority_verifier = authority_verifier or verifier
+        self.provenance_verifier = provenance_verifier
+        self.release_verifier = release_verifier
         self.require_authority = require_authority
 
     def _event(self, event_type: AuditEventType, intent: ActionIntent, **kw: Any) -> AuditEvent:
@@ -435,8 +446,51 @@ class AgentGuardService:
         self.state.append(self._event(AuditEventType.AUTHORIZATION_REQUESTED, intent))
         self._validate_intent_authority(intent)
         evaluation = evaluate_policy(policy, intent)
+        needs_field_integrity = bool(intent.field_provenance or intent.field_releases) or any(
+            rule.field_integrity for rule in evaluation.matched_rules
+        )
+        field_binding: FieldIntegrityBinding | None = None
+        if needs_field_integrity:
+            if self.provenance_verifier is None or self.release_verifier is None:
+                raise ExecutionGuardError("field_integrity.verifier_unavailable")
+            try:
+                field_binding = validate_field_integrity(
+                    intent,
+                    evaluation.matched_rules,
+                    self.provenance_verifier,
+                    self.release_verifier,
+                )
+            except FieldIntegrityError as exc:
+                raise ExecutionGuardError(str(exc)) from exc
+        causal_required = bool(intent.causal_parent_execution_ids) or any(
+            rule.causal is not None for rule in evaluation.matched_rules
+        )
+        causal_digest: str | None = None
+        causal_depth: int | None = None
+        if causal_required:
+            causal_field_binding = field_binding or FieldIntegrityBinding(
+                integrity_digest=digest({"constraints": [], "statements": []}),
+                release_set_digest=digest([]),
+                expires_at=None,
+                release_ids=(),
+                labels=frozenset(),
+            )
+            try:
+                causal_digest, computed_depth, _ = validate_causal_context(
+                    intent, evaluation.matched_rules, self.state, causal_field_binding
+                )
+            except CausalIntegrityError as exc:
+                raise ExecutionGuardError(str(exc)) from exc
+            causal_depth = computed_depth
         receipt = issue_decision_receipt(
-            intent, evaluation, self.signer, ttl_seconds=ttl_seconds, mode=mode
+            intent,
+            evaluation,
+            self.signer,
+            ttl_seconds=ttl_seconds,
+            mode=mode,
+            field_binding=field_binding,
+            causal_digest=causal_digest,
+            causal_depth=causal_depth,
         )
         self.state.append(
             self._event(
@@ -576,6 +630,9 @@ class AgentGuardService:
             broker_grant_verifier=self.broker_grant_verifier,
             approval=approval,
             current_policy=current_policy,
+            provenance_verifier=self.provenance_verifier,
+            release_verifier=self.release_verifier,
+            execution_repository=self.state,
         )
 
     def execute_protected(
@@ -590,6 +647,8 @@ class AgentGuardService:
     ) -> ExecutionOutcome:
         """Own validation, one-winner reservation, controlled dispatch, and durable outcome."""
 
+        if receipt.staging_requirement is not None and receipt.staging_requirement.required:
+            raise ExecutionGuardError("execution.staging_required")
         execution_id = "exec_" + uuid4().hex
         self._validate_intent_authority(intent)
         verified = validate_execution_authority(
@@ -601,20 +660,180 @@ class AgentGuardService:
             broker_grant_verifier=self.broker_grant_verifier,
             approval=approval,
             current_policy=current_policy,
+            provenance_verifier=self.provenance_verifier,
+            release_verifier=self.release_verifier,
+            execution_repository=self.state,
         )
         reserved_at = datetime.now(UTC)
         reservation_error = self.state.reserve_execution(verified, reserved_at)
         if reservation_error is not None:
             raise ExecutionGuardError(reservation_error)
 
-        # The execution table is authoritative. Audit append remains a separate hash-chain
-        # transaction; failure here leaves a resumable RESERVED record and never dispatches.
+        # The execution table is authoritative. Audit remains a separate hash-chain transaction;
+        # failure here leaves a resumable RESERVED record and never triggers redispatch.
+        self._append_consumption_events(intent, receipt, verified)
+        return self._dispatch_reserved(verified, executor)
+
+    def prepare_protected_execution(
+        self,
+        intent: ActionIntent,
+        receipt: DecisionReceipt,
+        grant: CredentialGrant | None,
+        approval: ApprovalReceipt | None = None,
+        *,
+        current_policy: PolicyDocument | None = None,
+    ) -> PreparedExecution:
+        requirement = receipt.staging_requirement
+        if requirement is None or not requirement.required:
+            raise ExecutionGuardError("execution.staging_not_required")
+        prepared_id = "prep_" + uuid4().hex
+        execution_id = "exec_" + uuid4().hex
+        self._validate_intent_authority(intent)
+        verified = validate_execution_authority(
+            intent,
+            receipt,
+            grant,
+            self.verifier,
+            execution_id=execution_id,
+            broker_grant_verifier=self.broker_grant_verifier,
+            approval=approval,
+            current_policy=current_policy,
+            provenance_verifier=self.provenance_verifier,
+            release_verifier=self.release_verifier,
+            execution_repository=self.state,
+            prepared_id=prepared_id,
+        )
+        prepared_at = datetime.now(UTC)
+        expires_at = min(
+            prepared_at + timedelta(seconds=requirement.maximum_commit_window_seconds),
+            verified.authorization_expires_at,
+            *(
+                [verified.field_integrity_expires_at]
+                if verified.field_integrity_expires_at is not None
+                else []
+            ),
+        )
+        commit_not_before = prepared_at + timedelta(seconds=requirement.minimum_delay_seconds)
+        if commit_not_before >= expires_at:
+            raise ExecutionGuardError("execution.staging_window_invalid")
+        prepared = PreparedExecution(
+            prepared_id=prepared_id,
+            execution_id=execution_id,
+            decision_id=receipt.decision_id,
+            request_id=intent.request_id,
+            trace_id=intent.trace_id,
+            intent_digest=verified.intent_digest,
+            prepared_binding_digest=prepared_execution_binding_digest(verified),
+            field_integrity_digest=verified.field_integrity_digest,
+            causal_digest=verified.causal_digest,
+            status=PreparedExecutionStatus.PREPARED,
+            reversibility=requirement.reversibility,
+            prepared_at=prepared_at,
+            commit_not_before=commit_not_before,
+            expires_at=expires_at,
+        )
+        self.state.store_prepared_execution(prepared)
+        self.state.append(
+            self._event(
+                AuditEventType.EXECUTION_PREPARED,
+                intent,
+                decision_id=receipt.decision_id,
+                execution_id=execution_id,
+                data={
+                    "prepared_id": prepared_id,
+                    "reversibility": requirement.reversibility.value,
+                    "prepared_binding_digest": prepared.prepared_binding_digest,
+                },
+            )
+        )
+        return prepared
+
+    def cancel_prepared_execution(self, prepared_id: str) -> PreparedExecution:
+        cancelled_at = datetime.now(UTC)
+        try:
+            prepared = self.state.cancel_prepared_execution(prepared_id, cancelled_at)
+        except RuntimeError as exc:
+            raise ExecutionGuardError(str(exc)) from exc
+        self.state.append(
+            AuditEvent(
+                event_id="evt_" + uuid4().hex,
+                event_type=AuditEventType.EXECUTION_PREPARE_CANCELLED,
+                timestamp=cancelled_at,
+                trace_id=prepared.trace_id,
+                request_id=prepared.request_id,
+                decision_id=prepared.decision_id,
+                execution_id=prepared.execution_id,
+                source="agentguard",
+                data={"prepared_id": prepared.prepared_id},
+            )
+        )
+        return prepared
+
+    def commit_prepared_execution(
+        self,
+        prepared_id: str,
+        intent: ActionIntent,
+        receipt: DecisionReceipt,
+        grant: CredentialGrant | None,
+        executor: ProtectedExecutor,
+        approval: ApprovalReceipt | None = None,
+        *,
+        current_policy: PolicyDocument | None = None,
+    ) -> ExecutionOutcome:
+        prepared = self.state.get_prepared_execution(prepared_id)
+        if prepared is None:
+            raise ExecutionGuardError("execution.prepared_missing")
+        requirement = receipt.staging_requirement
+        if requirement is None or not requirement.required:
+            raise ExecutionGuardError("execution.staging_binding_missing")
+        if requirement.require_fresh_approval:
+            if approval is None or approval.issued_at < prepared.prepared_at:
+                raise ExecutionGuardError("execution.fresh_approval_required")
+        self._validate_intent_authority(intent)
+        verified = validate_execution_authority(
+            intent,
+            receipt,
+            grant,
+            self.verifier,
+            execution_id=prepared.execution_id,
+            broker_grant_verifier=self.broker_grant_verifier,
+            approval=approval,
+            current_policy=current_policy,
+            provenance_verifier=self.provenance_verifier,
+            release_verifier=self.release_verifier,
+            execution_repository=self.state,
+            prepared_id=prepared_id,
+        )
+        reserved_at = datetime.now(UTC)
+        reservation_error = self.state.reserve_prepared_execution(
+            prepared_id, verified, reserved_at
+        )
+        if reservation_error is not None:
+            raise ExecutionGuardError(reservation_error)
+        self.state.append(
+            self._event(
+                AuditEventType.EXECUTION_COMMITTED,
+                intent,
+                decision_id=receipt.decision_id,
+                execution_id=verified.execution_id,
+                data={
+                    "prepared_id": prepared_id,
+                    "authority_digest": execution_authority_digest(verified),
+                },
+            )
+        )
+        self._append_consumption_events(intent, receipt, verified)
+        return self._dispatch_reserved(verified, executor)
+
+    def _append_consumption_events(
+        self, intent: ActionIntent, receipt: DecisionReceipt, verified: VerifiedExecution
+    ) -> None:
         self.state.append(
             self._event(
                 AuditEventType.RECEIPT_CONSUMED,
                 intent,
                 decision_id=receipt.decision_id,
-                execution_id=execution_id,
+                execution_id=verified.execution_id,
                 data={
                     "intent_digest": verified.intent_digest,
                     "authority_digest": execution_authority_digest(verified),
@@ -628,14 +847,37 @@ class AgentGuardService:
                     AuditEventType.CAPABILITY_LEASE_CONSUMED,
                     intent,
                     decision_id=receipt.decision_id,
-                    execution_id=execution_id,
+                    execution_id=verified.execution_id,
                     data={
                         "lease_id": verified.authority_lease_id,
                         "grant_id": verified.authority_grant_id,
                     },
                 )
             )
-        return self._dispatch_reserved(verified, executor)
+        for release_id in verified.field_release_ids:
+            self.state.append(
+                self._event(
+                    AuditEventType.FIELD_RELEASE_CONSUMED,
+                    intent,
+                    decision_id=receipt.decision_id,
+                    execution_id=verified.execution_id,
+                    data={"release_id": release_id},
+                )
+            )
+        if intent.causal_parent_execution_ids:
+            self.state.append(
+                self._event(
+                    AuditEventType.CAUSAL_CONTEXT_BOUND,
+                    intent,
+                    decision_id=receipt.decision_id,
+                    execution_id=verified.execution_id,
+                    data={
+                        "parent_count": len(intent.causal_parent_execution_ids),
+                        "causal_digest": verified.causal_digest,
+                        "causal_depth": verified.causal_depth,
+                    },
+                )
+            )
 
     def resume_reserved_execution(
         self,
@@ -665,6 +907,10 @@ class AgentGuardService:
             broker_grant_verifier=self.broker_grant_verifier,
             approval=approval,
             current_policy=current_policy,
+            provenance_verifier=self.provenance_verifier,
+            release_verifier=self.release_verifier,
+            execution_repository=self.state,
+            prepared_id=record.prepared_id,
         )
         if record.authority_digest != execution_authority_digest(verified):
             raise ExecutionGuardError("execution.reserved_binding_mismatch")
