@@ -1,19 +1,28 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from agentguard.domain import (
+    ExecutionAttemptIdentity,
+    ExecutionState,
     ExecutionStatus,
+    ExternalEffectBinding,
+    ExternalOperationIdentity,
+    IdempotencyBinding,
     ProtectedExecutionResult,
     ProviderIdentity,
     VerifiedExecution,
 )
 from agentguard.engine.canonical import digest
+from agentguard.engine.provider_contracts import credential_binding_from_verified_authority
 from agentguard.ports import (
     AmbiguousExecutionError,
     CredentialMaterialResolver,
     DefiniteExecutionFailure,
+    ExecutionRepository,
+    ProviderEffectRepository,
 )
 
 from .http_gateway_types import HTTPUpstreamSender, UpstreamTransportError
@@ -37,15 +46,24 @@ class MCPHTTPProtectedExecutor:
         tool_schema: dict[str, Any],
         provider_identity: ProviderIdentity | None = None,
         credential_resolver: CredentialMaterialResolver | None = None,
+        effect_repository: ProviderEffectRepository | None = None,
+        execution_repository: ExecutionRepository | None = None,
     ) -> None:
+        if (effect_repository is None) != (execution_repository is None):
+            raise ValueError(
+                "provider effect and execution repositories must be configured together"
+            )
         self.binding = binding
         self.sender = sender
         self.envelope = envelope
         self.tool_schema = tool_schema
         self.provider_identity = provider_identity
         self.credential_resolver = credential_resolver
+        self.effect_repository = effect_repository
+        self.execution_repository = execution_repository
         self.supports_brokered_credentials = credential_resolver is not None
         self.response: dict[str, Any] | None = None
+        self.effect_binding: ExternalEffectBinding | None = None
 
     def execute(self, verified_execution: VerifiedExecution) -> ProtectedExecutionResult:
         self._validate_binding(verified_execution)
@@ -63,6 +81,7 @@ class MCPHTTPProtectedExecutor:
         }
         headers = canonical_standard_headers(downstream)
         headers.update(parameter_headers_for_call(downstream, self.tool_schema))
+        self._persist_external_effect_binding(verified_execution)
         self._inject_brokered_credential(verified_execution, headers)
         try:
             response = self.sender.send(encode_message(downstream), headers)
@@ -110,6 +129,58 @@ class MCPHTTPProtectedExecutor:
             provider_status=response.status_code,
             result_digest=result_digest,
         )
+
+    def _persist_external_effect_binding(self, verified: VerifiedExecution) -> None:
+        if self.effect_repository is None or self.execution_repository is None:
+            return
+        record = self.execution_repository.get_execution(verified.execution_id)
+        if record is None:
+            raise DefiniteExecutionFailure("provider_binding.execution_record_missing")
+        if record.state != ExecutionState.DISPATCHING or record.dispatching_at is None:
+            raise DefiniteExecutionFailure("provider_binding.execution_not_dispatching")
+        if self.provider_identity is None:
+            raise DefiniteExecutionFailure("mcp_http.provider_identity_missing")
+        credential = (
+            credential_binding_from_verified_authority(verified.credential_authority)
+            if verified.credential_authority is not None
+            else None
+        )
+        operation_seed = {
+            "execution_id": verified.execution_id,
+            "decision_id": verified.decision_id,
+        }
+        binding = ExternalEffectBinding(
+            decision_id=verified.decision_id,
+            intent_digest=verified.intent_digest,
+            action_digest=digest(verified.intent.action),
+            resource_digest=(
+                digest(verified.intent.resource) if verified.intent.resource is not None else None
+            ),
+            arguments_digest=digest(verified.intent.arguments),
+            provider=self.provider_identity,
+            operation=ExternalOperationIdentity(
+                operation_id="op_" + digest(operation_seed)[7:39],
+                operation_kind="mcp.tools/call",
+                operation_name=verified.intent.action.tool,
+            ),
+            credential=credential,
+            attempt=ExecutionAttemptIdentity(
+                execution_id=verified.execution_id,
+                attempt_id="attempt_" + digest({**operation_seed, "attempt_number": 1})[7:39],
+                attempt_number=1,
+                started_at=record.dispatching_at,
+            ),
+            idempotency=IdempotencyBinding(),
+        )
+        try:
+            self.effect_repository.store_external_effect_binding(
+                verified.execution_id,
+                binding,
+                datetime.now(UTC),
+            )
+        except (ValueError, RuntimeError) as exc:
+            raise DefiniteExecutionFailure("provider_binding.persistence_failed") from exc
+        self.effect_binding = binding
 
     def _inject_brokered_credential(
         self, verified: VerifiedExecution, headers: dict[str, str]

@@ -13,6 +13,7 @@ from agentguard.adapters.broker import (
 from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
 from agentguard.adapters.protocols.mcp.http_gateway import MCPProtectedHTTPGateway
 from agentguard.adapters.protocols.mcp.modern import MCPHTTPServerBinding
+from agentguard.adapters.reconciliation import SQLiteProviderEffectRepository
 from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService
 from agentguard.cli.io import load_policy
@@ -36,6 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--key", type=Path, default=Path(".agentguard/decision-private.pem"))
     parser.add_argument("--state", type=Path, default=Path(".agentguard/action-integrity.sqlite"))
+    parser.add_argument(
+        "--provider-reconciliation-state",
+        type=Path,
+        default=Path(".agentguard/provider-reconciliation.sqlite"),
+    )
     parser.add_argument("--server-id", required=True)
     parser.add_argument("--upstream-url", required=True)
     parser.add_argument("--listen-host", default="127.0.0.1")
@@ -111,6 +117,7 @@ def entrypoint() -> None:
     signer = Ed25519Signer.load_private(args.key)
     verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
     state = SQLiteState(args.state)
+    provider_effects = SQLiteProviderEffectRepository(args.provider_reconciliation_state)
     principal = Principal(
         agent_id=args.agent_id,
         workload_id=args.workload_id,
@@ -176,6 +183,7 @@ def entrypoint() -> None:
         credential_broker=credential_authority,
         credential_material_resolver=credential_authority,
         provider_identity=provider_identity,
+        provider_effect_repository=provider_effects,
         max_message_bytes=args.max_message_bytes,
     )
     default_hosts = {args.listen_host, "localhost", "127.0.0.1", "::1"}

@@ -19,9 +19,11 @@ from agentguard.domain import (
     ExecutionRecord,
     ExecutionResolution,
     ExecutionState,
+    ExternalEffectBinding,
     PreparedExecution,
     ProtectedExecutionResult,
     ProviderIdentity,
+    ProviderReconciliationEvidence,
     ReconciliationEvidence,
     VerifiedCredentialAuthority,
     VerifiedExecution,
@@ -193,6 +195,35 @@ class ExecutionRepository(Protocol):
 
 class ExecutionReconciler(Protocol):
     def reconcile(self, execution: ExecutionRecord) -> ReconciliationEvidence: ...
+
+
+class ProviderExecutionReconciler(Protocol):
+    """Trusted provider-specific evidence collector for an exact external-effect binding."""
+
+    def reconcile(self, binding: ExternalEffectBinding) -> ProviderReconciliationEvidence: ...
+
+
+class ProviderEffectRepository(Protocol):
+    """Durable sidecar store for non-secret provider bindings and digest-only evidence."""
+
+    def store_external_effect_binding(
+        self,
+        execution_id: str,
+        binding: ExternalEffectBinding,
+        recorded_at: datetime,
+    ) -> None: ...
+
+    def get_external_effect_binding(self, execution_id: str) -> ExternalEffectBinding | None: ...
+
+    def record_provider_reconciliation_evidence(
+        self,
+        evidence: ProviderReconciliationEvidence,
+        recorded_at: datetime,
+    ) -> None: ...
+
+    def list_provider_reconciliation_evidence(
+        self, binding_digest: str
+    ) -> tuple[ProviderReconciliationEvidence, ...]: ...
 
 
 class ReconciliationRepository(Protocol):

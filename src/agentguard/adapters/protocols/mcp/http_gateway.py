@@ -16,7 +16,11 @@ from agentguard.domain import (
     Resource,
 )
 from agentguard.engine.canonical import digest
-from agentguard.ports import CredentialBroker, CredentialMaterialResolver
+from agentguard.ports import (
+    CredentialBroker,
+    CredentialMaterialResolver,
+    ProviderEffectRepository,
+)
 
 from .http_executor import MCPHTTPProtectedExecutor
 from .http_gateway_types import (
@@ -83,6 +87,7 @@ class MCPProtectedHTTPGateway:
         credential_broker: CredentialBroker | None = None,
         credential_material_resolver: CredentialMaterialResolver | None = None,
         provider_identity: ProviderIdentity | None = None,
+        provider_effect_repository: ProviderEffectRepository | None = None,
         max_message_bytes: int = 1_000_000,
         max_schema_pages: int = 32,
         max_schema_tools: int = 4096,
@@ -105,6 +110,7 @@ class MCPProtectedHTTPGateway:
             tenant_id=principal.tenant_id,
             endpoint_digest=binding.endpoint_digest,
         )
+        self.provider_effect_repository = provider_effect_repository
         self.max_message_bytes = max_message_bytes
         self.max_schema_pages = max_schema_pages
         self.max_schema_tools = max_schema_tools
@@ -301,6 +307,10 @@ class MCPProtectedHTTPGateway:
             tool_schema=schema,
             provider_identity=self.provider_identity,
             credential_resolver=(self.credential_material_resolver if grant is not None else None),
+            effect_repository=self.provider_effect_repository,
+            execution_repository=(
+                self.service.state if self.provider_effect_repository is not None else None
+            ),
         )
         try:
             outcome = self.service.execute_protected(
