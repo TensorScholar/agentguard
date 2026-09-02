@@ -1,18 +1,19 @@
 # Release checklist
 
-AgentGuard is pre-1.0. A release candidate is promotable only when the exact Git commit passes the
-mandatory CI matrix and the generated artifacts can be independently verified.
+AgentGuard is pre-1.0. A release candidate is promotable only when the exact Git commit passes the mandatory CI/Security/CodeQL gates and the generated artifacts can be independently verified.
 
 ## Preconditions
 
-- The working tree is clean and the release commit is identified.
-- `pyproject.toml`, `agentguard.__version__`, `CITATION.cff` and `CHANGELOG.md` agree.
+- The release branch points at the intended exact commit and no uncommitted/local-only content is part of the release decision.
+- `pyproject.toml`, `agentguard.__version__`, `CITATION.cff`, and the top `CHANGELOG.md` release agree.
+- README/deployment documentation refers to the current release candidate rather than an earlier version.
 - Generated JSON schemas match the source models.
-- No cache, virtualenv, database, key, audit or demo artifact is tracked.
+- No cache, virtualenv, database, key, audit, demo output, or secret artifact is tracked.
+- Temporary dependency-audit exceptions are absent unless a current, documented, narrowly scoped exception has explicit removal criteria.
 
-## Canonical verification
+## Canonical quality verification
 
-Run from the repository root in an environment created with the validated constraints:
+From the repository root in the validated environment:
 
 ```bash
 python -m pip install -c requirements/runtime-validated.txt -e '.[http]'
@@ -20,37 +21,47 @@ python -m pip install -r requirements/validation.txt
 make check
 ```
 
-Coverage is measured with branch tracing over `src/agentguard` only. The release gate is a combined
-source coverage of at least 80%; statement and branch percentages must also be reported separately.
+The quality matrix runs this on Linux Python 3.11, 3.12, and 3.13. Compatibility tests run on Linux, macOS, and Windows Python 3.13.
 
-## Build and clean-install smoke
+Coverage is branch-traced over `src/agentguard`; the enforced combined source threshold is at least 80%. Statement, branch, and combined percentages must be reported distinctly in release evidence.
 
-```bash
-rm -rf build dist *.egg-info src/*.egg-info
-SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" python -m build
-python -m twine check dist/*
-python -m venv /tmp/agentguard-install-smoke
-/tmp/agentguard-install-smoke/bin/python -m pip install dist/*.whl
-/tmp/agentguard-install-smoke/bin/agentguard --version
-/tmp/agentguard-install-smoke/bin/agentguard --help >/dev/null
-/tmp/agentguard-install-smoke/bin/agentguard demo --output /tmp/agentguard-demo
-/tmp/agentguard-install-smoke/bin/agentguard evidence-verify /tmp/agentguard-demo/evidence
-/tmp/agentguard-install-smoke/bin/python -m pip check
-```
+## Package and reproducibility gate
 
-## Security and compatibility gates
+The CI package job is canonical. It:
 
-- Linux quality matrix: Python 3.11, 3.12 and 3.13.
-- Compatibility smoke: Linux, macOS and Windows on Python 3.13.
-- CodeQL, dependency audit, architecture boundary check, repository secret scan and static security
-  scan.
-- Real MCP smoke remains opt-in locally but should run in a controlled release environment. The
-  compatibility fixture is pinned to `@modelcontextprotocol/server-filesystem@2026.1.14` and must
-  not be silently upgraded during a release.
-- Signed evidence, audit checkpoint, MCP posture and fail-closed inventory scenarios must pass.
+1. derives `SOURCE_DATE_EPOCH` from the exact commit;
+2. builds wheel/sdist twice;
+3. byte-compares the wheels;
+4. normalizes both sdists with that epoch and compares them;
+5. runs `twine check`;
+6. generates `agentguard.cdx.json`, `release-manifest.json`, and `SHA256SUMS`;
+7. clean-installs the base wheel and exercises the core/reconciliation CLIs plus demo/evidence verification;
+8. clean-installs the wheel with `[http]` and exercises `agentguard-mcp-http` plus reconciliation entrypoints;
+9. builds the non-root container and smokes the installed package/HTTP dependencies;
+10. uploads the distributions and release evidence as the `agentguard-release-candidate` workflow artifact.
 
-## Promotion boundary
+Do not replace this with a local build and assume equivalence; retain the workflow evidence for the exact release SHA.
 
-Do not describe a release candidate as production-certified. Promotion requires the CI run for the
-release commit, a deployment-specific threat review, external penetration testing and a controlled
-production pilot.
+## Security gates
+
+- Architecture boundary, repository secret scan, static security scan, and dependency audit must pass.
+- Dependency audit must not silently ignore a vulnerability merely because a previous release line documented an exception.
+- CodeQL must pass and its SARIF artifact/digest should be retained in the release evidence.
+- Signing keys, credential material, and generated private state must not appear in release artifacts.
+
+## Interoperability gates
+
+- The real MCP smoke remains controlled/opt-in because it invokes external tooling, but the release environment should run the profiles claimed by the release.
+- The preserved filesystem compatibility fixture is pinned to `@modelcontextprotocol/server-filesystem@2026.1.14`; do not silently change that pin during release validation.
+- Deployment-specific `mcp-posture --fail-on-bypass` must pass for the configurations being promoted.
+
+## Tag and promotion boundary
+
+Before tagging:
+
+- verify CI, Security, and CodeQL are all bound to the exact release commit;
+- verify release-manifest commit/version and SHA-256 hashes;
+- verify the final release tree is the one that passed the gates;
+- prefer a signed/attested release tag when available.
+
+Do not describe the release candidate as production-certified. Production promotion additionally requires deployment-specific threat review, independent penetration/security testing, long-duration soak testing, operational recovery exercises, and a controlled production pilot without unresolved critical findings.

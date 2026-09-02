@@ -67,38 +67,95 @@ jobs:
         run: python -m pytest
 
   package:
-    name: Package and clean-install smoke
+    name: Package, reproducibility and clean-install smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
           cache: pip
-      - name: Build
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements/validation.txt
-          python -m build
-          python -m twine check dist/*
-      - name: Clean-install smoke
+      - name: Build reproducibly
         shell: bash
         run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/validation.txt
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          rm -rf dist dist-a dist-b release
+          python -m build --outdir dist-a
+          python -m build --outdir dist-b
+
+          WHEEL_A="$(find dist-a -maxdepth 1 -name '*.whl' -print -quit)"
+          WHEEL_B="$(find dist-b -maxdepth 1 -name '*.whl' -print -quit)"
+          SDIST_A="$(find dist-a -maxdepth 1 -name '*.tar.gz' -print -quit)"
+          SDIST_B="$(find dist-b -maxdepth 1 -name '*.tar.gz' -print -quit)"
+          test -n "$WHEEL_A" && test -n "$WHEEL_B" && test -n "$SDIST_A" && test -n "$SDIST_B"
+
+          cmp "$WHEEL_A" "$WHEEL_B"
+          python scripts/normalize_sdist.py "$SDIST_A" /tmp/agentguard-sdist-a.tar.gz
+          python scripts/normalize_sdist.py "$SDIST_B" /tmp/agentguard-sdist-b.tar.gz
+          cmp /tmp/agentguard-sdist-a.tar.gz /tmp/agentguard-sdist-b.tar.gz
+
+          mkdir -p dist release
+          cp "$WHEEL_A" dist/
+          cp /tmp/agentguard-sdist-a.tar.gz "dist/$(basename "$SDIST_A")"
+          python -m twine check dist/*
+          python scripts/generate_sbom.py --output release/agentguard.cdx.json
+          python scripts/generate_release_manifest.py \
+            --dist dist \
+            --commit "$GITHUB_SHA" \
+            --output release/release-manifest.json
+          sha256sum dist/* release/agentguard.cdx.json release/release-manifest.json \
+            > release/SHA256SUMS
+      - name: Base-wheel clean-install smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          WHEEL="$(realpath "$(find dist -maxdepth 1 -name '*.whl' -print -quit)")"
           python -m venv /tmp/agentguard-wheel-smoke
-          /tmp/agentguard-wheel-smoke/bin/python -m pip install dist/*.whl
+          /tmp/agentguard-wheel-smoke/bin/python -m pip install "$WHEEL"
           /tmp/agentguard-wheel-smoke/bin/agentguard --version
           /tmp/agentguard-wheel-smoke/bin/agentguard --help >/dev/null
+          /tmp/agentguard-wheel-smoke/bin/agentguard-mcp-http --help >/dev/null
+          /tmp/agentguard-wheel-smoke/bin/agentguard-reconcile --help >/dev/null
+          /tmp/agentguard-wheel-smoke/bin/agentguard-reconcile-worker --help >/dev/null
           /tmp/agentguard-wheel-smoke/bin/agentguard demo --output /tmp/agentguard-demo
           /tmp/agentguard-wheel-smoke/bin/agentguard evidence-verify /tmp/agentguard-demo/evidence
           /tmp/agentguard-wheel-smoke/bin/python -m pip check
-      - name: Upload distributions
+      - name: HTTP-extra wheel smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          WHEEL="$(realpath "$(find dist -maxdepth 1 -name '*.whl' -print -quit)")"
+          python -m venv /tmp/agentguard-http-wheel-smoke
+          /tmp/agentguard-http-wheel-smoke/bin/python -m pip install "agentguard[http] @ file://$WHEEL"
+          /tmp/agentguard-http-wheel-smoke/bin/agentguard-mcp-http --help >/dev/null
+          /tmp/agentguard-http-wheel-smoke/bin/agentguard-reconcile --help >/dev/null
+          /tmp/agentguard-http-wheel-smoke/bin/agentguard-reconcile-worker --help >/dev/null
+          /tmp/agentguard-http-wheel-smoke/bin/python -m agentguard.http_cli --help >/dev/null
+          /tmp/agentguard-http-wheel-smoke/bin/python -m pip check
+      - name: Container smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --tag agentguard-ci .
+          test "$(docker run --rm --entrypoint id agentguard-ci -u)" = "10001"
+          docker run --rm agentguard-ci --version
+          docker run --rm --entrypoint agentguard-mcp-http agentguard-ci --help >/dev/null
+          docker run --rm --entrypoint python agentguard-ci \
+            -c 'import httpx, starlette, uvicorn; import agentguard; print(agentguard.__version__)'
+      - name: Upload release-candidate artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: agentguard-distributions
-          path: dist/*
+          name: agentguard-release-candidate
+          path: |
+            dist/*
+            release/*
           if-no-files-found: error

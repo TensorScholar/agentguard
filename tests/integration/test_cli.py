@@ -5,6 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from agentguard import __version__
 from agentguard.cli.app import app
 
 runner = CliRunner()
@@ -13,7 +14,7 @@ runner = CliRunner()
 def test_version():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "0.2.0rc2" in result.stdout
+    assert __version__ in result.stdout
 
 
 def test_init_creates_keys_and_policy(tmp_path):

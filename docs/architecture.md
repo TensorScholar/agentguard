@@ -1,195 +1,139 @@
 # Architecture
 
-AgentGuard is a modular monolith using ports and adapters. The domain and engine are deterministic and have no dependency on SQLite, HTTP, MCP, Typer, OpenTelemetry or any credential provider.
+AgentGuard is a provider-neutral modular monolith using ports and adapters. The deterministic domain and policy engine have no dependency on SQLite, HTTP, MCP, Typer, OpenTelemetry, or a credential provider. External systems enter through typed ports; adapters own protocol parsing, storage, signing, credential resolution, and provider I/O.
+
+## Current execution model
 
 ```text
-Protocol adapter -> ActionIntent -> Policy engine -> DecisionReceipt
-                                        |                |
-                                        v                v
-                                  approval path    CredentialBroker
-                                                         |
-                                                         v
-                                                 ExecutionGuard
-                                                         |
-                                                         v
-                                                   Audit evidence
+Untrusted proposal
+      |
+      v
+Protocol adapter -> normalized ActionIntent -> deterministic Policy v2
+                                              |
+                                              v
+                                      signed DecisionReceipt
+                                              |
+                +-----------------------------+-----------------------------+
+                |                                                           |
+                v                                                           v
+       credential authority                                      execution-time revalidation
+                |                                                           |
+                +-----------------------------+-----------------------------+
+                                              |
+                                              v
+                                      durable RESERVED/DISPATCHING
+                                              |
+                                              v
+                                  durable ExternalEffectBinding
+                                              |
+                                              v
+                                      provider / MCP tool
+                                              |
+                               +--------------+--------------+
+                               |                             |
+                               v                             v
+                       SUCCEEDED / FAILED                  UNKNOWN
+                                                             |
+                                                             v
+                                                  provider reconciliation
+                                                             |
+                                                             v
+                                                append-only resolution evidence
 ```
 
-The package follows a functional-core/imperative-shell split. All security decisions are explainable through stable reason codes. External systems are connected only through typed ports.
+The package follows a functional-core/imperative-shell split. Security decisions use stable reason codes. Durable state is responsible for atomic use-count, replay, staging, lease, and reconciliation ownership semantics.
 
-Credential issuance is claimed atomically before a broker is invoked. A single-use decision keeps
-that claim even when the broker fails, so an outage cannot turn into an unbounded retry channel.
-Multi-use decisions may retry with a new credential request while the decision remains valid, but
-each attempt consumes one approval use when approval is required. Execution nonce consumption is a
-separate transaction and is never used as a substitute for issuance consumption.
+## Authorization and authority
 
-Broker grants carry a provider-neutral Ed25519 attestation in the mock adapter. The authenticated
-payload binds the broker and key identity, decision and trace, issuance identifier, audience,
-scopes, tenant, mode, timestamps, and a digest of the opaque handle. Production adapters may use a
-different authentication mechanism only through an explicit trusted `BrokerGrantVerifier` port.
+Policy v2 is deterministic and default-deny. Signed decision receipts bind the normalized request, policy result, validity, approval context, and execution-security digests. Execution revalidates the current intent before consuming authority.
 
-The v2 MCP adapter obtains each `tools/call` schema through a `ToolSchemaResolver`. The included
-resolver projects the preserved v0.1 discovered inventory into the v2 path. Missing, stale, or
-digest-inconsistent schemas require approval before authorization; the adapter never substitutes an
-empty schema for an allowed call.
+Delegated authority is represented by signed attenuating `AuthorityGrant` chains and bounded `CapabilityLease` objects. A protected execution atomically claims the decision nonce and applicable consumable authority in the same reservation transaction. Revocation cascades to active descendants. `require_authority=True` enables deployments that require an authority reference on every protected action; workload identity proofing remains an external control.
 
-The v0.1 stdio relay defines audit order as durable SQLite append order. Causality is guaranteed
-within one request (for example, `ALLOW` precedes response `REDACT`), while independent concurrent
-requests may interleave. Shutdown uses an idle-output deadline plus a hard upper bound: active
-server output extends the graceful drain window, but a hung or endlessly streaming child is still
-terminated within the bound.
+Field-integrity constraints use signed provenance statements and exact-value typed release receipts. Causal execution ancestry is explicitly declared and persisted as secret-minimized identifiers/digests; AgentGuard does not infer undeclared external dependencies.
 
-## Protected MCP v2 execution profile
+High-impact staged execution separates durable prepare from commit. Commit re-runs security checks inside its bounded window before entering the normal protected execution path. Staging classifications are control semantics, not generic provider undo.
 
-`agentguard mcp-proxy-v2` is an explicit, ENFORCE-only stdio profile layered on the v0.2
-execution-integrity boundary. It does not replace the preserved `agentguard mcp-proxy` v0.1 route.
-The initial profile interoperates only with a negotiated `2025-03-26` protocol version; this is a
-bounded interoperability target, not a claim of full MCP 2025-03-26 conformance and not an
-implementation of later MCP task/session semantics.
+## Protected MCP profiles
 
-A protected `tools/call` is authorized and then executed through
-`AgentGuardService.execute_protected()`. `MCPProtectedExecutor` receives only `VerifiedExecution`
-and constructs a new downstream JSON-RPC request from the verified server/tool/arguments. The
-downstream request id is the AgentGuard `execution_id`; the client request id remains only in the
-connection-local correlation registry used to return a response to the caller.
+### Protected stdio
 
-Each launched subprocess receives a unique `server_instance_id`. The verified MCP resource binds the
-logical `server_id`, that process-instance id, and a non-secret launch fingerprint derived from a
-secret-minimized argv representation, resolved executable when available, and working directory.
-Tool schemas are populated only from validated `tools/list` responses observed from that process
-instance. Pagination must complete before a schema is usable. `notifications/tools/list_changed`
-invalidates the inventory, and the last observed schema digest is checked again immediately before
-write. This closes the adapter-visible inventory race but does not cryptographically prove that a
-server's hidden semantics did not change outside protocol-observable schema state.
+`agentguard mcp-proxy-v2` is an ENFORCE-only protected stdio profile layered on the execution-integrity boundary. Its initial interoperability profile is bounded to MCP `2025-03-26`; unsupported/custom methods and JSON-RPC batches fail closed.
 
-The initial protected client-to-server method surface is deliberately narrow:
+Each subprocess receives a unique server-instance identity. Tool schemas become usable only after validated `tools/list` observations for that instance, complete pagination, freshness checks, list-change invalidation, and a final observed digest check. This closes adapter-visible inventory races without claiming that hidden provider semantics cannot change behind an unchanged schema.
 
-| Method | Protected v2 behavior |
-| --- | --- |
-| `initialize` | Reconstructed passthrough; records requested protocol profile |
-| `notifications/initialized` | Reconstructed passthrough |
-| `ping` | Reconstructed passthrough |
-| `tools/list` | Reconstructed passthrough; validated responses populate instance-bound schema cache |
-| `tools/call` | Never passthrough; executes through `execute_protected()` |
-| `notifications/cancelled` | Reconstructed only for a known protected call, translating client id to `execution_id` |
-| Any other/custom client method | Fail closed / not forwarded |
-| JSON-RPC batches | Unsupported; never forwarded |
+Protected `tools/call` is reconstructed from the verified server/tool/arguments and dispatched through `AgentGuardService.execute_protected()`. The downstream request id is the AgentGuard execution id, allowing transport responses to correlate with the durable execution record.
 
-For `tools/call`, only `name`, `arguments`, and `_meta.progressToken` are recognized. The progress
-token is intentionally omitted from the reconstructed protected downstream request. Other extension,
-task, or execution-affecting fields fail closed.
+### Protected Streamable HTTP
 
-Protected responses are intercepted by `execution_id` before the generic server relay. Concurrent
-responses may arrive out of order but are delivered only to their owning protected execution. A
-valid result maps to `SUCCEEDED`; `isError=true` or a valid JSON-RPC error maps to `FAILED`; and any
-ambiguous failure at or after the write attempt maps to `UNKNOWN`. `FAILED` is a definite failure
-classification, not a retry-safety assertion. Legitimate provider tool results are returned without
-generic output redaction; AgentGuard-owned credentials, signing material, and internal secrets are
-never inserted into those responses or raw execution state.
+The bounded modern HTTP profile targets MCP `2026-07-28`. It retains protected `tools/call` semantics, message/response size limits, endpoint identity binding, and request security checks.
 
-## Signed execution attestations and reconciliation
+Loopback is the default service boundary. A non-loopback listener is accepted only with:
 
-Phase 5C adds a portable evidence layer above the durable execution ledger. An
-`ExecutionAttestation` signs a canonical, secret-minimized payload containing the execution and
-decision correlation, intent and authority digests, policy digest when retained, lifecycle state,
-terminal metadata, the latest append-only reconciliation resolution, and the previous attestation
-digest. Raw tool arguments, credential handles, provider-operation identifiers, and provider
-responses are not embedded in the attestation.
+- a non-empty Bearer access token;
+- an explicit non-wildcard Host allowlist;
+- an in-process TLS certificate and private key;
+- an explicit Origin allowlist when Origin enforcement/browser-reachable mode is enabled.
 
-Attestations are signed with an explicit attestation signer and may be verified offline from the
-artifact plus a trusted public key. Attestations for one execution can form a digest-linked chain;
-issuing a later attestation after reconciliation does not invalidate or replace the earlier
-artifact.
+`/livez` reports process liveness. `/readyz` runs a non-mutating durable-state readiness probe and returns 503 on dependency failure. `/healthz` remains as the compatibility endpoint.
 
-Reconciliation is deliberately separate from execution state. An execution that was durably
-classified `UNKNOWN` remains `UNKNOWN`; later provider evidence is stored as an immutable
-`ExecutionResolution` (`CONFIRMED_SUCCEEDED`, `CONFIRMED_FAILED`, `STILL_UNKNOWN`, `UNSUPPORTED`,
-or `CONFLICT`). Reconciliation never invokes a protected executor and never redispatches an action.
-Conflicting confirmed evidence is persisted as an explicit conflict rather than last-write-wins.
-Provider operation identifiers are persisted only as digests. Reconciliation evidence carries an
-explicit assurance level: `AGENTGUARD_SIGNED` for AgentGuard-authenticated observations,
-`PROVIDER_CORRELATED` for evidence tied to a provider operation without a trusted provider truth
-assertion, and `PROVIDER_VERIFIED` for evidence produced by a reconciler whose provider verification
-contract is independently trusted. Only `PROVIDER_VERIFIED` evidence may classify an `UNKNOWN`
-execution as `CONFIRMED_SUCCEEDED` or `CONFIRMED_FAILED`.
+## Production credential authority
 
-## Delegated authority graph and capability leases
+Phase 6 separates authorization from provider secret material. `CredentialAuthorityProfile` binds an AgentGuard credential profile to an exact provider identity, tenant, audience, scopes, endpoint digest, source binding, and injection shape.
 
-Phase 5D adds signed `AuthorityGrant` nodes and bounded `CapabilityLease` execution authority.
-Root grants bind a principal to an explicit `CapabilityScope`. Delegated grants point to their
-parent, remain within the same tenant, cannot outlive the parent, and must monotonically attenuate
-the parent's capabilities, protocol/server/tool/operation/resource scope, call budget, and
-delegation properties.
+The included production-profile source resolves an explicitly named environment secret only when credential material is needed. Durable grants/profile state retain binding metadata and digests, not the provider secret. Brokered grants remain bounded by the signed decision and are independently verified before use. Revocation is durable.
 
-An authority-bearing `ActionIntent` contains only an `AuthorityReference`: leaf grant id, lease id,
-and digest of the verified root-to-leaf chain. Authorization and protected execution independently
-reload and verify the active chain, signatures, subject binding, scope, chain digest, and lease.
-`AgentGuardService(require_authority=True)` provides an opt-in fail-closed deployment mode in which
-a missing authority reference is rejected before policy evaluation; the default remains compatible
-with Phase 5A/5B callers that do not yet supply delegated authority.
-The lease use is consumed atomically in the same SQLite transaction that claims the decision nonce
-and creates the `RESERVED` execution record. This makes the last lease use a one-winner operation
-under concurrency.
+This is a provider-neutral authority boundary, not a claim that AgentGuard includes every provider's native token-minting or secret-management service.
 
-Revoking a grant recursively revokes active descendant grants and their active leases. Revocation
-therefore closes the race between a parent revocation and a later leaf execution reservation. The
-execution ledger stores only grant/lease identifiers and the chain digest; it does not persist the
-full graph inside each execution record.
+## Provider/external-effect contract
 
+Before side-effecting dispatch on the configured provider path, AgentGuard persists an `ExternalEffectBinding` that correlates the execution, decision, intent digest, provider identity, endpoint/effect identity, attempt lineage, idempotency mechanism, and replay policy without persisting raw provider credentials.
 
-## Field-level context-to-execution integrity and typed releases
+The contract distinguishes:
 
-Phase 5E binds security-sensitive action fields to signed `FieldProvenanceStatement` artifacts.
-A statement identifies the exact JSON-pointer field, semantic type, canonical value digest, request/trace/tenant
-context, provenance labels, validity window, and optional signed transformation parents. Derived statements must
-preserve every parent provenance label; a transformation therefore cannot relabel untrusted input as trusted.
-Only terminal statements for the same field/value satisfy a sink constraint, while their full ancestor chain is
-still verified for signature, context, expiry, fan-in, depth, and label inheritance.
+- no proven idempotency;
+- provider-key idempotency with a bound key digest;
+- same-key replay where explicitly supported;
+- replay forbidden where provider semantics require it.
 
-Matched policy rules contribute field constraints cumulatively. A higher-priority allow rule cannot erase a
-field-integrity requirement from another matched rule. Incompatible requirements fail closed. A
-`FieldReleaseReceipt` permits only an explicitly configured release type and is bound to the exact field,
-value digest, provenance statement, semantic type, principal, subject, action, resource, tenant, request and
-trace. Releases do not rewrite provenance labels. A release used for execution is consumed atomically with
-the decision nonce, capability lease, and durable execution reservation.
+Without evidence that replay is safe, the default policy is `RECONCILE_BEFORE_RETRY`.
 
-The decision receipt and execution record bind secret-minimized field-integrity and release-set digests plus
-the effective integrity expiry. Execution attestations can carry those digests without embedding raw field
-values, provenance source content, or release contents.
+## Durable provider reconciliation
 
-## Staged high-impact execution
+An execution that reached ambiguous provider I/O remains durably `UNKNOWN`. Reconciliation is a separate append-only evidence lifecycle; it never rewrites the original execution state and never redispatches automatically.
 
-Phase 5F adds a durable `PreparedExecution` state for policy rules that require staging. Authorization may
-produce a staging requirement with a minimum delay, bounded commit window, reversibility classification, and
-optional fresh-approval requirement. `prepare_protected_execution` records an immutable prepared binding over
-the action security context; it does not dispatch externally.
+Provider evidence carries an explicit trust level:
 
-A commit reloads the prepared record, verifies that it is still PREPARED and inside its window, re-runs the
-full authorization/execution security checks, verifies the prepared binding, and then enters the ordinary
-protected reservation/dispatch path. When fresh approval is required, the approval identifier may change at
-commit while the prepared action binding remains fixed; the final execution authority digest still binds the
-actual approval used for dispatch. Cancellation and commit contend on durable state so only one terminal path
-wins. `REVERSIBLE` and `COMPENSATABLE` are control classifications, not a claim that AgentGuard can perform a
-generic provider-specific undo operation.
+- `AGENTGUARD_SIGNED` — AgentGuard-authenticated observation;
+- `PROVIDER_CORRELATED` — correlated provider operation evidence without a trusted provider truth assertion;
+- `PROVIDER_VERIFIED` — evidence from a reconciler whose provider verification contract is independently trusted.
 
-## Declared causal execution graph
+Only `PROVIDER_VERIFIED` evidence may confirm an `UNKNOWN` execution as succeeded or failed. Conflicting confirming evidence becomes an explicit conflict rather than last-write-wins. Provider operation identifiers are persisted as digests.
 
-Phase 5G binds protected actions to declared parent execution identifiers. Authorization resolves each parent
-from the durable execution ledger, rejects missing, non-terminal, cross-tenant, duplicate, or excessive-depth
-parents, inherits their causal labels, applies all matched causal constraints, and signs the resulting causal
-digest and depth into the decision receipt. The protected execution record persists the parent identifiers,
-causal digest, depth, labels, and tenant so execution-time revalidation cannot substitute a different ancestry.
+## Single-host multi-process reconciliation
 
-`build_causal_execution_graph` reconstructs a secret-minimized graph from those durable records and fails on
-missing nodes, cycles, or excessive traversal depth. The graph intentionally contains digests, states, labels,
-and declared edges rather than raw tool arguments. This proves integrity of ancestry supplied through the
-trusted AgentGuard integration; it does not discover undeclared dependencies in external systems.
+Multiple reconciliation processes coordinate through durable SQLite leases. Acquisition uses SQLite transactional locking; every takeover receives a monotonically newer fencing token. Authoritative resolution commits revalidate owner, token, and expiry in the same transaction that writes the resolution.
 
-## Deterministic policy intelligence and minimal authority
+A stale worker may have observed provider evidence before losing its lease, but it cannot commit authoritative resolution state after expiry/takeover. The one-shot operator reconciliation CLI and background worker participate in the same ownership protocol.
 
-Phase 5H is advisory and deterministic. `derive_minimal_authority` constructs an exact single-use,
-non-delegable capability scope for one normalized action. `analyze_authority` compares a granted scope against
-that recommendation and reports over-broad capability, protocol, server, tool, operation, resource, call-budget,
-or delegation dimensions. `analyze_policy_counterfactuals` re-evaluates the deterministic policy after removing
-each matched rule and reports the resulting effect and selected rule. These functions never change the policy,
-issue authority, or override the enforcement result, and no LLM participates in the trusted decision path.
+This is intentionally a **single-host, multi-process** contract. It is not distributed consensus and does not claim correctness for network filesystems or independent hosts. A future shared-state adapter must preserve the same atomic reservation and fencing invariants.
+
+## Audit and evidence
+
+Security events are secret-minimized before persistence. The local ledger is hash chained; signed checkpoints provide retained-prefix evidence when exported to independently controlled storage. Evidence bundles may authenticate their manifest. Signed execution attestations carry secret-minimized execution/decision correlation and can form digest-linked history across later reconciliation.
+
+Evidence authenticity proves what the trusted signer/reconciler asserted. It does not independently prove the external-world business truth of an unsigned provider event.
+
+## Release architecture
+
+The release candidate is validated through separate gates:
+
+- Linux quality on Python 3.11/3.12/3.13;
+- Linux/macOS/Windows compatibility on Python 3.13;
+- Security dependency/static/secret/architecture scans;
+- CodeQL;
+- repeated wheel build byte comparison and normalized-sdist comparison;
+- deterministic SBOM, release manifest, and SHA-256 checksums;
+- base-wheel and HTTP-extra clean-install smoke;
+- non-root container build/smoke.
+
+These gates establish engineering evidence for an exact commit. They do not replace external penetration testing, soak testing, deployment-specific threat review, or a production pilot.
