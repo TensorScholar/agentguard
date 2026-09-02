@@ -23,9 +23,48 @@ artifacts being deployed:
 
 - one AgentGuard process per downstream MCP server;
 - explicit `--server-id` per server/environment;
+- loopback HTTP binding by default;
 - local SQLite ledger mode `0600`;
 - exact one-use approvals;
 - periodic signed checkpoint copied to a remote repository or object store.
+
+### Single-host service gateway
+
+Phase 6E supports a bounded single-host, multi-process topology:
+
+- one or more protected HTTP gateway processes may share the durable core state;
+- one or more reconciliation worker processes may contend for UNKNOWN executions through SQLite
+  leases and monotonic fencing tokens;
+- an expired worker lease may be taken over, but a stale token cannot commit an authoritative
+  execution resolution;
+- provider reconciliation remains evidence-bound and does not make UNKNOWN blindly retryable;
+- startup recovery promotes stranded DISPATCHING work according to the existing execution contract;
+- worker diagnostics are structured JSON and do not include credential material or raw provider
+  response bodies.
+
+For reconciliation workers, use the same local core-state database and provider-reconciliation
+sidecar as the protected gateway. Keep the lease duration comfortably above the provider timeout;
+the CLI enforces a minimum margin of more than five seconds.
+
+### Remote HTTP listener
+
+Loopback is the default. A non-loopback `agentguard-mcp-http` listener is rejected unless all of the
+following are present:
+
+- a non-empty access token from `--access-token-env`;
+- at least one explicit `--allowed-host` value;
+- both `--tls-certfile` and `--tls-keyfile` pointing to existing files;
+- no wildcard Host entry.
+
+If `--require-origin` is enabled, at least one `--allowed-origin` is also required. TLS termination
+outside the AgentGuard process is not treated as equivalent by this CLI gate; a future deployment
+adapter may define a separately reviewed trusted-proxy boundary.
+
+Service probes:
+
+- `/livez` indicates that the HTTP process is alive;
+- `/readyz` checks durable-state readiness and returns 503 when the dependency probe fails;
+- `/healthz` remains for compatibility with earlier Phase 6A/6B deployments.
 
 ### CI agent gateway
 
@@ -36,11 +75,28 @@ artifacts being deployed:
 - `mcp-posture` and changed-config gate run before agent tasks;
 - signed evidence uploaded as a non-mutable build artifact.
 
-### Enterprise service
+### Multi-host enterprise service
 
-RC2 is not a complete distributed service. Before horizontal scaling, implement the existing state
-ports with a shared transactional store, central signer/HSM boundary, identity-backed approval
-service, broker integration, telemetry export and policy distribution with rollback controls.
+The Phase 6E SQLite coordination contract is **not** distributed HA. Do not place the SQLite state
+on a network filesystem and infer cross-host correctness from local tests. Horizontal multi-host
+scaling requires a shared transactional adapter that proves equivalent lease/fencing guarantees,
+plus the central signer/HSM, identity-backed approval, broker, telemetry and policy-distribution
+controls appropriate to that deployment.
+
+## Reconciliation worker
+
+The installed `agentguard-reconcile-worker` entrypoint provides background provider reconciliation.
+Operationally important controls include:
+
+- `--owner-id` for a stable operator-chosen process identity when desired;
+- `--lease-seconds` for ownership expiry;
+- `--poll-seconds` for bounded polling;
+- `--max-items-per-tick` for work bounding;
+- `--once` for one bounded pass;
+- `--health-check` for an executable readiness probe.
+
+The one-shot `agentguard-reconcile` command participates in the same lease protocol so manual
+operator reconciliation cannot silently race an active worker.
 
 ## Container
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 import pytest
@@ -85,6 +86,30 @@ class FakeService:
         return FakeResolution()
 
 
+class FakeState:
+    def __init__(self) -> None:
+        self.claimed = False
+        self.released = False
+        self.scope_entered = False
+        self.lease = object()
+
+    def claim_reconciliation_lease(self, execution_id, owner_id, *, now, lease_seconds):
+        del execution_id, owner_id, now, lease_seconds
+        self.claimed = True
+        return self.lease
+
+    @contextmanager
+    def resolution_lease(self, lease):
+        assert lease is self.lease
+        self.scope_entered = True
+        yield
+
+    def release_reconciliation_lease(self, lease) -> bool:
+        assert lease is self.lease
+        self.released = True
+        return True
+
+
 class FakeSender:
     last: FakeSender | None = None
 
@@ -116,7 +141,7 @@ def test_load_schema_rejects_invalid_or_incomplete_json(tmp_path) -> None:
         reconcile_cli._load_schema(incomplete)
 
 
-def test_reconcile_cli_wires_operator_profile_and_closes_sender(
+def test_reconcile_cli_wires_operator_profile_closes_sender_and_uses_fence(
     tmp_path, monkeypatch, capsys
 ) -> None:
     schema_path = tmp_path / "status-schema.json"
@@ -134,6 +159,7 @@ def test_reconcile_cli_wires_operator_profile_and_closes_sender(
     effect = _effect()
     effects = FakeEffects(effect)
     service = FakeService()
+    state = FakeState()
 
     monkeypatch.setattr(
         reconcile_cli,
@@ -146,7 +172,7 @@ def test_reconcile_cli_wires_operator_profile_and_closes_sender(
         staticmethod(lambda path: FakeSigner()),
     )
     monkeypatch.setattr(reconcile_cli, "Ed25519Verifier", lambda keys: object())
-    monkeypatch.setattr(reconcile_cli, "SQLiteState", lambda path: object())
+    monkeypatch.setattr(reconcile_cli, "SQLiteFencedReconciliationState", lambda path: state)
     monkeypatch.setattr(reconcile_cli, "AgentGuardService", lambda *args: service)
     monkeypatch.setattr(http_server, "HTTPXUpstreamSender", FakeSender)
     monkeypatch.setattr(
@@ -194,6 +220,9 @@ def test_reconcile_cli_wires_operator_profile_and_closes_sender(
     assert profile.failed_values == frozenset({"broken"})
     assert profile.pending_values == frozenset({"waiting"})
     assert profile.provider_operation_id_field is None
+    assert state.claimed is True
+    assert state.scope_entered is True
+    assert state.released is True
     assert FakeSender.last is not None
     assert FakeSender.last.timeout_seconds == 4.5
     assert FakeSender.last.max_response_bytes == 12345

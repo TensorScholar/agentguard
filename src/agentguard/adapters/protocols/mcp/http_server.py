@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hmac
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -102,6 +102,7 @@ def create_protected_mcp_http_app(
     require_origin: bool = False,
     access_token: str | None = None,
     stream_forwarder: HTTPXStreamForwarder | None = None,
+    readiness_probe: Callable[[], bool] | None = None,
 ) -> Starlette:
     if not allowed_hosts:
         raise ValueError("at least one allowed Host is required")
@@ -116,6 +117,18 @@ def create_protected_mcp_http_app(
                 "server_id": gateway.binding.server_id,
             }
         )
+
+    async def live(_: Request) -> Response:
+        return JSONResponse({"ok": True})
+
+    async def ready(_: Request) -> Response:
+        if readiness_probe is None:
+            return JSONResponse({"ok": True})
+        try:
+            is_ready = bool(await run_in_threadpool(readiness_probe))
+        except Exception:
+            is_ready = False
+        return JSONResponse({"ok": is_ready}, status_code=200 if is_ready else 503)
 
     async def mcp(request: Request) -> Response:
         security_error = _validate_request_security(
@@ -159,6 +172,8 @@ def create_protected_mcp_http_app(
     return Starlette(
         routes=[
             Route("/healthz", health, methods=["GET"]),
+            Route("/livez", live, methods=["GET"]),
+            Route("/readyz", ready, methods=["GET"]),
             Route("/mcp", mcp, methods=["POST"]),
         ],
         lifespan=lifespan,

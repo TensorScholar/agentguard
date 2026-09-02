@@ -49,6 +49,8 @@ dev = [
 
 [project.scripts]
 agentguard = "agentguard.cli:entrypoint"
+agentguard-reconcile = "agentguard.reconcile_cli:entrypoint"
+agentguard-reconcile-worker = "agentguard.reconcile_worker_cli:entrypoint"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

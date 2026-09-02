@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import ipaddress
 import os
 from pathlib import Path
 
@@ -18,15 +17,10 @@ from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService
 from agentguard.cli.io import load_policy
 from agentguard.domain import CredentialAuthorityProfile, Principal, ProviderIdentity
-
-
-def _loopback_listener(host: str) -> bool:
-    if host.lower() == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
+from agentguard.service_deployment import (
+    ServiceDeploymentError,
+    validate_http_service_deployment,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,6 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allowed-origin", action="append", default=[])
     parser.add_argument("--require-origin", action="store_true")
     parser.add_argument("--access-token-env", default="AGENTGUARD_HTTP_ACCESS_TOKEN")
+    parser.add_argument("--tls-certfile", type=Path)
+    parser.add_argument("--tls-keyfile", type=Path)
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--max-message-bytes", type=int, default=1_000_000)
     parser.add_argument("--max-response-bytes", type=int, default=4_000_000)
@@ -79,11 +75,6 @@ def build_parser() -> argparse.ArgumentParser:
 def entrypoint() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    if not _loopback_listener(args.listen_host):
-        parser.error(
-            "Phase 6A/6B server binds to loopback only; "
-            "service/multi-process deployment is Phase 6E"
-        )
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535")
     if args.timeout_seconds <= 0:
@@ -100,6 +91,20 @@ def entrypoint() -> None:
         if not args.credential_key.is_file():
             parser.error("--credential-key must reference an existing broker private key")
 
+    token = os.environ.get(args.access_token_env) or None
+    try:
+        validate_http_service_deployment(
+            listen_host=args.listen_host,
+            explicit_allowed_hosts=tuple(args.allowed_host),
+            allowed_origins=tuple(args.allowed_origin),
+            require_origin=args.require_origin,
+            access_token=token,
+            tls_certfile=args.tls_certfile,
+            tls_keyfile=args.tls_keyfile,
+        )
+    except ServiceDeploymentError as exc:
+        parser.error(str(exc))
+
     try:
         import uvicorn
 
@@ -112,7 +117,6 @@ def entrypoint() -> None:
         parser.error("HTTP support is not installed; install AgentGuard with the 'http' extra")
         raise AssertionError("unreachable") from exc
 
-    token = os.environ.get(args.access_token_env)
     binding = MCPHTTPServerBinding.for_url(args.server_id, args.upstream_url)
     signer = Ed25519Signer.load_private(args.key)
     verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
@@ -188,6 +192,14 @@ def entrypoint() -> None:
     )
     default_hosts = {args.listen_host, "localhost", "127.0.0.1", "::1"}
     allowed_hosts = frozenset(args.allowed_host or default_hosts)
+
+    def readiness_probe() -> bool:
+        try:
+            state.get_execution("__agentguard_readiness_probe__")
+        except Exception:
+            return False
+        return True
+
     app = create_protected_mcp_http_app(
         gateway,
         allowed_hosts=allowed_hosts,
@@ -197,8 +209,16 @@ def entrypoint() -> None:
         stream_forwarder=HTTPXStreamForwarder(
             binding.upstream_url, timeout_seconds=args.timeout_seconds
         ),
+        readiness_probe=readiness_probe,
     )
-    uvicorn.run(app, host=args.listen_host, port=args.port, log_level="info")
+    uvicorn.run(
+        app,
+        host=args.listen_host,
+        port=args.port,
+        log_level="info",
+        ssl_certfile=str(args.tls_certfile) if args.tls_certfile is not None else None,
+        ssl_keyfile=str(args.tls_keyfile) if args.tls_keyfile is not None else None,
+    )
 
 
 if __name__ == "__main__":

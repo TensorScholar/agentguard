@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +14,7 @@ from agentguard.adapters.reconciliation import (
     MCPHTTPProviderStatusReconciler,
     SQLiteProviderEffectRepository,
 )
-from agentguard.adapters.storage.sqlite import SQLiteState
+from agentguard.adapters.storage.sqlite import SQLiteFencedReconciliationState
 from agentguard.application import AgentGuardService, ProviderBoundExecutionReconciler
 
 
@@ -51,6 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pending-value", action="append", default=[])
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--max-response-bytes", type=int, default=4_000_000)
+    parser.add_argument("--owner-id")
+    parser.add_argument("--lease-seconds", type=int, default=60)
     return parser
 
 
@@ -61,6 +65,8 @@ def entrypoint() -> None:
         parser.error("--timeout-seconds must be greater than zero")
     if args.max_response_bytes < 1:
         parser.error("--max-response-bytes must be positive")
+    if args.lease_seconds <= args.timeout_seconds + 5:
+        parser.error("--lease-seconds must exceed --timeout-seconds by more than 5 seconds")
     try:
         schema = _load_schema(args.status_schema)
     except ValueError as exc:
@@ -83,7 +89,7 @@ def entrypoint() -> None:
 
     signer = Ed25519Signer.load_private(args.key)
     verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
-    state = SQLiteState(args.state)
+    state = SQLiteFencedReconciliationState(args.state)
     service = AgentGuardService(signer, verifier, state)
 
     profile_kwargs: dict[str, Any] = {
@@ -114,6 +120,16 @@ def entrypoint() -> None:
     except ValueError as exc:
         parser.error(str(exc))
 
+    owner_id = args.owner_id or f"operator:{os.getpid()}"
+    lease = state.claim_reconciliation_lease(
+        args.execution_id,
+        owner_id,
+        now=datetime.now(UTC),
+        lease_seconds=args.lease_seconds,
+    )
+    if lease is None:
+        parser.error("execution is not UNKNOWN or reconciliation is already owned")
+
     sender = HTTPXUpstreamSender(
         binding.upstream_url,
         timeout_seconds=args.timeout_seconds,
@@ -127,8 +143,10 @@ def entrypoint() -> None:
             profile=profile,
         )
         reconciler = ProviderBoundExecutionReconciler(provider_effects, provider_reconciler)
-        resolution = service.reconcile_execution(args.execution_id, reconciler)
+        with state.resolution_lease(lease):
+            resolution = service.reconcile_execution(args.execution_id, reconciler)
     finally:
+        state.release_reconciliation_lease(lease)
         sender.close()
     print(resolution.model_dump_json(indent=2))
 

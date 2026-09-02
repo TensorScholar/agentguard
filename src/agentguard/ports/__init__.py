@@ -25,6 +25,11 @@ from .interfaces import (
     StateRepository,
     ToolSchemaResolver,
 )
+from .reconciliation_work import (
+    FencedReconciliationState,
+    ReconciliationLease,
+    ReconciliationLeaseRepository,
+)
 
 __all__ = [
     "AmbiguousExecutionError",
@@ -41,10 +46,13 @@ __all__ = [
     "DefiniteExecutionFailure",
     "ExecutionReconciler",
     "ExecutionRepository",
+    "FencedReconciliationState",
     "NonceRepository",
     "ProtectedExecutor",
     "ProviderEffectRepository",
     "ProviderExecutionReconciler",
+    "ReconciliationLease",
+    "ReconciliationLeaseRepository",
     "ReconciliationRepository",
     "ResolvedCredentialMaterial",
     "ResolvedToolSchema",
