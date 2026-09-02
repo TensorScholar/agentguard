@@ -5,13 +5,18 @@ import ipaddress
 import os
 from pathlib import Path
 
+from agentguard.adapters.broker import (
+    BrokeredCredentialAuthority,
+    EnvironmentCredentialSource,
+    SQLiteCredentialProfileRepository,
+)
 from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
 from agentguard.adapters.protocols.mcp.http_gateway import MCPProtectedHTTPGateway
 from agentguard.adapters.protocols.mcp.modern import MCPHTTPServerBinding
 from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService
 from agentguard.cli.io import load_policy
-from agentguard.domain import Principal
+from agentguard.domain import CredentialAuthorityProfile, Principal, ProviderIdentity
 
 
 def _loopback_listener(host: str) -> bool:
@@ -45,6 +50,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--max-message-bytes", type=int, default=1_000_000)
     parser.add_argument("--max-response-bytes", type=int, default=4_000_000)
+
+    credential = parser.add_argument_group("production credential authority")
+    credential.add_argument("--credential-env")
+    credential.add_argument("--credential-audience")
+    credential.add_argument("--credential-scope", action="append", default=[])
+    credential.add_argument("--credential-profile-id", default="mcp-http-provider")
+    credential.add_argument("--credential-provider-id")
+    credential.add_argument("--credential-broker-name", default="agentguard-http-credential-broker")
+    credential.add_argument(
+        "--credential-key", type=Path, default=Path(".agentguard/credential-broker-private.pem")
+    )
+    credential.add_argument("--credential-key-id", default="credential-broker-ed25519")
+    credential.add_argument(
+        "--credential-state", type=Path, default=Path(".agentguard/credential-authority.sqlite")
+    )
+    credential.add_argument("--credential-header-name", default="Authorization")
+    credential.add_argument("--credential-header-scheme", default="Bearer")
     return parser
 
 
@@ -62,6 +84,15 @@ def entrypoint() -> None:
         parser.error("--timeout-seconds must be greater than zero")
     if args.max_message_bytes < 1 or args.max_response_bytes < 1:
         parser.error("message/response byte limits must be positive")
+    if args.credential_env is None and (args.credential_audience or args.credential_scope):
+        parser.error("--credential-env is required when configuring credential authority")
+    if args.credential_env is not None:
+        if not args.credential_audience:
+            parser.error("--credential-audience is required with --credential-env")
+        if not args.credential_scope:
+            parser.error("at least one --credential-scope is required with --credential-env")
+        if not args.credential_key.is_file():
+            parser.error("--credential-key must reference an existing broker private key")
 
     try:
         import uvicorn
@@ -80,14 +111,57 @@ def entrypoint() -> None:
     signer = Ed25519Signer.load_private(args.key)
     verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
     state = SQLiteState(args.state)
-    service = AgentGuardService(signer, verifier, state)
-    service.recover_incomplete_executions()
     principal = Principal(
         agent_id=args.agent_id,
         workload_id=args.workload_id,
         tenant_id=args.tenant_id,
         identity_verified=token is not None,
     )
+
+    credential_authority = None
+    provider_identity = ProviderIdentity(
+        provider_id=args.credential_provider_id or binding.server_id,
+        tenant_id=principal.tenant_id,
+        endpoint_digest=binding.endpoint_digest,
+    )
+    broker_grant_verifier = None
+    if args.credential_env is not None:
+        source = EnvironmentCredentialSource(args.credential_env)
+        profiles = SQLiteCredentialProfileRepository(args.credential_state)
+        header_scheme = (
+            None
+            if args.credential_header_scheme.lower() == "none"
+            else args.credential_header_scheme
+        )
+        profile = CredentialAuthorityProfile(
+            profile_id=args.credential_profile_id,
+            provider=provider_identity,
+            audience=args.credential_audience,
+            scopes=frozenset(args.credential_scope),
+            tenant_id=principal.tenant_id,
+            source_binding_digest=source.binding_digest,
+            header_name=args.credential_header_name,
+            header_scheme=header_scheme,
+        )
+        profiles.store_credential_profile(profile)
+        broker_signer = Ed25519Signer.load_private(
+            args.credential_key, key_id=args.credential_key_id
+        )
+        credential_authority = BrokeredCredentialAuthority(
+            name=args.credential_broker_name,
+            signer=broker_signer,
+            profiles=profiles,
+            sources={profile.profile_id: source},
+        )
+        broker_grant_verifier = credential_authority.verifier
+
+    service = AgentGuardService(
+        signer,
+        verifier,
+        state,
+        broker_grant_verifier=broker_grant_verifier,
+    )
+    service.recover_incomplete_executions()
     sender = HTTPXUpstreamSender(
         binding.upstream_url,
         timeout_seconds=args.timeout_seconds,
@@ -99,6 +173,9 @@ def entrypoint() -> None:
         principal,
         binding,
         sender,
+        credential_broker=credential_authority,
+        credential_material_resolver=credential_authority,
+        provider_identity=provider_identity,
         max_message_bytes=args.max_message_bytes,
     )
     default_hosts = {args.listen_host, "localhost", "127.0.0.1", "::1"}

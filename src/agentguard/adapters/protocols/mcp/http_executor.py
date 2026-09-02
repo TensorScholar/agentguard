@@ -3,9 +3,18 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agentguard.domain import ExecutionStatus, ProtectedExecutionResult, VerifiedExecution
+from agentguard.domain import (
+    ExecutionStatus,
+    ProtectedExecutionResult,
+    ProviderIdentity,
+    VerifiedExecution,
+)
 from agentguard.engine.canonical import digest
-from agentguard.ports import AmbiguousExecutionError, DefiniteExecutionFailure
+from agentguard.ports import (
+    AmbiguousExecutionError,
+    CredentialMaterialResolver,
+    DefiniteExecutionFailure,
+)
 
 from .http_gateway_types import HTTPUpstreamSender, UpstreamTransportError
 from .jsonrpc import encode_message
@@ -26,11 +35,16 @@ class MCPHTTPProtectedExecutor:
         sender: HTTPUpstreamSender,
         envelope: ModernRequestEnvelope,
         tool_schema: dict[str, Any],
+        provider_identity: ProviderIdentity | None = None,
+        credential_resolver: CredentialMaterialResolver | None = None,
     ) -> None:
         self.binding = binding
         self.sender = sender
         self.envelope = envelope
         self.tool_schema = tool_schema
+        self.provider_identity = provider_identity
+        self.credential_resolver = credential_resolver
+        self.supports_brokered_credentials = credential_resolver is not None
         self.response: dict[str, Any] | None = None
 
     def execute(self, verified_execution: VerifiedExecution) -> ProtectedExecutionResult:
@@ -49,6 +63,7 @@ class MCPHTTPProtectedExecutor:
         }
         headers = canonical_standard_headers(downstream)
         headers.update(parameter_headers_for_call(downstream, self.tool_schema))
+        self._inject_brokered_credential(verified_execution, headers)
         try:
             response = self.sender.send(encode_message(downstream), headers)
         except UpstreamTransportError as exc:
@@ -96,6 +111,27 @@ class MCPHTTPProtectedExecutor:
             result_digest=result_digest,
         )
 
+    def _inject_brokered_credential(
+        self, verified: VerifiedExecution, headers: dict[str, str]
+    ) -> None:
+        authority = verified.credential_authority
+        if authority is None:
+            return
+        if authority.mode != "brokered_execution":
+            # VerifiedExecution deliberately contains no opaque credential handle. Such grants
+            # cannot be reconstructed safely at this boundary.
+            raise DefiniteExecutionFailure("mcp_http.opaque_credential_not_dispatchable")
+        if self.credential_resolver is None or self.provider_identity is None:
+            raise DefiniteExecutionFailure("credential.material_resolver_unavailable")
+        try:
+            material = self.credential_resolver.resolve(authority, self.provider_identity)
+        except (ValueError, RuntimeError) as exc:
+            raise DefiniteExecutionFailure("credential.material_resolution_failed") from exc
+        normalized = {name.lower() for name in headers}
+        if material.header_name.lower() in normalized:
+            raise DefiniteExecutionFailure("credential.header_collision")
+        headers[material.header_name] = material.header_value
+
     def _validate_binding(self, verified: VerifiedExecution) -> None:
         intent = verified.intent
         resource = intent.resource
@@ -118,3 +154,7 @@ class MCPHTTPProtectedExecutor:
             raise DefiniteExecutionFailure("mcp_http.server_binding_digest_mismatch")
         if attributes.get("request_envelope_digest") != digest(self.envelope.as_meta()):
             raise DefiniteExecutionFailure("mcp_http.request_envelope_binding_mismatch")
+        if self.provider_identity is None:
+            raise DefiniteExecutionFailure("mcp_http.provider_identity_missing")
+        if attributes.get("provider_identity_digest") != digest(self.provider_identity):
+            raise DefiniteExecutionFailure("mcp_http.provider_identity_binding_mismatch")

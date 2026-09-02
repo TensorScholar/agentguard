@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any, Mapping
 from uuid import uuid4
 
 from agentguard.application import AgentGuardService, ExecutionPersistenceError
-from agentguard.domain import Effect, ExecutionStatus, PolicyDocument, Principal, Resource
+from agentguard.domain import (
+    CredentialRequest,
+    Effect,
+    ExecutionStatus,
+    PolicyDocument,
+    Principal,
+    ProviderIdentity,
+    Resource,
+)
 from agentguard.engine.canonical import digest
+from agentguard.ports import CredentialBroker, CredentialMaterialResolver
 
 from .http_executor import MCPHTTPProtectedExecutor
 from .http_gateway_types import (
@@ -58,6 +68,8 @@ class MCPProtectedHTTPGateway:
     Each HTTP request is independently validated. Protected tools/call requests refresh their tool
     schema from the configured upstream before authorization, canonicalize all MCP routing and
     x-mcp-header fields, and dispatch only through AgentGuard's one-winner protected executor.
+    Credential-bound calls receive brokered provider material only after authorization and only at
+    the final protected dispatch boundary.
     """
 
     def __init__(
@@ -68,6 +80,9 @@ class MCPProtectedHTTPGateway:
         binding: MCPHTTPServerBinding,
         sender: HTTPUpstreamSender,
         *,
+        credential_broker: CredentialBroker | None = None,
+        credential_material_resolver: CredentialMaterialResolver | None = None,
+        provider_identity: ProviderIdentity | None = None,
         max_message_bytes: int = 1_000_000,
         max_schema_pages: int = 32,
         max_schema_tools: int = 4096,
@@ -76,11 +91,20 @@ class MCPProtectedHTTPGateway:
             raise ValueError("max_message_bytes must be greater than zero")
         if max_schema_pages < 1 or max_schema_tools < 1:
             raise ValueError("schema inventory limits must be positive")
+        if (credential_broker is None) != (credential_material_resolver is None):
+            raise ValueError("credential broker and material resolver must be configured together")
         self.service = service
         self.policy = policy
         self.principal = principal
         self.binding = binding
         self.sender = sender
+        self.credential_broker = credential_broker
+        self.credential_material_resolver = credential_material_resolver
+        self.provider_identity = provider_identity or ProviderIdentity(
+            provider_id=binding.server_id,
+            tenant_id=principal.tenant_id,
+            endpoint_digest=binding.endpoint_digest,
+        )
         self.max_message_bytes = max_message_bytes
         self.max_schema_pages = max_schema_pages
         self.max_schema_tools = max_schema_tools
@@ -174,6 +198,7 @@ class MCPProtectedHTTPGateway:
                 "endpoint_digest": self.binding.endpoint_digest,
                 "server_binding_digest": self.binding.binding_digest,
                 "request_envelope_digest": digest(envelope.as_meta()),
+                "provider_identity_digest": digest(self.provider_identity),
             },
         )
         bound_message = {
@@ -219,13 +244,6 @@ class MCPProtectedHTTPGateway:
                     "reason_codes": list(receipt.reason_codes),
                 },
             )
-        if receipt.credential_ceiling is not None:
-            return self._error(
-                request_id,
-                PROTECTED_APPROVAL_REQUIRED,
-                "credential-bound protected HTTP execution is reserved for Phase 6C",
-                data={"decision_id": receipt.decision_id},
-            )
         if receipt.staging_requirement is not None and receipt.staging_requirement.required:
             return self._error(
                 request_id,
@@ -234,17 +252,61 @@ class MCPProtectedHTTPGateway:
                 data={"decision_id": receipt.decision_id},
             )
 
+        grant = None
+        ceiling = receipt.credential_ceiling
+        if ceiling is not None:
+            if self.credential_broker is None or self.credential_material_resolver is None:
+                return self._error(
+                    request_id,
+                    PROTECTED_EXECUTION_ERROR,
+                    "credential authority is unavailable for this protected call",
+                    data={"decision_id": receipt.decision_id},
+                )
+            remaining_seconds = int((receipt.expires_at - datetime.now(UTC)).total_seconds())
+            if remaining_seconds < 1:
+                return self._error(
+                    request_id,
+                    PROTECTED_EXECUTION_ERROR,
+                    "authorization expired before credential issuance",
+                    data={"decision_id": receipt.decision_id},
+                )
+            credential_request = CredentialRequest(
+                request_id="mcpcred_" + uuid4().hex,
+                trace_id=receipt.trace_id,
+                decision_id=receipt.decision_id,
+                audience=ceiling.audience,
+                scopes=ceiling.scopes,
+                requested_ttl_seconds=min(ceiling.maximum_ttl_seconds, remaining_seconds),
+                tenant_id=ceiling.tenant_id,
+            )
+            try:
+                grant = self.service.request_credential(
+                    intent,
+                    receipt,
+                    credential_request,
+                    self.credential_broker,
+                )
+            except Exception as exc:
+                return self._error(
+                    request_id,
+                    PROTECTED_EXECUTION_ERROR,
+                    "credential issuance failed",
+                    data={"reason": type(exc).__name__, "decision_id": receipt.decision_id},
+                )
+
         executor = MCPHTTPProtectedExecutor(
             binding=self.binding,
             sender=self.sender,
             envelope=envelope,
             tool_schema=schema,
+            provider_identity=self.provider_identity,
+            credential_resolver=(self.credential_material_resolver if grant is not None else None),
         )
         try:
             outcome = self.service.execute_protected(
                 intent,
                 receipt,
-                None,
+                grant,
                 executor,
                 current_policy=self.policy,
             )
@@ -277,10 +339,9 @@ class MCPProtectedHTTPGateway:
                 headers={"content-type": "application/json"},
                 body=encode_message(client_response),
             )
-        code = PROTECTED_EXECUTION_ERROR
         return self._error(
             request_id,
-            code,
+            PROTECTED_EXECUTION_ERROR,
             "protected HTTP execution completed without a relayable provider response",
             data={"execution_id": outcome.execution_id, "retry_safe": False},
         )

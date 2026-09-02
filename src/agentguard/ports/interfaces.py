@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -11,6 +11,8 @@ from agentguard.domain import (
     AuthorityGrant,
     AuthorityGrantRecord,
     CapabilityLease,
+    CredentialAuthorityProfile,
+    CredentialAuthorityProfileRecord,
     CredentialGrant,
     CredentialRequest,
     DecisionReceipt,
@@ -19,7 +21,9 @@ from agentguard.domain import (
     ExecutionState,
     PreparedExecution,
     ProtectedExecutionResult,
+    ProviderIdentity,
     ReconciliationEvidence,
+    VerifiedCredentialAuthority,
     VerifiedExecution,
 )
 
@@ -46,6 +50,53 @@ class BrokerGrantVerifier(Protocol):
         payload: bytes,
         signature: bytes,
     ) -> bool: ...
+
+
+@dataclass(frozen=True, repr=False)
+class ResolvedCredentialMaterial:
+    """Ephemeral secret material. Callers must never persist, log, or serialize this value."""
+
+    profile_id: str
+    header_name: str
+    header_value: str = field(repr=False)
+    source_binding_digest: str
+
+
+class CredentialMaterialSource(Protocol):
+    @property
+    def binding_digest(self) -> str: ...
+
+    def read(self) -> str: ...
+
+
+class CredentialProfileRepository(Protocol):
+    def store_credential_profile(self, profile: CredentialAuthorityProfile) -> None: ...
+
+    def get_credential_profile(
+        self, profile_id: str
+    ) -> CredentialAuthorityProfileRecord | None: ...
+
+    def find_active_credential_profile(
+        self, audience: str, tenant_id: str | None
+    ) -> CredentialAuthorityProfileRecord | None: ...
+
+    def get_credential_profile_by_binding_digest(
+        self, binding_digest: str
+    ) -> CredentialAuthorityProfileRecord | None: ...
+
+    def revoke_credential_profile(
+        self, profile_id: str, revoked_at: datetime, reason: str
+    ) -> CredentialAuthorityProfileRecord: ...
+
+
+class CredentialMaterialResolver(Protocol):
+    def resolve(
+        self,
+        authority: VerifiedCredentialAuthority,
+        provider: ProviderIdentity,
+        *,
+        now: datetime | None = None,
+    ) -> ResolvedCredentialMaterial: ...
 
 
 @dataclass(frozen=True)

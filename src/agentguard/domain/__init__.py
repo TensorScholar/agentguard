@@ -1,3 +1,8 @@
+from .credential_authority import (
+    CredentialAuthorityProfile,
+    CredentialAuthorityProfileRecord,
+    CredentialProfileStatus,
+)
 from .enums import (
     AuditEventType,
     AuthorityGrantStatus,
@@ -109,9 +114,12 @@ __all__ = [
     "CausalConstraint",
     "CausalExecutionGraph",
     "CausalGraphNode",
+    "CredentialAuthorityProfile",
+    "CredentialAuthorityProfileRecord",
     "CredentialBinding",
     "CredentialCeiling",
     "CredentialGrant",
+    "CredentialProfileStatus",
     "CredentialRequest",
     "DecisionReceipt",
     "DelegationContext",
