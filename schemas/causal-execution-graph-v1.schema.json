@@ -1,0 +1,142 @@
+{
+  "$defs": {
+    "CausalGraphNode": {
+      "additionalProperties": false,
+      "properties": {
+        "causal_depth": {
+          "maximum": 64,
+          "minimum": 0,
+          "title": "Causal Depth",
+          "type": "integer"
+        },
+        "causal_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causal Digest"
+        },
+        "execution_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "intent_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Intent Digest",
+          "type": "string"
+        },
+        "labels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProvenanceLabel"
+          },
+          "title": "Labels",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "parent_execution_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Parent Execution Ids",
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/ExecutionState"
+        },
+        "tenant_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tenant Id"
+        }
+      },
+      "required": [
+        "execution_id",
+        "intent_digest",
+        "causal_depth",
+        "state"
+      ],
+      "title": "CausalGraphNode",
+      "type": "object"
+    },
+    "ExecutionState": {
+      "enum": [
+        "reserved",
+        "dispatching",
+        "succeeded",
+        "failed",
+        "unknown"
+      ],
+      "title": "ExecutionState",
+      "type": "string"
+    },
+    "ProvenanceLabel": {
+      "enum": [
+        "trusted_system_instruction",
+        "authenticated_user_input",
+        "internal_database",
+        "external_web_content",
+        "external_email",
+        "third_party_document",
+        "tool_output",
+        "persistent_memory",
+        "other_agent_message",
+        "unverified"
+      ],
+      "title": "ProvenanceLabel",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "graph_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Graph Digest",
+      "type": "string"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/CausalGraphNode"
+      },
+      "title": "Nodes",
+      "type": "array"
+    },
+    "root_execution_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Root Execution Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "root_execution_id",
+    "nodes",
+    "graph_digest"
+  ],
+  "title": "CausalExecutionGraph",
+  "type": "object"
+}

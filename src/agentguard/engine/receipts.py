@@ -12,6 +12,7 @@ from agentguard.domain import (
     Effect,
     EnforcementMode,
     ExecutionBudget,
+    FieldIntegrityBinding,
 )
 from agentguard.ports import SignatureVerifier, Signer
 
@@ -56,6 +57,9 @@ def issue_decision_receipt(
     now: datetime | None = None,
     ttl_seconds: int = 60,
     mode: EnforcementMode = EnforcementMode.ENFORCE,
+    field_binding: FieldIntegrityBinding | None = None,
+    causal_digest: str | None = None,
+    causal_depth: int | None = None,
 ) -> DecisionReceipt:
     now = now or datetime.now(UTC)
     if ttl_seconds < 1 or ttl_seconds > MAX_DECISION_TTL_SECONDS:
@@ -85,6 +89,12 @@ def issue_decision_receipt(
         effects_digest=digest(intent.effects),
         tool_schema_digest=digest(intent.tool_schema),
         policy_digest=evaluation.policy_digest,
+        field_integrity_digest=(field_binding.integrity_digest if field_binding else None),
+        field_release_set_digest=(field_binding.release_set_digest if field_binding else None),
+        field_integrity_expires_at=(field_binding.expires_at if field_binding else None),
+        causal_digest=causal_digest,
+        causal_depth=causal_depth,
+        staging_requirement=evaluation.staging_requirement,
         credential_ceiling=ceiling,
         execution_budget=budget,
         enforcement_mode=mode,

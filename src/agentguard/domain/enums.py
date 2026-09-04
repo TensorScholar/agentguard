@@ -27,6 +27,37 @@ class ProvenanceLabel(str, Enum):
     UNVERIFIED = "unverified"
 
 
+class FieldReleaseType(str, Enum):
+    HUMAN_ENDORSEMENT = "human_endorsement"
+    SYSTEM_ATTESTATION = "system_attestation"
+    VERIFIED_TRANSFORMATION = "verified_transformation"
+
+
+class ReversibilityMode(str, Enum):
+    REVERSIBLE = "reversible"
+    COMPENSATABLE = "compensatable"
+    IRREVERSIBLE = "irreversible"
+
+
+class PreparedExecutionStatus(str, Enum):
+    PREPARED = "prepared"
+    COMMITTED = "committed"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class PolicyIntelligenceFindingType(str, Enum):
+    OVERPRIVILEGED_CAPABILITY = "overprivileged_capability"
+    OVERPRIVILEGED_PROTOCOL = "overprivileged_protocol"
+    OVERPRIVILEGED_SERVER = "overprivileged_server"
+    OVERPRIVILEGED_TOOL = "overprivileged_tool"
+    OVERPRIVILEGED_OPERATION = "overprivileged_operation"
+    OVERPRIVILEGED_RESOURCE_TYPE = "overprivileged_resource_type"
+    OVERPRIVILEGED_RESOURCE_ID = "overprivileged_resource_id"
+    EXCESS_CALL_BUDGET = "excess_call_budget"
+    UNNEEDED_DELEGATION = "unneeded_delegation"
+
+
 class AuditEventType(str, Enum):
     AUTHORIZATION_REQUESTED = "authorization.requested"
     AUTHORIZATION_DECIDED = "authorization.decided"
@@ -40,9 +71,56 @@ class AuditEventType(str, Enum):
     EXECUTION_UNKNOWN = "execution.unknown"
     RECEIPT_REJECTED = "receipt.rejected"
     RECEIPT_CONSUMED = "receipt.consumed"
+    EXECUTION_RECONCILIATION_STARTED = "execution.reconciliation.started"
+    EXECUTION_RECONCILED = "execution.reconciliation.resolved"
+    EXECUTION_ATTESTATION_ISSUED = "execution.attestation.issued"
+    AUTHORITY_GRANTED = "authority.granted"
+    AUTHORITY_DELEGATED = "authority.delegated"
+    AUTHORITY_REVOKED = "authority.revoked"
+    CAPABILITY_LEASE_ISSUED = "authority.lease.issued"
+    CAPABILITY_LEASE_CONSUMED = "authority.lease.consumed"
+    FIELD_RELEASE_CONSUMED = "field.release.consumed"
+    EXECUTION_PREPARED = "execution.prepared"
+    EXECUTION_PREPARE_CANCELLED = "execution.prepare.cancelled"
+    EXECUTION_COMMITTED = "execution.committed"
+    CAUSAL_CONTEXT_BOUND = "execution.causal_context.bound"
+
+
+class ExecutionState(str, Enum):
+    RESERVED = "reserved"
+    DISPATCHING = "dispatching"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
 
 
 class ExecutionStatus(str, Enum):
     SUCCESS = "success"
     FAILURE = "failure"
     UNKNOWN = "unknown"
+
+
+class ReconciliationStatus(str, Enum):
+    CONFIRMED_SUCCEEDED = "confirmed_succeeded"
+    CONFIRMED_FAILED = "confirmed_failed"
+    STILL_UNKNOWN = "still_unknown"
+    UNSUPPORTED = "unsupported"
+    CONFLICT = "conflict"
+
+
+class EvidenceTrustLevel(str, Enum):
+    AGENTGUARD_SIGNED = "agentguard_signed"
+    PROVIDER_CORRELATED = "provider_correlated"
+    PROVIDER_VERIFIED = "provider_verified"
+
+
+class AuthorityGrantStatus(str, Enum):
+    ACTIVE = "active"
+    REVOKED = "revoked"
+
+
+class CapabilityLeaseStatus(str, Enum):
+    ACTIVE = "active"
+    EXHAUSTED = "exhausted"
+    REVOKED = "revoked"
+    EXPIRED = "expired"

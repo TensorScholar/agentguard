@@ -1,0 +1,84 @@
+{
+  "$defs": {
+    "EvidenceTrustLevel": {
+      "enum": [
+        "agentguard_signed",
+        "provider_correlated",
+        "provider_verified"
+      ],
+      "title": "EvidenceTrustLevel",
+      "type": "string"
+    },
+    "ReconciliationStatus": {
+      "enum": [
+        "confirmed_succeeded",
+        "confirmed_failed",
+        "still_unknown",
+        "unsupported",
+        "conflict"
+      ],
+      "title": "ReconciliationStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "error_code": {
+      "anyOf": [
+        {
+          "maxLength": 300,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "evidence_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Evidence Digest",
+      "type": "string"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "provider_operation_id": {
+      "anyOf": [
+        {
+          "maxLength": 500,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Operation Id"
+    },
+    "source": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Source",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ReconciliationStatus"
+    },
+    "trust_level": {
+      "$ref": "#/$defs/EvidenceTrustLevel",
+      "default": "agentguard_signed"
+    }
+  },
+  "required": [
+    "status",
+    "source",
+    "evidence_digest",
+    "observed_at"
+  ],
+  "title": "ReconciliationEvidence",
+  "type": "object"
+}

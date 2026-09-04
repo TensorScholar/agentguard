@@ -4,8 +4,8 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .enums import Effect, ProvenanceLabel
-from .models import CredentialCeiling, ExecutionBudget, StrictModel
+from .enums import Effect, FieldReleaseType, ProvenanceLabel
+from .models import CredentialCeiling, ExecutionBudget, StagingRequirement, StrictModel
 
 
 class PrincipalMatcher(StrictModel):
@@ -42,6 +42,27 @@ class ProvenanceMatcher(StrictModel):
     verified_required: bool = False
 
 
+class FieldIntegrityConstraint(StrictModel):
+    field_path: str = Field(min_length=1, max_length=500, pattern=r"^/")
+    semantic_type: str = Field(min_length=1, max_length=200)
+    allowed_labels: frozenset[ProvenanceLabel] = frozenset()
+    denied_labels: frozenset[ProvenanceLabel] = frozenset()
+    provenance_required: bool = True
+    permitted_release_types: frozenset[FieldReleaseType] = frozenset()
+
+    @model_validator(mode="after")
+    def labels_do_not_conflict(self) -> "FieldIntegrityConstraint":
+        if self.allowed_labels & self.denied_labels:
+            raise ValueError("field integrity labels cannot be both allowed and denied")
+        return self
+
+
+class CausalConstraint(StrictModel):
+    denied_labels: frozenset[ProvenanceLabel] = frozenset()
+    maximum_depth: int | None = Field(default=None, ge=0, le=64)
+    require_parent_if_tool_output: bool = False
+
+
 class EffectMatcher(StrictModel):
     maximum_financial_amount_minor: int | None = Field(default=None, ge=0)
     maximum_records_modified: int | None = Field(default=None, ge=0)
@@ -64,7 +85,17 @@ class PolicyRule(StrictModel):
     effects: EffectMatcher = EffectMatcher()
     credential: CredentialCeiling | None = None
     execution_budget: ExecutionBudget = ExecutionBudget()
+    field_integrity: tuple[FieldIntegrityConstraint, ...] = ()
+    staging: StagingRequirement | None = None
+    causal: CausalConstraint | None = None
     reason_code: str | None = Field(default=None, max_length=300)
+
+    @model_validator(mode="after")
+    def unique_field_integrity_paths(self) -> "PolicyRule":
+        paths = [constraint.field_path for constraint in self.field_integrity]
+        if len(paths) != len(set(paths)):
+            raise ValueError("field integrity paths must be unique within a rule")
+        return self
 
 
 class PolicyDefaults(StrictModel):

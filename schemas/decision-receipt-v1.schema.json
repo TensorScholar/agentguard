@@ -165,6 +165,50 @@
       },
       "title": "ExecutionBudget",
       "type": "object"
+    },
+    "ReversibilityMode": {
+      "enum": [
+        "reversible",
+        "compensatable",
+        "irreversible"
+      ],
+      "title": "ReversibilityMode",
+      "type": "string"
+    },
+    "StagingRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "maximum_commit_window_seconds": {
+          "default": 300,
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Maximum Commit Window Seconds",
+          "type": "integer"
+        },
+        "minimum_delay_seconds": {
+          "default": 0,
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Minimum Delay Seconds",
+          "type": "integer"
+        },
+        "require_fresh_approval": {
+          "default": false,
+          "title": "Require Fresh Approval",
+          "type": "boolean"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "reversibility": {
+          "$ref": "#/$defs/ReversibilityMode",
+          "default": "irreversible"
+        }
+      },
+      "title": "StagingRequirement",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -176,6 +220,33 @@
     "arguments_digest": {
       "title": "Arguments Digest",
       "type": "string"
+    },
+    "causal_depth": {
+      "anyOf": [
+        {
+          "maximum": 64,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causal Depth"
+    },
+    "causal_digest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causal Digest"
     },
     "credential_ceiling": {
       "anyOf": [
@@ -219,6 +290,45 @@
       "format": "date-time",
       "title": "Expires At",
       "type": "string"
+    },
+    "field_integrity_digest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Field Integrity Digest"
+    },
+    "field_integrity_expires_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Field Integrity Expires At"
+    },
+    "field_release_set_digest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Field Release Set Digest"
     },
     "intent_digest": {
       "title": "Intent Digest",
@@ -290,6 +400,17 @@
     "signature": {
       "title": "Signature",
       "type": "string"
+    },
+    "staging_requirement": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StagingRequirement"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "subject_digest": {
       "anyOf": [

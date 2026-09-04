@@ -1,0 +1,249 @@
+{
+  "$defs": {
+    "AuthorityOverprivilegeFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "dimension": {
+          "title": "Dimension",
+          "type": "string"
+        },
+        "finding_type": {
+          "$ref": "#/$defs/PolicyIntelligenceFindingType"
+        },
+        "granted": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "title": "Granted"
+        },
+        "required": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "title": "Required"
+        }
+      },
+      "required": [
+        "finding_type",
+        "dimension",
+        "granted",
+        "required"
+      ],
+      "title": "AuthorityOverprivilegeFinding",
+      "type": "object"
+    },
+    "CapabilityScope": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "delegable": {
+          "default": false,
+          "title": "Delegable",
+          "type": "boolean"
+        },
+        "maximum_calls": {
+          "default": 1,
+          "maximum": 1000000,
+          "minimum": 1,
+          "title": "Maximum Calls",
+          "type": "integer"
+        },
+        "maximum_delegation_depth": {
+          "default": 0,
+          "maximum": 16,
+          "minimum": 0,
+          "title": "Maximum Delegation Depth",
+          "type": "integer"
+        },
+        "operations": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operations"
+        },
+        "protocols": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Protocols"
+        },
+        "resource_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Ids"
+        },
+        "resource_types": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Types"
+        },
+        "servers": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Servers"
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tools"
+        }
+      },
+      "title": "CapabilityScope",
+      "type": "object"
+    },
+    "MinimalAuthorityRecommendation": {
+      "additionalProperties": false,
+      "properties": {
+        "rationale": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rationale",
+          "type": "array"
+        },
+        "scope": {
+          "$ref": "#/$defs/CapabilityScope"
+        }
+      },
+      "required": [
+        "scope",
+        "rationale"
+      ],
+      "title": "MinimalAuthorityRecommendation",
+      "type": "object"
+    },
+    "PolicyIntelligenceFindingType": {
+      "enum": [
+        "overprivileged_capability",
+        "overprivileged_protocol",
+        "overprivileged_server",
+        "overprivileged_tool",
+        "overprivileged_operation",
+        "overprivileged_resource_type",
+        "overprivileged_resource_id",
+        "excess_call_budget",
+        "unneeded_delegation"
+      ],
+      "title": "PolicyIntelligenceFindingType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "findings": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/AuthorityOverprivilegeFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "least_privilege": {
+      "title": "Least Privilege",
+      "type": "boolean"
+    },
+    "recommendation": {
+      "$ref": "#/$defs/MinimalAuthorityRecommendation"
+    }
+  },
+  "required": [
+    "recommendation",
+    "least_privilege"
+  ],
+  "title": "AuthorityAnalysis",
+  "type": "object"
+}

@@ -9,6 +9,7 @@ import yaml
 from agentguard.adapters.broker import MockCredentialBroker
 from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
 from agentguard.adapters.evidence import build_bundle
+from agentguard.adapters.executor import DeterministicFakeExecutor
 from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService
 from agentguard.compatibility.v1_demo import write_demo
@@ -48,13 +49,12 @@ def create_demo(output: Path, force: bool = False) -> None:
         tenant_id=ceiling.tenant_id,
     )
     grant = service.request_credential(intent, receipt, request, broker)
-    authorize_execution(
+    executor = DeterministicFakeExecutor()
+    outcome = service.execute_protected(
         intent,
         receipt,
         grant,
-        verifier,
-        state,
-        broker_grant_verifier=broker.verifier,
+        executor,
         current_policy=policy,
     )
 
@@ -92,13 +92,11 @@ def create_demo(output: Path, force: bool = False) -> None:
 
     replay_result = "unexpected_allow"
     try:
-        authorize_execution(
+        service.execute_protected(
             intent,
             receipt,
             grant,
-            verifier,
-            state,
-            broker_grant_verifier=broker.verifier,
+            executor,
             current_policy=policy,
         )
     except ExecutionGuardError as exc:
@@ -113,7 +111,7 @@ def create_demo(output: Path, force: bool = False) -> None:
     for name, value in files:
         secure_atomic_write(output / name, (value + "\n").encode("utf-8"), mode=0o600)
     results = {
-        "happy_path": "authorized",
+        "happy_path": "authorized" if outcome.status.value == "success" else outcome.status.value,
         "argument_mutation": mutation_result,
         "excessive_scope": excessive_scope_result,
         "replay": replay_result,

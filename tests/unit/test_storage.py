@@ -70,3 +70,148 @@ def test_existing_v1_audit_database_is_never_overwritten(tmp_path: Path) -> None
         SQLiteState(path)
 
     assert "arguments_json" in path.read_bytes().decode("latin-1")
+
+
+def test_existing_v2_action_integrity_schema_upgrades_in_place(tmp_path: Path) -> None:
+    import sqlite3
+
+    path = tmp_path / "v2-state.sqlite"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE audit_events(
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT UNIQUE NOT NULL,
+                event_json TEXT NOT NULL,
+                previous_hash TEXT NOT NULL,
+                event_hash TEXT NOT NULL
+            );
+            CREATE TABLE agentguard_schema(
+                component TEXT PRIMARY KEY,
+                version INTEGER NOT NULL
+            );
+            INSERT INTO agentguard_schema(component, version)
+            VALUES('action_integrity', 3);
+            """
+        )
+
+    state = SQLiteState(path)
+    with sqlite3.connect(state.path) as connection:
+        version = connection.execute(
+            "SELECT version FROM agentguard_schema WHERE component = 'action_integrity'"
+        ).fetchone()
+        execution_table = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'executions'"
+        ).fetchone()
+
+    assert version == (9,)
+    assert execution_table == ("executions",)
+
+
+def test_phase5cd_migrates_existing_v4_execution_columns_without_losing_state(
+    tmp_path: Path,
+) -> None:
+    import sqlite3
+
+    path = tmp_path / "v4-state.sqlite"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE audit_events(
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT UNIQUE NOT NULL,
+                event_json TEXT NOT NULL,
+                previous_hash TEXT NOT NULL,
+                event_hash TEXT NOT NULL
+            );
+            CREATE TABLE executions(
+                execution_id TEXT PRIMARY KEY,
+                decision_id TEXT UNIQUE NOT NULL,
+                nonce TEXT UNIQUE NOT NULL,
+                trace_id TEXT NOT NULL,
+                request_id TEXT NOT NULL,
+                intent_digest TEXT NOT NULL,
+                authority_digest TEXT NOT NULL,
+                state TEXT NOT NULL,
+                reserved_at TEXT NOT NULL,
+                dispatching_at TEXT,
+                completed_at TEXT,
+                provider_status INTEGER,
+                result_digest TEXT,
+                error_code TEXT
+            );
+            INSERT INTO executions(
+                execution_id,decision_id,nonce,trace_id,request_id,intent_digest,
+                authority_digest,state,reserved_at,dispatching_at,completed_at,
+                provider_status,result_digest,error_code
+            ) VALUES(
+                'exec-existing','decision-existing','nonce-existing','trace-existing',
+                'request-existing',
+                'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                'unknown','2026-08-29T10:00:00+00:00',NULL,'2026-08-29T10:00:01+00:00',
+                NULL,NULL,'execution.test_unknown'
+            );
+            CREATE TABLE agentguard_schema(
+                component TEXT PRIMARY KEY,
+                version INTEGER NOT NULL
+            );
+            INSERT INTO agentguard_schema(component, version)
+            VALUES('action_integrity', 4);
+            """
+        )
+
+    state = SQLiteState(path)
+    with sqlite3.connect(state.path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(executions)").fetchall()}
+        version = connection.execute(
+            "SELECT version FROM agentguard_schema WHERE component = 'action_integrity'"
+        ).fetchone()
+
+    existing = state.get_execution("exec-existing")
+    assert existing is not None
+    assert existing.execution_id == "exec-existing"
+    assert existing.decision_id == "decision-existing"
+    assert existing.state.value == "unknown"
+    assert existing.error_code == "execution.test_unknown"
+    assert existing.policy_digest is None
+    assert existing.authority_grant_id is None
+    assert existing.authority_lease_id is None
+    assert existing.authority_chain_digest is None
+    assert existing.tenant_id is None
+    assert existing.principal_digest is None
+    assert existing.subject_digest is None
+    assert existing.field_integrity_digest is None
+    assert existing.field_release_set_digest is None
+    assert existing.field_integrity_expires_at is None
+    assert existing.causal_digest is None
+    assert existing.causal_depth == 0
+    assert existing.causal_labels == frozenset()
+    assert existing.causal_parent_execution_ids == ()
+    assert existing.prepared_id is None
+    assert version == (9,)
+    assert {
+        "policy_digest",
+        "authority_grant_id",
+        "authority_lease_id",
+        "authority_chain_digest",
+        "tenant_id",
+        "principal_digest",
+        "subject_digest",
+        "field_integrity_digest",
+        "field_release_set_digest",
+        "field_integrity_expires_at",
+        "causal_digest",
+        "causal_depth",
+        "causal_labels_json",
+        "causal_parent_ids_json",
+        "prepared_id",
+    } <= columns
+    with sqlite3.connect(state.path) as connection:
+        new_tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert {"consumed_field_releases", "prepared_executions"} <= new_tables

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from agentguard import __version__
 from agentguard.cli.app import app
 
 runner = CliRunner()
@@ -13,7 +14,7 @@ runner = CliRunner()
 def test_version():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "0.2.0rc2" in result.stdout
+    assert __version__ in result.stdout
 
 
 def test_init_creates_keys_and_policy(tmp_path):
@@ -34,6 +35,73 @@ def test_demo_command(tmp_path):
     assert payload["argument_mutation"] == "execution.arguments_digest_mismatch"
     assert payload["excessive_scope"] == "credential.scope_exceeds_decision"
     assert payload["replay"] == "decision_receipt.replayed"
+
+
+def test_verify_execution_is_non_consuming_preflight(tmp_path):
+    root = Path(__file__).parents[2]
+    workspace = tmp_path / "workspace"
+    assert runner.invoke(app, ["init", "--output", str(workspace)]).exit_code == 0
+
+    request = root / "src/agentguard/resources/demo-intent.json"
+    policy = workspace / "policy.yaml"
+    receipt = tmp_path / "receipt.json"
+    ledger = tmp_path / "authorization.sqlite"
+    authorize_result = runner.invoke(
+        app,
+        [
+            "authorize",
+            str(request),
+            str(policy),
+            "--key",
+            str(workspace / "decision-private.pem"),
+            "--ledger",
+            str(ledger),
+            "--output",
+            str(receipt),
+        ],
+    )
+    assert authorize_result.exit_code == 0, authorize_result.stdout
+
+    grant = tmp_path / "grant.json"
+    broker_result = runner.invoke(
+        app,
+        [
+            "broker-demo",
+            str(request),
+            str(receipt),
+            "--decision-key",
+            str(workspace / "decision-private.pem"),
+            "--broker-key",
+            str(workspace / "broker-private.pem"),
+            "--ledger",
+            str(ledger),
+            "--output",
+            str(grant),
+        ],
+    )
+    assert broker_result.exit_code == 0, broker_result.stdout
+
+    unused_preflight_ledger = tmp_path / "preflight.sqlite"
+    args = [
+        "verify-execution",
+        str(request),
+        str(receipt),
+        str(policy),
+        "--grant",
+        str(grant),
+        "--public-key",
+        str(workspace / "decision-public.pem"),
+        "--broker-public-key",
+        str(workspace / "broker-public.pem"),
+        "--ledger",
+        str(unused_preflight_ledger),
+    ]
+    first = runner.invoke(app, args)
+    second = runner.invoke(app, args)
+    assert first.exit_code == 0, first.stdout
+    assert second.exit_code == 0, second.stdout
+    assert "nonce not consumed" in first.stdout
+    assert not unused_preflight_ledger.exists()
 
 
 def test_explain_command(tmp_path):

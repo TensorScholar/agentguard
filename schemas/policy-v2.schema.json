@@ -52,6 +52,41 @@
       "title": "ActionMatcher",
       "type": "object"
     },
+    "CausalConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "denied_labels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProvenanceLabel"
+          },
+          "title": "Denied Labels",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "maximum_depth": {
+          "anyOf": [
+            {
+              "maximum": 64,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Depth"
+        },
+        "require_parent_if_tool_output": {
+          "default": false,
+          "title": "Require Parent If Tool Output",
+          "type": "boolean"
+        }
+      },
+      "title": "CausalConstraint",
+      "type": "object"
+    },
     "CredentialCeiling": {
       "additionalProperties": false,
       "properties": {
@@ -308,6 +343,71 @@
       "title": "ExecutionBudget",
       "type": "object"
     },
+    "FieldIntegrityConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_labels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProvenanceLabel"
+          },
+          "title": "Allowed Labels",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "denied_labels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProvenanceLabel"
+          },
+          "title": "Denied Labels",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "field_path": {
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^/",
+          "title": "Field Path",
+          "type": "string"
+        },
+        "permitted_release_types": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FieldReleaseType"
+          },
+          "title": "Permitted Release Types",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "provenance_required": {
+          "default": true,
+          "title": "Provenance Required",
+          "type": "boolean"
+        },
+        "semantic_type": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Semantic Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field_path",
+        "semantic_type"
+      ],
+      "title": "FieldIntegrityConstraint",
+      "type": "object"
+    },
+    "FieldReleaseType": {
+      "enum": [
+        "human_endorsement",
+        "system_attestation",
+        "verified_transformation"
+      ],
+      "title": "FieldReleaseType",
+      "type": "string"
+    },
     "PolicyDefaults": {
       "additionalProperties": false,
       "properties": {
@@ -384,6 +484,17 @@
             "tools": []
           }
         },
+        "causal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CausalConstraint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "credential": {
           "anyOf": [
             {
@@ -421,6 +532,14 @@
             "maximum_records_modified": null,
             "maximum_tool_calls": null
           }
+        },
+        "field_integrity": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FieldIntegrityConstraint"
+          },
+          "title": "Field Integrity",
+          "type": "array"
         },
         "id": {
           "maxLength": 200,
@@ -474,6 +593,17 @@
             "tenant_from_principal": false,
             "types": []
           }
+        },
+        "staging": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StagingRequirement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "subject": {
           "$ref": "#/$defs/SubjectMatcher",
@@ -621,6 +751,50 @@
         }
       },
       "title": "ResourceMatcher",
+      "type": "object"
+    },
+    "ReversibilityMode": {
+      "enum": [
+        "reversible",
+        "compensatable",
+        "irreversible"
+      ],
+      "title": "ReversibilityMode",
+      "type": "string"
+    },
+    "StagingRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "maximum_commit_window_seconds": {
+          "default": 300,
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Maximum Commit Window Seconds",
+          "type": "integer"
+        },
+        "minimum_delay_seconds": {
+          "default": 0,
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Minimum Delay Seconds",
+          "type": "integer"
+        },
+        "require_fresh_approval": {
+          "default": false,
+          "title": "Require Fresh Approval",
+          "type": "boolean"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "reversibility": {
+          "$ref": "#/$defs/ReversibilityMode",
+          "default": "irreversible"
+        }
+      },
+      "title": "StagingRequirement",
       "type": "object"
     },
     "SubjectMatcher": {

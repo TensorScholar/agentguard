@@ -6,6 +6,22 @@ from .http_security import (
 )
 from .intent import intent_from_tools_call
 from .jsonrpc import MCPProtocolError, encode_message, error_response, parse_message
+from .protected import (
+    PROTECTED_APPROVAL_REQUIRED,
+    PROTECTED_EXECUTION_ERROR,
+    PROTECTED_OUTCOME_UNKNOWN,
+    PROTECTED_POLICY_DENIED,
+    PROTECTED_PROFILE_UNSUPPORTED,
+    PROTECTED_REQUEST_REJECTED,
+    PROTECTED_SCHEMA_UNAVAILABLE,
+    SUPPORTED_PROTOCOL_PROFILE,
+    MCPProtectedExecutor,
+    MCPProtectedSession,
+    MCPProtectedStdioProxy,
+    MCPProtectedTransport,
+    MCPServerBinding,
+    SessionToolSchemaCache,
+)
 from .schema import AuditLedgerToolSchemaResolver
 from .stdio import (
     APPROVAL_REQUIRED,
@@ -18,9 +34,23 @@ from .stdio import (
 __all__ = [
     "APPROVAL_REQUIRED",
     "POLICY_DENIED",
+    "PROTECTED_APPROVAL_REQUIRED",
+    "PROTECTED_EXECUTION_ERROR",
+    "PROTECTED_OUTCOME_UNKNOWN",
+    "PROTECTED_POLICY_DENIED",
+    "PROTECTED_PROFILE_UNSUPPORTED",
+    "PROTECTED_REQUEST_REJECTED",
+    "PROTECTED_SCHEMA_UNAVAILABLE",
+    "SUPPORTED_PROTOCOL_PROFILE",
+    "SessionToolSchemaCache",
     "AuditLedgerToolSchemaResolver",
     "HTTPTransportSecurityError",
     "MCPProtocolError",
+    "MCPProtectedExecutor",
+    "MCPProtectedSession",
+    "MCPProtectedStdioProxy",
+    "MCPProtectedTransport",
+    "MCPServerBinding",
     "MCPStdioProcessor",
     "MCPStdioProxy",
     "ProcessResult",

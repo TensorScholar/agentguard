@@ -11,6 +11,7 @@ from agentguard.domain import (
     PolicyDocument,
     PolicyRule,
     ProvenanceLabel,
+    StagingRequirement,
 )
 
 from .canonical import digest
@@ -23,6 +24,7 @@ class PolicyEvaluation:
     matched_rules: tuple[PolicyRule, ...]
     selected_rule: PolicyRule | None
     policy_digest: str
+    staging_requirement: StagingRequirement | None = None
 
 
 _EFFECT_RANK = {Effect.ALLOW: 0, Effect.REQUIRE_APPROVAL: 1, Effect.DENY: 2}
@@ -127,6 +129,27 @@ def rule_matches(rule: PolicyRule, intent: ActionIntent) -> bool:
     return True
 
 
+def _aggregate_staging(matched_rules: tuple[PolicyRule, ...]) -> StagingRequirement | None:
+    values = [rule.staging for rule in matched_rules if rule.staging is not None]
+    if not values:
+        return None
+    modes = {value.reversibility for value in values}
+    if len(modes) != 1:
+        raise ValueError("policy.staging_reversibility_conflict")
+    windows = [value.maximum_commit_window_seconds for value in values]
+    maximum_window = min(windows)
+    minimum_delay = max(value.minimum_delay_seconds for value in values)
+    if minimum_delay >= maximum_window:
+        raise ValueError("policy.staging_window_conflict")
+    return StagingRequirement(
+        required=any(value.required for value in values),
+        minimum_delay_seconds=minimum_delay,
+        maximum_commit_window_seconds=maximum_window,
+        reversibility=next(iter(modes)),
+        require_fresh_approval=any(value.require_fresh_approval for value in values),
+    )
+
+
 def evaluate_policy(
     policy: PolicyDocument,
     intent: ActionIntent,
@@ -150,6 +173,7 @@ def evaluate_policy(
             matched_rules=(),
             selected_rule=None,
             policy_digest=digest(policy),
+            staging_requirement=None,
         )
     matches = tuple(rule for rule in policy.rules if rule_matches(rule, intent))
     if not matches:
@@ -159,6 +183,7 @@ def evaluate_policy(
             matched_rules=(),
             selected_rule=None,
             policy_digest=digest(policy),
+            staging_requirement=None,
         )
     selected = max(matches, key=lambda r: (_EFFECT_RANK[r.effect], r.priority, r.id))
     reasons = tuple(
@@ -175,7 +200,14 @@ def evaluate_policy(
     if effect == Effect.ALLOW and _has_unbounded_high_impact(selected, intent):
         effect = Effect.REQUIRE_APPROVAL
         reasons = ("policy.unbounded_high_impact", *reasons)
-    return PolicyEvaluation(effect, reasons, matches, selected, digest(policy))
+    return PolicyEvaluation(
+        effect=effect,
+        reason_codes=reasons,
+        matched_rules=matches,
+        selected_rule=selected,
+        policy_digest=digest(policy),
+        staging_requirement=_aggregate_staging(matches),
+    )
 
 
 def _delegation_rejection(intent: ActionIntent, now: datetime) -> str | None:

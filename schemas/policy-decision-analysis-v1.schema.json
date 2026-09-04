@@ -1,0 +1,100 @@
+{
+  "$defs": {
+    "Effect": {
+      "enum": [
+        "allow",
+        "deny",
+        "require_approval"
+      ],
+      "title": "Effect",
+      "type": "string"
+    },
+    "PolicyCounterfactual": {
+      "additionalProperties": false,
+      "properties": {
+        "effect": {
+          "$ref": "#/$defs/Effect"
+        },
+        "reason_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "removed_rule_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Removed Rule Id",
+          "type": "string"
+        },
+        "selected_rule_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Rule Id"
+        }
+      },
+      "required": [
+        "removed_rule_id",
+        "effect",
+        "reason_codes"
+      ],
+      "title": "PolicyCounterfactual",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "counterfactuals": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/PolicyCounterfactual"
+      },
+      "title": "Counterfactuals",
+      "type": "array"
+    },
+    "effect": {
+      "$ref": "#/$defs/Effect"
+    },
+    "matched_rule_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Matched Rule Ids",
+      "type": "array"
+    },
+    "reason_codes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reason Codes",
+      "type": "array"
+    },
+    "selected_rule_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Selected Rule Id"
+    }
+  },
+  "required": [
+    "effect",
+    "reason_codes",
+    "matched_rule_ids"
+  ],
+  "title": "PolicyDecisionAnalysis",
+  "type": "object"
+}

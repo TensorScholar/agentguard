@@ -5,7 +5,22 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .enums import AuditEventType, Effect, EnforcementMode, ExecutionStatus, ProvenanceLabel
+from .enums import (
+    AuditEventType,
+    AuthorityGrantStatus,
+    CapabilityLeaseStatus,
+    Effect,
+    EnforcementMode,
+    EvidenceTrustLevel,
+    ExecutionState,
+    ExecutionStatus,
+    FieldReleaseType,
+    PolicyIntelligenceFindingType,
+    PreparedExecutionStatus,
+    ProvenanceLabel,
+    ReconciliationStatus,
+    ReversibilityMode,
+)
 
 
 class StrictModel(BaseModel):
@@ -68,6 +83,188 @@ class EffectProjection(StrictModel):
     output_bytes: int | None = Field(default=None, ge=0)
 
 
+class AuthorityReference(StrictModel):
+    grant_id: str = Field(min_length=1, max_length=200)
+    lease_id: str = Field(min_length=1, max_length=200)
+    chain_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class FieldProvenanceStatement(StrictModel):
+    schema_version: Literal["1"] = "1"
+    statement_id: str = Field(min_length=1, max_length=200)
+    request_id: str = Field(min_length=1, max_length=200)
+    trace_id: str = Field(min_length=1, max_length=200)
+    tenant_id: str = Field(min_length=1, max_length=200)
+    field_path: str = Field(min_length=1, max_length=500, pattern=r"^/")
+    value_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    semantic_type: str = Field(min_length=1, max_length=200)
+    labels: frozenset[ProvenanceLabel] = Field(min_length=1)
+    parent_statement_ids: tuple[str, ...] = Field(default=(), max_length=16)
+    transformation: str | None = Field(default=None, max_length=300)
+    issued_at: datetime
+    expires_at: datetime
+    key_id: str = Field(min_length=1, max_length=300)
+    signature: str
+
+    @field_validator("issued_at", "expires_at")
+    @classmethod
+    def aware_field_provenance_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("field provenance timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def field_provenance_times_consistent(self) -> "FieldProvenanceStatement":
+        if self.issued_at >= self.expires_at:
+            raise ValueError("field provenance times are inconsistent")
+        if len(set(self.parent_statement_ids)) != len(self.parent_statement_ids):
+            raise ValueError("field provenance parent ids must be unique")
+        if self.statement_id in self.parent_statement_ids:
+            raise ValueError("field provenance cannot parent itself")
+        return self
+
+
+class FieldReleaseReceipt(StrictModel):
+    schema_version: Literal["1"] = "1"
+    release_id: str = Field(min_length=1, max_length=200)
+    request_id: str = Field(min_length=1, max_length=200)
+    trace_id: str = Field(min_length=1, max_length=200)
+    tenant_id: str = Field(min_length=1, max_length=200)
+    principal_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    subject_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    action_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    resource_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    field_path: str = Field(min_length=1, max_length=500, pattern=r"^/")
+    value_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    provenance_statement_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    semantic_type: str = Field(min_length=1, max_length=200)
+    release_type: FieldReleaseType
+    reason: str = Field(min_length=1, max_length=1000)
+    issued_at: datetime
+    expires_at: datetime
+    key_id: str = Field(min_length=1, max_length=300)
+    signature: str
+
+    @field_validator("issued_at", "expires_at")
+    @classmethod
+    def aware_field_release_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("field release timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def field_release_times_consistent(self) -> "FieldReleaseReceipt":
+        if self.issued_at >= self.expires_at:
+            raise ValueError("field release times are inconsistent")
+        return self
+
+
+class FieldIntegrityBinding(StrictModel):
+    integrity_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    release_set_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    expires_at: datetime | None = None
+    release_ids: tuple[str, ...] = ()
+    labels: frozenset[ProvenanceLabel] = frozenset()
+
+    @field_validator("expires_at")
+    @classmethod
+    def aware_integrity_expiry(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("field integrity expiry must be timezone-aware")
+        return value
+
+
+class StagingRequirement(StrictModel):
+    required: bool = False
+    minimum_delay_seconds: int = Field(default=0, ge=0, le=86400)
+    maximum_commit_window_seconds: int = Field(default=300, ge=1, le=86400)
+    reversibility: ReversibilityMode = ReversibilityMode.IRREVERSIBLE
+    require_fresh_approval: bool = False
+
+
+class PreparedExecution(StrictModel):
+    schema_version: Literal["1"] = "1"
+    prepared_id: str = Field(min_length=1, max_length=200)
+    execution_id: str = Field(min_length=1, max_length=200)
+    decision_id: str = Field(min_length=1, max_length=200)
+    request_id: str = Field(min_length=1, max_length=200)
+    trace_id: str = Field(min_length=1, max_length=200)
+    intent_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    prepared_binding_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    field_integrity_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    causal_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    status: PreparedExecutionStatus = PreparedExecutionStatus.PREPARED
+    reversibility: ReversibilityMode
+    prepared_at: datetime
+    commit_not_before: datetime
+    expires_at: datetime
+    cancelled_at: datetime | None = None
+
+    @field_validator("prepared_at", "commit_not_before", "expires_at", "cancelled_at")
+    @classmethod
+    def aware_prepared_times(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("prepared execution timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def prepared_times_consistent(self) -> "PreparedExecution":
+        if not (self.prepared_at <= self.commit_not_before < self.expires_at):
+            raise ValueError("prepared execution times are inconsistent")
+        return self
+
+
+class CausalGraphNode(StrictModel):
+    execution_id: str = Field(min_length=1, max_length=200)
+    parent_execution_ids: tuple[str, ...] = Field(default=(), max_length=16)
+    intent_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    causal_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    causal_depth: int = Field(ge=0, le=64)
+    labels: frozenset[ProvenanceLabel] = frozenset()
+    tenant_id: str | None = Field(default=None, max_length=200)
+    state: ExecutionState
+
+
+class CausalExecutionGraph(StrictModel):
+    schema_version: Literal["1"] = "1"
+    root_execution_id: str = Field(min_length=1, max_length=200)
+    nodes: tuple[CausalGraphNode, ...]
+    graph_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class MinimalAuthorityRecommendation(StrictModel):
+    scope: "CapabilityScope"
+    rationale: tuple[str, ...]
+
+
+class AuthorityOverprivilegeFinding(StrictModel):
+    finding_type: PolicyIntelligenceFindingType
+    dimension: str
+    granted: tuple[str, ...] | int | bool
+    required: tuple[str, ...] | int | bool
+
+
+class AuthorityAnalysis(StrictModel):
+    recommendation: MinimalAuthorityRecommendation
+    findings: tuple[AuthorityOverprivilegeFinding, ...] = ()
+    least_privilege: bool
+
+
+class PolicyCounterfactual(StrictModel):
+    removed_rule_id: str = Field(min_length=1, max_length=200)
+    effect: Effect
+    reason_codes: tuple[str, ...]
+    selected_rule_id: str | None = None
+
+
+class PolicyDecisionAnalysis(StrictModel):
+    effect: Effect
+    reason_codes: tuple[str, ...]
+    matched_rule_ids: tuple[str, ...]
+    selected_rule_id: str | None = None
+    counterfactuals: tuple[PolicyCounterfactual, ...] = ()
+
+
 class ActionIntent(StrictModel):
     schema_version: Literal["1"] = "1"
     request_id: str = Field(min_length=1, max_length=200)
@@ -75,6 +272,10 @@ class ActionIntent(StrictModel):
     principal: Principal
     subject: Subject | None = None
     delegation: DelegationContext | None = None
+    authority: AuthorityReference | None = None
+    field_provenance: tuple[FieldProvenanceStatement, ...] = Field(default=(), max_length=64)
+    field_releases: tuple[FieldReleaseReceipt, ...] = Field(default=(), max_length=32)
+    causal_parent_execution_ids: tuple[str, ...] = Field(default=(), max_length=16)
     action: Action
     resource: Resource | None = None
     provenance: tuple[ProvenanceLabel, ...] = ()
@@ -127,6 +328,12 @@ class DecisionReceipt(StrictModel):
     effects_digest: str
     tool_schema_digest: str
     policy_digest: str
+    field_integrity_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    field_release_set_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    field_integrity_expires_at: datetime | None = None
+    causal_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    causal_depth: int | None = Field(default=None, ge=0, le=64)
+    staging_requirement: StagingRequirement | None = None
     credential_ceiling: CredentialCeiling | None = None
     execution_budget: ExecutionBudget = ExecutionBudget()
     enforcement_mode: EnforcementMode = EnforcementMode.ENFORCE
@@ -142,6 +349,13 @@ class DecisionReceipt(StrictModel):
     def aware_security_times(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("decision receipt timestamps must be timezone-aware")
+        return value
+
+    @field_validator("field_integrity_expires_at")
+    @classmethod
+    def aware_field_integrity_expires_at(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("field integrity expiry must be timezone-aware")
         return value
 
     @model_validator(mode="after")
@@ -264,6 +478,109 @@ class EvidenceAttestation(StrictModel):
         return value
 
 
+class VerifiedCredentialAuthority(StrictModel):
+    """Credential authority safe to retain and pass across the protected executor boundary."""
+
+    grant_id: str
+    issuance_id: str
+    mode: Literal["opaque_handle", "brokered_execution"]
+    credential_handle_digest: str
+    audience: str
+    scopes: frozenset[str]
+    tenant_id: str | None = None
+    expires_at: datetime
+    broker: str
+    broker_key_id: str
+
+    @field_validator("expires_at")
+    @classmethod
+    def aware_expires_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("verified credential expiry must be timezone-aware")
+        return value
+
+
+class VerifiedExecution(StrictModel):
+    """Immutable execution derived only from cryptographically and policy-validated inputs."""
+
+    execution_id: str = Field(min_length=1, max_length=200)
+    decision_id: str = Field(min_length=1, max_length=200)
+    request_id: str = Field(min_length=1, max_length=200)
+    trace_id: str = Field(min_length=1, max_length=200)
+    intent: ActionIntent
+    intent_digest: str
+    policy_digest: str
+    nonce: str = Field(min_length=1, repr=False)
+    approval_id: str | None = None
+    authority_grant_id: str | None = None
+    authority_lease_id: str | None = None
+    authority_chain_digest: str | None = None
+    field_integrity_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    field_release_set_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    field_integrity_expires_at: datetime | None = None
+    field_release_ids: tuple[str, ...] = ()
+    causal_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    causal_depth: int = Field(default=0, ge=0, le=64)
+    causal_labels: frozenset[ProvenanceLabel] = frozenset()
+    causal_parent_execution_ids: tuple[str, ...] = Field(default=(), max_length=16)
+    prepared_id: str | None = Field(default=None, max_length=200)
+    credential_authority: VerifiedCredentialAuthority | None = None
+    authorization_expires_at: datetime
+    verified_at: datetime
+
+    @field_validator("authorization_expires_at", "field_integrity_expires_at", "verified_at")
+    @classmethod
+    def aware_security_times(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("verified execution timestamps must be timezone-aware")
+        return value
+
+
+class ExecutionRecord(StrictModel):
+    execution_id: str
+    decision_id: str
+    trace_id: str
+    request_id: str
+    intent_digest: str
+    authority_digest: str
+    policy_digest: str | None = None
+    authority_grant_id: str | None = None
+    authority_lease_id: str | None = None
+    authority_chain_digest: str | None = None
+    tenant_id: str | None = Field(default=None, max_length=200)
+    principal_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    subject_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    field_integrity_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    field_release_set_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    field_integrity_expires_at: datetime | None = None
+    causal_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    causal_depth: int = Field(default=0, ge=0, le=64)
+    causal_labels: frozenset[ProvenanceLabel] = frozenset()
+    causal_parent_execution_ids: tuple[str, ...] = Field(default=(), max_length=16)
+    prepared_id: str | None = Field(default=None, max_length=200)
+    state: ExecutionState
+    reserved_at: datetime
+    dispatching_at: datetime | None = None
+    completed_at: datetime | None = None
+    provider_status: int | None = None
+    result_digest: str | None = None
+    error_code: str | None = None
+
+    @field_validator("reserved_at", "dispatching_at", "completed_at")
+    @classmethod
+    def aware_lifecycle_times(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("execution lifecycle timestamps must be timezone-aware")
+        return value
+
+
+class ProtectedExecutionResult(StrictModel):
+    status: ExecutionStatus
+    provider_status: int | None = None
+    result_digest: str | None = None
+    error_code: str | None = None
+
+
 class ExecutionRequest(StrictModel):
     schema_version: Literal["1"] = "1"
     execution_id: str
@@ -297,6 +614,192 @@ class ExecutionOutcome(StrictModel):
     def validate_times(self) -> ExecutionOutcome:
         if self.started_at > self.completed_at:
             raise ValueError("execution outcome times are inconsistent")
+        return self
+
+
+class ReconciliationEvidence(StrictModel):
+    status: ReconciliationStatus
+    source: str = Field(min_length=1, max_length=300)
+    evidence_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    observed_at: datetime
+    trust_level: EvidenceTrustLevel = EvidenceTrustLevel.AGENTGUARD_SIGNED
+    provider_operation_id: str | None = Field(default=None, max_length=500)
+    error_code: str | None = Field(default=None, max_length=300)
+
+    @field_validator("observed_at")
+    @classmethod
+    def aware_observed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("reconciliation evidence timestamp must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def enforce_confirmation_assurance(self) -> ReconciliationEvidence:
+        if (
+            self.status
+            in {
+                ReconciliationStatus.CONFIRMED_SUCCEEDED,
+                ReconciliationStatus.CONFIRMED_FAILED,
+            }
+            and self.trust_level != EvidenceTrustLevel.PROVIDER_VERIFIED
+        ):
+            raise ValueError("reconciliation.confirmation_requires_provider_verified_evidence")
+        return self
+
+
+class ExecutionResolution(StrictModel):
+    resolution_id: str = Field(min_length=1, max_length=200)
+    execution_id: str = Field(min_length=1, max_length=200)
+    original_state: ExecutionState
+    status: ReconciliationStatus
+    source: str = Field(min_length=1, max_length=300)
+    evidence_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    trust_level: EvidenceTrustLevel
+    provider_operation_id_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    observed_at: datetime
+    reconciled_at: datetime
+    error_code: str | None = Field(default=None, max_length=300)
+
+    @field_validator("observed_at", "reconciled_at")
+    @classmethod
+    def aware_resolution_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("execution resolution timestamps must be timezone-aware")
+        return value
+
+
+class ExecutionAttestationPayload(StrictModel):
+    schema_version: Literal["1"] = "1"
+    attestation_id: str = Field(min_length=1, max_length=200)
+    execution_id: str
+    decision_id: str
+    trace_id: str
+    request_id: str
+    intent_digest: str
+    authority_digest: str
+    policy_digest: str | None = None
+    field_integrity_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    field_release_set_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    field_integrity_expires_at: datetime | None = None
+    causal_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    causal_depth: int = Field(default=0, ge=0, le=64)
+    prepared_id: str | None = Field(default=None, max_length=200)
+    execution_state: ExecutionState
+    reserved_at: datetime
+    dispatching_at: datetime | None = None
+    completed_at: datetime | None = None
+    provider_status: int | None = None
+    result_digest: str | None = None
+    error_code: str | None = None
+    resolution: ExecutionResolution | None = None
+    previous_attestation_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    issued_at: datetime
+
+    @field_validator(
+        "reserved_at", "dispatching_at", "completed_at", "field_integrity_expires_at", "issued_at"
+    )
+    @classmethod
+    def aware_attestation_times(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("execution attestation timestamps must be timezone-aware")
+        return value
+
+
+class ExecutionAttestation(StrictModel):
+    payload: ExecutionAttestationPayload
+    payload_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    signer_key_id: str = Field(min_length=1, max_length=300)
+    signature: str
+
+
+class AttestationMetadata(StrictModel):
+    attestation_id: str
+    execution_id: str
+    payload_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    signature_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    signer_key_id: str
+    previous_attestation_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    issued_at: datetime
+
+    @field_validator("issued_at")
+    @classmethod
+    def aware_attestation_issued_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("attestation metadata timestamp must be timezone-aware")
+        return value
+
+
+class CapabilityScope(StrictModel):
+    capabilities: frozenset[str] = frozenset()
+    protocols: frozenset[str] | None = None
+    servers: frozenset[str] | None = None
+    tools: frozenset[str] | None = None
+    operations: frozenset[str] | None = None
+    resource_types: frozenset[str] | None = None
+    resource_ids: frozenset[str] | None = None
+    maximum_calls: int = Field(default=1, ge=1, le=1_000_000)
+    delegable: bool = False
+    maximum_delegation_depth: int = Field(default=0, ge=0, le=16)
+
+
+class AuthorityGrant(StrictModel):
+    schema_version: Literal["1"] = "1"
+    grant_id: str = Field(min_length=1, max_length=200)
+    parent_grant_id: str | None = Field(default=None, max_length=200)
+    issuer: str = Field(min_length=1, max_length=300)
+    subject: Principal
+    scope: CapabilityScope
+    depth: int = Field(ge=0, le=16)
+    issued_at: datetime
+    expires_at: datetime
+    key_id: str = Field(min_length=1, max_length=300)
+    signature: str
+
+    @field_validator("issued_at", "expires_at")
+    @classmethod
+    def aware_authority_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("authority timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def authority_times_consistent(self) -> "AuthorityGrant":
+        if self.issued_at >= self.expires_at:
+            raise ValueError("authority grant times are inconsistent")
+        return self
+
+
+class AuthorityGrantRecord(StrictModel):
+    grant: AuthorityGrant
+    status: AuthorityGrantStatus
+    remaining_calls: int = Field(ge=0, le=1_000_000)
+    revoked_at: datetime | None = None
+    revoke_reason: str | None = None
+
+
+class CapabilityLease(StrictModel):
+    schema_version: Literal["1"] = "1"
+    lease_id: str = Field(min_length=1, max_length=200)
+    grant_id: str = Field(min_length=1, max_length=200)
+    maximum_uses: int = Field(ge=1, le=1_000_000)
+    remaining_uses: int = Field(ge=0, le=1_000_000)
+    issued_at: datetime
+    expires_at: datetime
+    status: CapabilityLeaseStatus = CapabilityLeaseStatus.ACTIVE
+
+    @field_validator("issued_at", "expires_at")
+    @classmethod
+    def aware_lease_times(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("capability lease timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def lease_consistent(self) -> "CapabilityLease":
+        if self.issued_at >= self.expires_at:
+            raise ValueError("capability lease times are inconsistent")
+        if self.remaining_uses > self.maximum_uses:
+            raise ValueError("capability lease remaining uses exceed maximum")
         return self
 
 

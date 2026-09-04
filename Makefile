@@ -1,4 +1,4 @@
-.PHONY: test coverage schemas lint typecheck security check demo package
+.PHONY: test coverage schemas lint typecheck security release-metadata check demo package
 
 test:
 	PYTHONPATH=src python -m pytest
@@ -23,7 +23,10 @@ security:
 	PYTHONPATH=src python scripts/check_secrets.py
 	PYTHONPATH=src python scripts/security_scan.py
 
-check: lint typecheck coverage schemas security
+release-metadata:
+	PYTHONPATH=src python scripts/check_release_metadata.py
+
+check: lint typecheck coverage schemas security release-metadata
 	python -m compileall -q src tests scripts
 
 demo:

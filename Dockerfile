@@ -7,7 +7,6 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 
 WORKDIR /build
 COPY pyproject.toml setup.py MANIFEST.in README.md LICENSE ./
-COPY .github ./.github
 COPY src ./src
 COPY schemas ./schemas
 RUN python -m pip wheel --no-deps --wheel-dir /wheels .
@@ -24,7 +23,9 @@ RUN groupadd --system --gid 10001 agentguard \
     && useradd --system --uid 10001 --gid agentguard --create-home --home-dir /home/agentguard agentguard
 
 COPY --from=builder /wheels /wheels
-RUN python -m pip install /wheels/*.whl \
+RUN WHEEL="$(find /wheels -type f -name 'agentguard-*.whl' -print -quit)" \
+    && test -n "$WHEEL" \
+    && python -m pip install "${WHEEL}[http]" \
     && rm -rf /wheels
 
 USER 10001:10001
