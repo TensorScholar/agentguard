@@ -37,10 +37,12 @@ def entrypoint(argv: Sequence[str] | None = None) -> int:
     if args and args[0] in _V1_ONLY_COMMANDS:
         return _v1_cli.main(args)
     try:
-        app(args=args, prog_name="agentguard", standalone_mode=False)
+        result = app(args=args, prog_name="agentguard", standalone_mode=False)
+        code = int(result or 0)
+        return 0 if code < 0 else code
     except SystemExit as exc:
-        return int(exc.code or 0)
-    return 0
+        code = int(exc.code or 0)
+        return 0 if code < 0 else code
 
 
 __all__ = ["app", "changed_config_paths", "entrypoint", "main"]
