@@ -2,211 +2,219 @@
 
 **Deterministic runtime authorization and execution-integrity controls for AI agents.**
 
-> **Release status:** `v0.2.0rc3` is a non-production-certified release candidate. The validated development line includes protected MCP stdio and bounded Streamable HTTP profiles, production credential authority, durable external-effect reconciliation, and single-host multi-process coordination. Production promotion still requires independent security review, long-duration operational validation, and a controlled production pilot.
-
 [![CI](https://github.com/TensorScholar/agentguard/actions/workflows/ci.yml/badge.svg)](https://github.com/TensorScholar/agentguard/actions/workflows/ci.yml)
 [![Security](https://github.com/TensorScholar/agentguard/actions/workflows/security.yml/badge.svg)](https://github.com/TensorScholar/agentguard/actions/workflows/security.yml)
 [![CodeQL](https://github.com/TensorScholar/agentguard/actions/workflows/codeql.yml/badge.svg)](https://github.com/TensorScholar/agentguard/actions/workflows/codeql.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-AgentGuard turns an untrusted agent action into a deterministic signed authorization decision, constrains credential use to that decision, revalidates the exact execution-time action, and retains correlated integrity evidence around external effects.
+> **Release Status:** `v0.2.0rc3` is an engineering-validated release candidate. It implements protected MCP stdio and bounded Streamable HTTP profiles, production credential authority, durable external-effect reconciliation, and single-host multi-process coordination. Full production certification requires independent security review, long-duration operational validation, and a controlled production pilot. See [Project Status](docs/project-status.md) and [Known Limitations](docs/limitations.md).
 
-## Why AgentGuard exists
+---
 
-Agent security controls are often split across policy, identity, credentials, tool transports, execution, and audit systems. The dangerous failures happen at the boundaries between them:
+## The Problem: Boundary Failures in Agent Execution
 
-- an approved action is executed with different arguments or authority;
-- a credential exceeds the approved audience, scope, tenant, or lifetime;
-- a receipt, approval, lease, or execution permit is replayed;
-- an MCP client retains a direct or parallel route around the protected path;
-- an external request may have committed but the client loses the response;
-- two recovery workers race to resolve the same ambiguous external effect;
-- audit or evidence is modified, truncated, replaced, or detached from the execution that produced it.
+When autonomous AI agents interact with production infrastructure via tool transports such as MCP (Model Context Protocol), catastrophic failures rarely happen within the language model's reasoning loop. They happen at the **boundaries** between policy, identity, credentials, tool transports, and external execution:
 
-AgentGuard addresses these integrity failures with deterministic controls and stable reason codes. No generative model participates in the trusted authorization decision path.
+- **Argument Mutation:** An approved action is executed with tampered parameters due to downstream prompt injection or model drift (e.g., an authorized \$85 refund is dispatched as \$850).
+- **Scope & Credential Drift:** An agent acquires or uses credentials that exceed its approved audience, scope, tenant, or lifetime.
+- **Action & Permit Replay:** An authorization receipt, capability lease, or execution permit is intercepted and re-executed.
+- **Transport Bypass:** A client bypasses protected proxy mediation through direct or parallel transport routes.
+- **Ambiguous External Effects:** An external API call times out mid-flight; the agent blindly retries, causing duplicate irreversible mutations.
+- **Detached Audit Evidence:** Execution logs are unlinked from the cryptographic decision, making post-incident forensic attribution impossible.
 
-## Security objective
+AgentGuard addresses these integrity failures with **deterministic, fail-closed runtime controls** and stable reason codes. **No generative model participates in the trusted authorization or execution path.**
+
+---
+
+## Core Security Invariant
 
 ```text
-Authorized action == Credentialed action == Executed action
-Every protected route passes through the enforcement boundary
-Ambiguous external effects are reconciled before retry, not guessed
-Retained evidence is secret-minimized, integrity-checked, and optionally signed
+       Authorized action == Credentialed action == Executed action
+──────────────────────────────────────────────────────────────────────────
+✓ Every protected route passes through the enforcement boundary
+✓ Ambiguous external effects are reconciled before retry, not guessed
+✓ Retained evidence is secret-minimized, hash-chained, and cryptographically signed
 ```
 
-## Architecture
+---
 
-AgentGuard is a provider-neutral modular monolith using ports and adapters. Policy and domain semantics do not depend on MCP, HTTP, SQLite, Typer, OpenTelemetry, or a specific credential provider.
+## Architectural Context: Where AgentGuard Operates
 
-```mermaid
-flowchart LR
-    U[Untrusted agent/client] --> A[Protocol adapter]
-    A --> N[Normalize ActionIntent]
-    N --> P{Deterministic policy}
-    P -->|Deny| D[Fail closed]
-    P -->|Allow / approved| R[Signed decision receipt]
-    R --> C[Credential authority]
-    C --> E[Protected execution]
-    R --> E
-    E --> B[Durable external-effect binding]
-    B --> X[Provider / MCP tool]
-    X --> Q[Definite result or UNKNOWN]
-    Q --> L[Execution ledger + evidence]
-    Q --> W[Reconciliation worker]
-    W --> V[Provider-verified evidence]
-    V --> L
-```
+AgentGuard is an execution-integrity kernel operating at the transport and execution boundary. It complements adjacent systems across different architectural domains:
 
-An `UNKNOWN` execution is never silently converted into retry-safe state. Provider reconciliation is append-only evidence; confirmed success or failure requires the configured provider-specific verification contract.
+| Architectural Domain | Examples | Primary Function | AgentGuard Relationship |
+| :--- | :--- | :--- | :--- |
+| **Agent Frameworks & Orchestrators** | e.g., LangChain, AutoGen, CrewAI | Agent reasoning, tool selection, plan generation | AgentGuard treats the orchestrator as an **untrusted proposal generator** (independent of framework). |
+| **Prompt Safety & Policy** | e.g., Llama Guard, NeMo Guardrails | Natural language content moderation, prompt filtering | Text-level filters inspect conversational content; AgentGuard enforces **deterministic execution integrity** on tool calls. |
+| **Workload & Caller Identity** | e.g., SPIFFE, OIDC | Cryptographic machine and caller identity proofing | External identity tokens are validated by adapters and bound to normalized `ActionIntent` principals. |
+| **Runtime Action Integrity** | **AgentGuard** | **Deterministic policy, signed receipts, credential clamping, execution digest revalidation, replay prevention** | **The enforcement kernel between the agent runtime and the tool executor.** |
+| **Enterprise Secret Management** | e.g., HashiCorp Vault, AWS Secrets Manager | Enterprise secret storage and rotation | AgentGuard binds late-resolved credentials to signed decision receipts without persisting secrets. |
+| **Tool Transports & Providers** | e.g., MCP Stdio/HTTP, REST APIs, Databases | Executes external business logic and side-effects | Mediated via protected MCP proxies and durable effect bindings. |
 
-## Implemented capabilities
+For detailed domain boundaries and separation of concerns, see [Product Boundary](docs/product-boundary.md).
 
-### Authorization and execution integrity
+---
 
-- Strict versioned schemas for intent, policy, receipts, credentials, execution, audit, and evidence.
-- Policy v2 with default deny, deterministic deny precedence, tenant binding, provenance constraints, and blast-radius budgets.
-- Ed25519-signed request-bound decision and approval receipts.
-- Execution-time canonical digest revalidation and atomic replay prevention.
-- Signed delegated authority graphs, attenuation, revocation cascades, and consumable capability leases.
-- Signed field-level provenance, transformation lineage, and exact-value typed releases.
-- Durable prepare/commit staging for policy-classified high-impact actions.
-- Declared causal execution ancestry and secret-minimized graph reconstruction.
-- Deterministic least-authority and policy-counterfactual analysis that cannot override enforcement.
+## 60-Second Quick Start: The "Rogue Refund" Demo
 
-### MCP and service boundary
-
-- Protected MCP stdio mediation with bounded messages, concurrent relay, stable server identity, and fail-closed schema handling.
-- A bounded MCP `2026-07-28` Streamable HTTP gateway with protected `tools/call` execution.
-- Host/Origin validation, bounded payloads, and fail-closed request security.
-- Non-loopback HTTP binding allowed only with TLS, a Bearer access token, and an explicit non-wildcard Host allowlist; browser-reachable mode additionally requires an Origin allowlist.
-- `/livez`, `/readyz`, and compatibility `/healthz` service probes.
-- Configuration posture checks for direct, ambiguous, invalid, and parallel bypass routes.
-
-### Credentials and external effects
-
-- Provider-neutral credential authority with durable profiles, late secret resolution, exact provider/endpoint binding, and revocation.
-- The included production-profile credential source reads an explicitly configured environment-held secret only at resolution time; provider secrets are not persisted in grants or AgentGuard durable state.
-- Durable `ExternalEffectBinding` persistence before side-effecting provider dispatch on the configured Phase 6 path.
-- Explicit provider idempotency/replay semantics; absence of proven idempotency defaults to `RECONCILE_BEFORE_RETRY`.
-- Provider-specific durable reconciliation with `AGENTGUARD_SIGNED`, `PROVIDER_CORRELATED`, and `PROVIDER_VERIFIED` trust levels.
-- Single-host multi-process reconciliation leases with monotonic fencing tokens, expiry/takeover, stale-worker rejection, startup recovery, and bounded polling.
-- The one-shot reconciliation command and background worker use the same ownership protocol.
-
-### Audit, evidence, and release controls
-
-- Secret redaction at AgentGuard persistence boundaries.
-- Hash-chained audit events, signed external checkpoints, and authenticated evidence manifests.
-- Portable signed execution attestations with digest-linked history.
-- Reproducible wheel and normalized-sdist checks, deterministic SBOM/release manifest generation, SHA-256 checksums, base-wheel and HTTP-extra clean-install smoke, and non-root container smoke.
-- Cross-platform CI on Linux, macOS, and Windows plus Security and CodeQL workflows.
-
-## Quick start
-
-AgentGuard requires Python 3.11 or newer.
+AgentGuard ships with an automated scenario demonstrating real-time interception of argument tampering, scope inflation, and replay attacks:
 
 ```bash
+# 1. Setup virtual environment
 python -m venv .venv
-. .venv/bin/activate
-python -m pip install -e .
+source .venv/bin/activate
+pip install -e .
 
-agentguard init
-agentguard demo --output .agentguard/demo
+# 2. Run the automated multi-attack verification suite
+agentguard demo --output .agentguard/demo --force
+```
+
+### Inspect the Interception Results
+
+```bash
+cat .agentguard/demo/results.json
+```
+
+```json
+{
+  "happy_path": "authorized",
+  "argument_mutation": "execution.arguments_digest_mismatch",
+  "excessive_scope": "credential.scope_exceeds_decision",
+  "replay": "decision_receipt.replayed",
+  "audit": [
+    true,
+    7,
+    "226e2386333128a7ac5a83184a414631209b14c2ee05f4ef211168f330ddf38a",
+    null
+  ]
+}
+```
+
+### Offline Cryptographic Evidence Verification
+
+Verify that the execution evidence bundle was authentically signed and untampered:
+
+```bash
 agentguard evidence-verify .agentguard/demo/evidence \
   --public-key .agentguard/demo/public.pem \
   --require-signature
 ```
 
-For the protected HTTP/service profile:
-
-```bash
-python -m pip install -e '.[http]'
-agentguard-mcp-http --help
-agentguard-reconcile --help
-agentguard-reconcile-worker --help
+```json
+{
+  "ok": true,
+  "checked_artifacts": 4,
+  "signature_verified": true
+}
 ```
 
-The HTTP listener defaults to loopback. Remote binding is rejected unless the deployment security requirements described in [production deployment](docs/production-deployment.md) are satisfied.
+For the complete interactive walkthrough and step-by-step lifecycle, see [Demo Walkthrough](docs/DEMO.md).
 
-## Authorize, broker, and verify
+---
 
-```bash
-agentguard authorize \
-  examples/scoped-refund/request.json \
-  examples/scoped-refund/policy.yaml \
-  --output decision.json
+## Architecture & Lifecycle
 
-agentguard broker-demo \
-  examples/scoped-refund/request.json \
-  decision.json \
-  --output grant.json
+AgentGuard is implemented as a provider-neutral modular monolith using ports and adapters. Policy and domain semantics have zero dependencies on MCP, HTTP, SQLite, Typer, or specific cloud SDKs.
 
-agentguard verify-execution \
-  examples/scoped-refund/request.json \
-  decision.json \
-  examples/scoped-refund/policy.yaml \
-  --grant grant.json
+```mermaid
+flowchart LR
+    U[Untrusted Agent / Client] --> A[Protocol Adapter]
+    A --> N[Normalize ActionIntent]
+    N --> P{Deterministic Policy v2}
+    P -->|Deny| D[Fail Closed]
+    P -->|Allow / Approved| R[Signed Decision Receipt]
+    R --> C[Credential Authority]
+    C --> E[Protected Execution Revalidation]
+    R --> E
+    E --> B[Durable External-Effect Binding]
+    B --> X[Provider / MCP Tool]
+    X --> Q[Definite Result or UNKNOWN]
+    Q --> L[Execution Ledger & Evidence]
+    Q --> W[Reconciliation Worker]
+    W --> V[Provider-Verified Evidence]
+    V --> L
 ```
 
-`broker-demo` is a contract-test/demo adapter. It must not be represented as the production credential authority.
+### Execution Lifecycle
 
-## Check MCP enforcement posture
+1. **Normalize:** Inbound tool proposals are parsed into a strictly typed, versioned `ActionIntent`.
+2. **Authorize:** The deterministic Policy v2 engine evaluates the intent (default-deny, blast-radius limits, verified provenance).
+3. **Sign:** If permitted, AgentGuard issues an Ed25519-signed `DecisionReceipt` containing the intent's canonical SHA-256 digest and a `credential_ceiling`.
+4. **Bind & Revalidate:** Before execution, AgentGuard re-verifies the canonical digest against the live call, clamps credentials to the decision ceiling, and atomically claims the decision nonce in SQLite to prevent replay.
+5. **Durable Binding:** Before side-effecting dispatch, an `ExternalEffectBinding` is persisted. If the call times out or fails ambiguously, it remains `UNKNOWN`.
+6. **Reconciliation:** Ambiguous executions require provider-verified reconciliation before retry; blind retries are forbidden by default.
+7. **Attest:** Audit records are hash-chained and packaged into signed, verifiable evidence bundles.
+
+For full architectural specifications, see [Architecture](docs/architecture.md) and [ADRs](docs/adr/).
+
+---
+
+## Core Capabilities
+
+- **Authorization & Execution Integrity:** Deterministic default-deny Policy v2, Ed25519-signed decision receipts, execution-time canonical JSON digest revalidation (blocks parameter tampering), and atomic nonce consumption (blocks replay).
+- **Protected MCP Mediation & Posture Auditing:** Protected stdio (`mcp-proxy-v2`) and Streamable HTTP (`2026-07-28`) proxies with dynamic schema hashing, fail-closed inventory, and `mcp-posture` bypass route detection.
+- **Credential Clamping & Durable Reconciliation:** Late environment-backed secret resolution, exact endpoint binding, and single-host multi-process reconciliation workers coordinated via SQLite leases and monotonic fencing tokens (`RECONCILE_BEFORE_RETRY`).
+- **Tamper-Evident Audit & Cryptographic Evidence:** Secret minimization at persistence boundaries, hash-chained SQLite ledgers, exportable signed checkpoints, and offline-verifiable evidence bundles.
+
+---
+
+## CLI Manual Walkthrough
+
+For manual inspection of individual pipeline stages:
 
 ```bash
-agentguard mcp-posture \
-  --config examples/mcp_posture_protected.json \
-  --fail-on-bypass
+# 1. Authorize an untrusted request
+agentguard authorize examples/scoped-refund/request.json examples/scoped-refund/policy.yaml --output decision.json
+
+# 2. Request a bounded credential grant (demo test harness)
+agentguard broker-demo examples/scoped-refund/request.json decision.json --output grant.json
+
+# 3. Revalidate digest and execute
+agentguard verify-execution examples/scoped-refund/request.json decision.json examples/scoped-refund/policy.yaml --grant grant.json
+
+# 4. Audit MCP configuration for bypass routes
+agentguard mcp-posture --config examples/mcp_posture_protected.json --fail-on-bypass
 ```
 
-The command fails when the supplied configuration contains a direct route, invalid route, unverifiable proxy target, or guarded-plus-direct duplicate. It cannot prove that an undisclosed or dynamically constructed route does not exist.
+---
 
-## Product boundary
+## Product Boundary & Operational Scope
 
-AgentGuard owns:
+- **What AgentGuard Owns:** Deterministic action authorization, signed decision receipts, execution-time parameter binding, replay prevention, credential ceilings, protected MCP transport boundaries, external-effect state machines, single-host reconciliation leasing with monotonic fencing, and hash-chained audit evidence.
+- **What AgentGuard Delegates:** Model planning and task orchestration (agent frameworks), caller identity proofing (OIDC/SPIFFE), long-term secret storage and rotation (enterprise vaults), operating-system process isolation (containers/sandboxes), and distributed multi-host consensus.
 
-- deterministic action authorization and signed decision integrity;
-- execution-time binding, replay prevention, and authority consumption;
-- credential ceilings, late credential resolution, and exact provider binding;
-- protected MCP transport boundaries and bypass-posture checks;
-- external-effect binding and provider reconciliation semantics;
-- single-host reconciliation ownership/fencing;
-- local audit, checkpoints, execution attestations, and evidence correlation.
+---
 
-AgentGuard does not own:
+## Known Technical Limitations (Release Candidate `0.2.0rc3`)
 
-- model evaluation or agent orchestration;
-- workload identity proofing or a general secret vault;
-- a hosted human-approval interface;
-- generic provider-side undo/compensation;
-- SIEM storage or distributed consensus;
-- operating-system sandboxing, process isolation, or network egress enforcement.
+- **State Model:** Validated for **single-host, multi-process** deployments via local SQLite locking. Network filesystems (NFS/CIFS) or cross-host consensus are explicitly outside the current correctness claim.
+- **Credential Sourcing:** Resolves environment-held secrets late; dynamic token minting and provider-native IAM downscoping require downstream adapters.
+- **Reconciliation Assurance:** Confirmed outcomes are only as authoritative as the configured provider verification contract.
+- **MCP Conformance:** Protected stdio targets bounded MCP `2025-03-26`; Streamable HTTP targets bounded MCP `2026-07-28`.
+- **Operational Pilot:** Production certification requires an independent security audit, long-duration soak test, and controlled production pilot.
 
-## Current limitations
+For detailed boundary specifications, see [Threat Model](docs/threat-model.md), [Security Assumptions](docs/security-assumptions.md), and [Limitations](docs/limitations.md).
 
-- The SQLite deployment contract is **single-host, multi-process**, not multi-host HA. Network-filesystem locking or cross-host consensus is not claimed.
-- The included production credential source is environment-backed; provider-native token minting/downscoping and broad provider integration coverage are not included.
-- Provider-confirmed reconciliation is only as trustworthy as the configured provider-specific reconciler and its verification contract.
-- The protected stdio profile remains a bounded `2025-03-26` interoperability target; the protected HTTP profile is a bounded `2026-07-28` target. Neither statement is a claim of full MCP specification conformance.
-- TLS termination outside the AgentGuard HTTP process is not treated as an equivalent trusted-proxy boundary by the current CLI.
-- Field provenance and causal ancestry are only as complete as the trusted integration that declares and signs them.
-- `REVERSIBLE` / `COMPENSATABLE` classifications do not provide generic provider-side undo.
-- Legitimate provider tool output is not subjected to generic DLP/redaction by the MCP adapter.
-- Interactive identity-backed approval, HSM/KMS signing integration, multi-host shared transactional state, and centralized policy distribution remain deployment integrations rather than bundled services.
-- No independent penetration test, long-duration soak test, or controlled production pilot has been completed for this release candidate.
+---
 
-See [project status](docs/project-status.md), [architecture](docs/architecture.md), [threat model](docs/threat-model.md), and [known limitations](docs/limitations.md) for the precise promotion boundary.
+## Verification & Development
 
-## Development
+AgentGuard requires Python 3.11 or newer.
 
 ```bash
+# Development setup with HTTP profile
 python -m pip install -e '.[dev,http]'
+
+# Run the complete test, lint, typing, and security suite
 make check
 ```
 
-Security-sensitive changes must include allow/deny/replay/mutation/stale-state/failure-path tests where applicable. See [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
+---
 
-## Security
+## Security & License
 
-Do not report vulnerabilities in public issues. Follow [.github/SECURITY.md](.github/SECURITY.md).
+Vulnerabilities should be reported responsibly according to [.github/SECURITY.md](.github/SECURITY.md).
 
-## License
+Licensed under the MIT License. See [LICENSE](LICENSE).
 
-MIT. See [LICENSE](LICENSE).

@@ -25,21 +25,21 @@ AgentGuard `v0.2.0rc3` is a hardened release candidate for deterministic runtime
 
 ## Engineering gaps closed on the current line
 
-- `AG-EXEC-001` — protected execution boundary and durable definite/ambiguous outcome classification;
-- `AG-CRED-001` — bounded production credential-authority profile with late environment-backed secret resolution and exact provider binding;
-- `AG-RPC-001` — bounded protected Streamable HTTP service boundary with fail-closed remote-listener requirements;
-- `AG-ARCH-001` — explicit single-host multi-process service/reconciliation topology with transactional lease fencing.
+- `AG-EXEC-001` (Protected Execution Boundary) — protected execution boundary and durable definite/ambiguous outcome classification;
+- `AG-CRED-001` (Bounded Credential Authority) — bounded production credential-authority profile with late environment-backed secret resolution and exact provider binding;
+- `AG-RPC-001` (Streamable HTTP Boundary) — bounded protected Streamable HTTP service boundary with fail-closed remote-listener requirements;
+- `AG-ARCH-001` (Single-Host Multi-Process Service) — explicit single-host multi-process service/reconciliation topology with transactional lease fencing.
 
 Closing these engineering gaps does **not** imply that AgentGuard is a production-certified distributed service.
 
 ## Remaining promotion debt
 
-- `AG-CAN-001` — canonicalization assurance beyond the deliberately supported signed-schema numeric subset;
-- `AG-AUD-001` / `AG-AUD-002` — deployment backup/restore, independent checkpoint retention, corruption, and key-loss operational exercises;
-- `AG-DX-001` / `AG-DX-002` — broader operator/developer ergonomics and deployment automation;
-- `AG-BROKER-001` — provider-native credential minting/downscoping and broader real-provider integration decisions;
-- `AG-REL-001` — final exact-commit release evidence, release signing/provenance decision, tag/release publication, and independent artifact verification;
-- `AG-VAL-001` — independent security review, long-duration soak testing, and controlled production pilot.
+- `AG-CAN-001` (RFC Canonicalization Assurance) — canonicalization assurance beyond the deliberately supported signed-schema numeric subset;
+- `AG-AUD-001` / `AG-AUD-002` (Operational Durability Drills) — deployment backup/restore, independent checkpoint retention, corruption, and key-loss operational exercises;
+- `AG-DX-001` / `AG-DX-002` (Operator Ergonomics) — broader operator/developer ergonomics and deployment automation;
+- `AG-BROKER-001` (Provider-Native IAM Downscoping) — provider-native credential minting/downscoping and broader real-provider integration decisions;
+- `AG-REL-001` (Release Signing & Provenance) — final exact-commit release evidence, release signing/provenance decision, tag/release publication, and independent artifact verification;
+- `AG-VAL-001` (Independent Penetration & Pilot) — independent security review, long-duration soak testing, and controlled production pilot.
 
 Multi-host HA, distributed consensus, generic provider output DLP, hosted identity-backed approval, and generic provider compensation are explicit non-capabilities rather than hidden claims.
 
