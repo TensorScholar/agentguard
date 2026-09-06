@@ -1,24 +1,29 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from agentguard.adapters.broker import MockCredentialBroker
+from agentguard.adapters.crypto import Ed25519Signer
 from agentguard.adapters.executor import DeterministicFakeExecutor
 from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService, ExecutionPersistenceError
 from agentguard.domain import (
     AuditEventType,
+    CredentialGrant,
     CredentialRequest,
     ExecutionState,
     ExecutionStatus,
 )
+from agentguard.engine.canonical import digest
 from agentguard.engine.execution import (
     ExecutionGuardError,
     authorize_execution,
     validate_execution_authority,
 )
+from agentguard.engine.policy import evaluate_policy
+from agentguard.engine.receipts import issue_decision_receipt
 
 
 def _credential_flow(intent, policy, signer, verifier, state):
@@ -382,3 +387,87 @@ def test_terminal_persistence_failure_leaves_dispatching_for_unknown_recovery(
     recovered = service.recover_incomplete_executions()
     assert len(recovered) == 1
     assert state.get_execution(record.execution_id).state == ExecutionState.UNKNOWN
+
+
+def _reserve_with_expired_authorization(intent, policy, signer, verifier, state, execution_id):
+    """Validate while the receipt is live, then reserve; wall-clock time is past expiry.
+
+    Public paths cannot separate validation time from dispatch time, so the backdated
+    fixture is the only way to place a RESERVED record past its authorization expiry.
+    """
+    broker_signer = Ed25519Signer.generate("mock-broker-ed25519")
+    broker = MockCredentialBroker(signer=broker_signer)
+    issued_at = datetime.now(UTC) - timedelta(seconds=300)
+    live_at = issued_at + timedelta(seconds=30)
+    evaluation = evaluate_policy(policy, intent, now=live_at)
+    receipt = issue_decision_receipt(intent, evaluation, signer, now=issued_at, ttl_seconds=60)
+    ceiling = receipt.credential_ceiling
+    assert ceiling is not None
+    handle = f"opaque://expired-authorization/{execution_id}"
+    grant = broker.attest_for_testing(
+        CredentialGrant(
+            grant_id="grant_expired_" + execution_id,
+            issuance_id="iss_expired_" + execution_id,
+            decision_id=receipt.decision_id,
+            trace_id=receipt.trace_id,
+            mode="opaque_handle",
+            credential_handle=handle,
+            credential_handle_digest=digest(handle),
+            audience=ceiling.audience,
+            scopes=ceiling.scopes,
+            tenant_id=ceiling.tenant_id,
+            issued_at=issued_at,
+            expires_at=issued_at + timedelta(seconds=60),
+            broker=broker.name,
+            broker_key_id=broker_signer.key_id,
+            attestation="",
+        )
+    )
+    verified = validate_execution_authority(
+        intent,
+        receipt,
+        grant,
+        verifier,
+        execution_id=execution_id,
+        broker_grant_verifier=broker.verifier,
+        current_policy=policy,
+        execution_repository=state,
+        now=live_at,
+    )
+    assert state.reserve_execution(verified, live_at) is None
+    service = AgentGuardService(signer, verifier, state, broker.verifier)
+    return service, receipt, grant, verified
+
+
+def test_dispatch_after_authorization_expiry_rejected(intent, policy, signer, verifier, state):
+    service, _, _, verified = _reserve_with_expired_authorization(
+        intent, policy, signer, verifier, state, "exec_expired_dispatch"
+    )
+    executor = DeterministicFakeExecutor()
+    # _dispatch_reserved is the single choke point for execute/commit/resume dispatch.
+    with pytest.raises(ExecutionGuardError, match="authorization_expired"):
+        service._dispatch_reserved(verified, executor)
+    assert executor.calls == []
+    record = state.get_execution("exec_expired_dispatch")
+    assert record is not None
+    assert record.state == ExecutionState.RESERVED
+
+
+def test_stale_reserved_resume_after_expiry_rejected(intent, policy, signer, verifier, state):
+    service, receipt, grant, _ = _reserve_with_expired_authorization(
+        intent, policy, signer, verifier, state, "exec_expired_resume"
+    )
+    executor = DeterministicFakeExecutor()
+    with pytest.raises(ExecutionGuardError, match="expired"):
+        service.resume_reserved_execution(
+            "exec_expired_resume",
+            intent,
+            receipt,
+            grant,
+            executor,
+            current_policy=policy,
+        )
+    assert executor.calls == []
+    record = state.get_execution("exec_expired_resume")
+    assert record is not None
+    assert record.state == ExecutionState.RESERVED

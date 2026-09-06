@@ -9,6 +9,7 @@ AgentGuard is designed to preserve the following properties on traffic that actu
 - credential material must stay inside the approved provider/audience/scope/tenant/lifetime boundary;
 - provider secrets must not be persisted in decision grants, external-effect bindings, audit, or execution evidence;
 - receipts, approvals, leases, typed releases, and execution permits must not be replayed beyond their allowed use;
+- a protected execution must not begin side effects after its authorization has expired;
 - protected MCP calls must fail closed when current schema/inventory/security context cannot be trusted;
 - a non-loopback HTTP listener must not start without the required TLS/authentication/Host controls;
 - a potentially committed external effect must remain ambiguous until stronger reconciliation evidence is obtained;
@@ -45,6 +46,7 @@ The threat set includes argument/action substitution, confused deputy behavior, 
 - `mcp-posture` receives every configuration artifact the operator expects it to inspect.
 - Signed checkpoints are exported to storage an attacker controlling the local ledger cannot rewrite.
 - Public verification keys are distributed through an independently trusted channel.
+- A decision receipt is a bearer admission ticket inside its validity window: it binds principal claims, not a holder key, so receipt/grant/approval material must be handled as sensitive until consumed, and preflight success is point-in-time only.
 
 ## Important adversarial cases
 
