@@ -495,13 +495,13 @@ def evidence_verify(
     ok, count = verify_bundle(
         output,
         verifier=verifier,
-        require_signature=require_signature,
+        require_signature=require_signature or verifier is not None,
     )
     console.print_json(
         data={
             "ok": ok,
             "checked_artifacts": count,
-            "signature_verified": verifier is not None,
+            "signature_verified": verifier is not None and ok,
         }
     )
 
