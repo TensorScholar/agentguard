@@ -53,6 +53,17 @@ Field-integrity constraints use signed provenance statements and exact-value typ
 
 High-impact staged execution separates durable prepare from commit. Commit re-runs security checks inside its bounded window before entering the normal protected execution path. Staging classifications are control semantics, not generic provider undo.
 
+### DecisionReceipt temporal semantics
+
+A `DecisionReceipt` is a signed, expiry-bounded, single-use, policy-contingent **execution admission ticket**, redeemable exactly once at the protected execution boundary. It is not a reservation: issuance (`authorize`) performs no execution-state mutation beyond audit appends, and holding a receipt confers no owned execution slot.
+
+- **Admission ticket.** The receipt binds the normalized intent, policy result, credential ceiling, budget, staging requirement, and validity window to a fresh single-use nonce. It authorizes one admission *attempt*; the attempt still revalidates everything before any side effect.
+- **Policy-contingent validation.** Admission requires the current policy to digest-match the receipt **and** re-evaluate identically (effect, matched rules, staging). A policy change between decision and execution fails admission; the receipt never freezes permission across policy drift.
+- **Single-use reservation boundary.** Exactly one concurrent admission wins via the atomic `reserve_execution` transaction, which claims the decision nonce (keyed by nonce *and* decision id), the capability lease use, and typed releases together with the durable `RESERVED` record. Losers fail closed with `decision_receipt.replayed`. At-most-once therefore rests on the shared transactional state adapter (single-host SQLite; cross-host is out of contract).
+- **Expiry enforced through dispatch.** Receipt expiry is checked at validation and reservation, and rechecked from the in-memory `authorization_expires_at` immediately before dispatch, so a stale `RESERVED` record cannot begin side effects after its authorization lapsed (`execution.authorization_expired`).
+- **Non-consuming preflight.** `validate_execution_authority` (`verify-execution` CLI, `guard_execution`) answers "would admit now" without consuming the nonce or mutating lifecycle state. A passing preflight is point-in-time only: nonce, lease, release, policy, and expiry state may change before the real admission, so preflight success must never be treated as execution permission.
+- **RESERVED lifecycle.** A `RESERVED` record means "authority claimed, no dispatch begun." It is resumable via `resume_reserved_execution`, which fully revalidates authority against current time, policy, and bindings (a stale record whose authorization expired fails closed). Crash recovery deliberately leaves `RESERVED` rows untouched and terminalizes only stranded `DISPATCHING` rows as `UNKNOWN`, never redispatching.
+
 ## Protected MCP profiles
 
 ### Protected stdio

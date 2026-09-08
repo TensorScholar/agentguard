@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from typer.testing import CliRunner
-
 from agentguard import __version__
+from agentguard.adapters.evidence import EvidenceVerificationError
 from agentguard.cli.app import app
+from typer.testing import CliRunner
 
 runner = CliRunner()
 
@@ -248,3 +248,100 @@ def test_cli_simulate_audit_verify_and_refuse_overwrite(tmp_path):
     ledger = tmp_path / "empty.sqlite"
     audit = runner.invoke(app, ["audit-verify", "--ledger", str(ledger)])
     assert audit.exit_code == 0, audit.stdout
+
+
+def test_evidence_verify_signature_semantics(tmp_path):
+    root = Path(__file__).parents[2]
+    workspace = tmp_path / "workspace"
+    assert runner.invoke(app, ["init", "--output", str(workspace)]).exit_code == 0
+    other = tmp_path / "other"
+    assert runner.invoke(app, ["init", "--output", str(other)]).exit_code == 0
+
+    request = root / "src/agentguard/resources/demo-intent.json"
+    policy = workspace / "policy.yaml"
+    receipt = tmp_path / "receipt.json"
+    ledger = tmp_path / "audit.sqlite"
+    authorize_result = runner.invoke(
+        app,
+        [
+            "authorize",
+            str(request),
+            str(policy),
+            "--key",
+            str(workspace / "decision-private.pem"),
+            "--ledger",
+            str(ledger),
+            "--output",
+            str(receipt),
+        ],
+    )
+    assert authorize_result.exit_code == 0, authorize_result.stdout
+
+    unsigned = tmp_path / "unsigned"
+    assert (
+        runner.invoke(
+            app, ["evidence-build", str(request), str(receipt), "--output", str(unsigned)]
+        ).exit_code
+        == 0
+    )
+    signed = tmp_path / "signed"
+    assert (
+        runner.invoke(
+            app,
+            [
+                "evidence-build",
+                str(request),
+                str(receipt),
+                "--output",
+                str(signed),
+                "--key",
+                str(workspace / "decision-private.pem"),
+            ],
+        ).exit_code
+        == 0
+    )
+
+    unsigned_no_key = runner.invoke(app, ["evidence-verify", str(unsigned)])
+    assert unsigned_no_key.exit_code == 0, unsigned_no_key.stdout
+    assert json.loads(unsigned_no_key.stdout)["signature_verified"] is False
+
+    unsigned_with_key = runner.invoke(
+        app,
+        ["evidence-verify", str(unsigned), "--public-key", str(workspace / "decision-public.pem")],
+    )
+    assert unsigned_with_key.exit_code != 0
+    assert isinstance(unsigned_with_key.exception, EvidenceVerificationError)
+    assert "attestation_missing" in str(unsigned_with_key.exception)
+    assert '"signature_verified": true' not in unsigned_with_key.stdout.lower()
+
+    signed_correct_key = runner.invoke(
+        app,
+        ["evidence-verify", str(signed), "--public-key", str(workspace / "decision-public.pem")],
+    )
+    assert signed_correct_key.exit_code == 0, signed_correct_key.stdout
+    assert json.loads(signed_correct_key.stdout)["signature_verified"] is True
+
+    signed_wrong_key = runner.invoke(
+        app, ["evidence-verify", str(signed), "--public-key", str(other / "decision-public.pem")]
+    )
+    assert signed_wrong_key.exit_code != 0
+    assert isinstance(signed_wrong_key.exception, EvidenceVerificationError)
+    assert '"signature_verified": true' not in signed_wrong_key.stdout.lower()
+
+    signed_no_key = runner.invoke(app, ["evidence-verify", str(signed)])
+    assert signed_no_key.exit_code == 0, signed_no_key.stdout
+    assert json.loads(signed_no_key.stdout)["signature_verified"] is False
+
+    require_missing = runner.invoke(app, ["evidence-verify", str(unsigned), "--require-signature"])
+    assert require_missing.exit_code != 0
+    assert isinstance(require_missing.exception, EvidenceVerificationError)
+    assert "attestation_missing" in str(require_missing.exception)
+
+    (signed / "decision-receipt.json").write_text('{"tampered": true}', encoding="utf-8")
+    tampered = runner.invoke(
+        app,
+        ["evidence-verify", str(signed), "--public-key", str(workspace / "decision-public.pem")],
+    )
+    assert tampered.exit_code != 0
+    assert isinstance(tampered.exception, EvidenceVerificationError)
+    assert '"signature_verified": true' not in tampered.stdout.lower()

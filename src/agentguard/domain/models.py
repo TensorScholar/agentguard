@@ -312,6 +312,15 @@ class ExecutionBudget(StrictModel):
 
 
 class DecisionReceipt(StrictModel):
+    """Signed, expiry-bounded, single-use, policy-contingent execution admission ticket.
+
+    Issuance confers no execution slot: the receipt is redeemed exactly once at the
+    protected execution boundary, where the atomic reservation claims the nonce (keyed
+    by nonce and decision id) together with the durable RESERVED record. Admission
+    revalidates the signature, intent binding, current policy agreement, credential,
+    approval, budget, and validity window; preflight validation never consumes it.
+    """
+
     schema_version: Literal["1"] = "1"
     decision_id: str
     request_id: str

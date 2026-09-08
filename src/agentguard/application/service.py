@@ -922,6 +922,11 @@ class AgentGuardService:
         executor: ProtectedExecutor,
     ) -> ExecutionOutcome:
         dispatching_at = datetime.now(UTC)
+        if verified.authorization_expires_at <= dispatching_at:
+            # Authorization expiry is enforced at validation and reservation, but a RESERVED
+            # record may wait before dispatch. The admission ticket must still be valid when
+            # side effects begin; expiry here fails closed without touching execution state.
+            raise ExecutionGuardError("execution.authorization_expired")
         try:
             self.state.mark_execution_dispatching(verified.execution_id, dispatching_at)
         except RuntimeError as exc:
