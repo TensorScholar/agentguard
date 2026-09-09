@@ -172,7 +172,6 @@ def entrypoint() -> None:
         state,
         broker_grant_verifier=broker_grant_verifier,
     )
-    service.recover_incomplete_executions()
     sender = HTTPXUpstreamSender(
         binding.upstream_url,
         timeout_seconds=args.timeout_seconds,
