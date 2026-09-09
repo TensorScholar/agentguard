@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from typer.testing import CliRunner
+
 from agentguard import __version__
 from agentguard.adapters.evidence import EvidenceVerificationError
 from agentguard.cli.app import app
-from typer.testing import CliRunner
 
 runner = CliRunner()
 

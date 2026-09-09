@@ -154,9 +154,8 @@ class ExecutionRepository(Protocol):
 
     def mark_execution_dispatching(
         self,
-        execution_id: str,
-        dispatching_at: datetime,
-    ) -> ExecutionRecord: ...
+        verified_execution: VerifiedExecution,
+    ) -> datetime: ...
 
     def finish_execution(
         self,

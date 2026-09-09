@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Event
 
 import pytest
+
 from agentguard.adapters.broker import MockCredentialBroker
 from agentguard.adapters.crypto import Ed25519Signer
 from agentguard.adapters.executor import DeterministicFakeExecutor
@@ -296,7 +299,7 @@ def test_recovery_marks_stranded_dispatching_unknown_without_redispatch(
         current_policy=policy,
     )
     assert state.reserve_execution(verified, verified.verified_at) is None
-    state.mark_execution_dispatching(verified.execution_id, verified.verified_at)
+    state.mark_execution_dispatching(verified)
 
     reopened = SQLiteState(path)
     recovery_service = AgentGuardService(signer, verifier, reopened, broker.verifier)
@@ -469,5 +472,105 @@ def test_stale_reserved_resume_after_expiry_rejected(intent, policy, signer, ver
         )
     assert executor.calls == []
     record = state.get_execution("exec_expired_resume")
+    assert record is not None
+    assert record.state == ExecutionState.RESERVED
+
+
+def test_dispatch_rejects_reserved_authority_binding_mismatch(
+    intent, policy, signer, verifier, state
+):
+    service, _, _, verified = _reserve_with_expired_authorization(
+        intent, policy, signer, verifier, state, "exec_binding_mismatch"
+    )
+    rebound = verified.model_copy(
+        update={"authorization_expires_at": verified.authorization_expires_at + timedelta(hours=1)}
+    )
+    executor = DeterministicFakeExecutor()
+    with pytest.raises(ExecutionGuardError, match="reserved_binding_mismatch"):
+        service._dispatch_reserved(rebound, executor)
+    assert executor.calls == []
+    record = state.get_execution(verified.execution_id)
+    assert record is not None
+    assert record.state == ExecutionState.RESERVED
+
+
+def test_dispatch_transition_failure_never_calls_executor(
+    intent, policy, signer, verifier, state, monkeypatch
+):
+    service, _, receipt, grant = _credential_flow(intent, policy, signer, verifier, state)
+    verified = validate_execution_authority(
+        intent,
+        receipt,
+        grant,
+        verifier,
+        execution_id="exec_transition_failure",
+        broker_grant_verifier=service.broker_grant_verifier,
+        current_policy=policy,
+        execution_repository=state,
+    )
+    assert state.reserve_execution(verified, verified.verified_at) is None
+    executor = DeterministicFakeExecutor()
+
+    def fail_transition(_verified):
+        raise RuntimeError("execution.synthetic_transition_failure")
+
+    monkeypatch.setattr(state, "mark_execution_dispatching", fail_transition)
+    with pytest.raises(ExecutionGuardError, match="synthetic_transition_failure"):
+        service._dispatch_reserved(verified, executor)
+    assert executor.calls == []
+    record = state.get_execution(verified.execution_id)
+    assert record is not None
+    assert record.state == ExecutionState.RESERVED
+
+
+def test_dispatch_lock_wait_rechecks_authorization_after_lock(
+    intent, policy, signer, verifier, state, monkeypatch
+):
+    service, _, _, verified = _reserve_with_expired_authorization(
+        intent, policy, signer, verifier, state, "exec_lock_wait_expiry"
+    )
+    before_expiry = verified.authorization_expires_at - timedelta(microseconds=1)
+    at_expiry = verified.authorization_expires_at
+    clock = {"now": before_expiry}
+
+    class ControlledDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = clock["now"]
+            if tz is None:
+                return value.replace(tzinfo=None)
+            return value.astimezone(tz)
+
+    monkeypatch.setattr("agentguard.application.service.datetime", ControlledDateTime)
+    monkeypatch.setattr("agentguard.adapters.storage.sqlite.state.datetime", ControlledDateTime)
+
+    attempted_dispatch = Event()
+    original_mark = state.mark_execution_dispatching
+
+    def mark_after_signal(*args, **kwargs):
+        attempted_dispatch.set()
+        return original_mark(*args, **kwargs)
+
+    monkeypatch.setattr(state, "mark_execution_dispatching", mark_after_signal)
+    blocker = sqlite3.connect(state.path, timeout=10, isolation_level=None)
+    blocker.execute("BEGIN IMMEDIATE")
+    executor = DeterministicFakeExecutor()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(service._dispatch_reserved, verified, executor)
+            assert attempted_dispatch.wait(timeout=2)
+            clock["now"] = at_expiry
+            blocker.execute("COMMIT")
+            with pytest.raises(ExecutionGuardError, match="authorization_expired"):
+                future.result(timeout=2)
+    finally:
+        try:
+            blocker.execute("ROLLBACK")
+        except sqlite3.OperationalError:
+            pass
+        blocker.close()
+
+    assert executor.calls == []
+    record = state.get_execution(verified.execution_id)
     assert record is not None
     assert record.state == ExecutionState.RESERVED

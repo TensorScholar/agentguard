@@ -9,7 +9,7 @@ AgentGuard is designed to preserve the following properties on traffic that actu
 - credential material must stay inside the approved provider/audience/scope/tenant/lifetime boundary;
 - provider secrets must not be persisted in decision grants, external-effect bindings, audit, or execution evidence;
 - receipts, approvals, leases, typed releases, and execution permits must not be replayed beyond their allowed use;
-- a protected execution must not begin side effects after its authorization has expired;
+- a protected local dispatch admission must not commit after its authorization has expired;
 - protected MCP calls must fail closed when current schema/inventory/security context cannot be trusted;
 - a non-loopback HTTP listener must not start without the required TLS/authentication/Host controls;
 - a potentially committed external effect must remain ambiguous until stronger reconciliation evidence is obtained;
@@ -49,6 +49,10 @@ The threat set includes argument/action substitution, confused deputy behavior, 
 - A decision receipt is a bearer admission ticket inside its validity window: it binds principal claims, not a holder key, so receipt/grant/approval material must be handled as sensitive until consumed, and preflight success is point-in-time only.
 
 ## Important adversarial cases
+
+### Authorization expiry at dispatch admission
+
+For the protected execution path, `RESERVED → DISPATCHING` is the local external-effect admission boundary. SQLite serialization is acquired before the authoritative admission timestamp is sampled; the reserved authority binding, receipt expiry, and applicable field-integrity expiry are checked inside that transaction before the transition commits. Executor invocation occurs only after that committed admission. This does not establish that network transmission, provider receipt, or provider-side business effect occurs before the authorization deadline.
 
 ### Ambiguous provider commit
 
