@@ -277,7 +277,9 @@ def test_5e_release_context_rebinding_fails(intent, policy, signer, verifier, st
         service.authorize(rebound, field_policy)
 
 
-def test_5e_expiry_is_rechecked_at_external_boundary(intent, policy, signer, verifier, state):
+def test_5e_expiry_is_rechecked_at_external_boundary(
+    intent, policy, signer, verifier, state, monkeypatch
+):
     field_policy = _field_policy(policy)
     (
         protected_intent,
@@ -289,7 +291,7 @@ def test_5e_expiry_is_rechecked_at_external_boundary(intent, policy, signer, ver
         release_verifier,
     ) = _field_material(intent)
     service = _service(signer, verifier, state, provenance_verifier, release_verifier)
-    receipt = service.authorize(protected_intent, field_policy)
+    receipt = service.authorize(protected_intent, field_policy, ttl_seconds=300)
     verified = validate_execution_authority(
         protected_intent,
         receipt,
@@ -304,8 +306,19 @@ def test_5e_expiry_is_rechecked_at_external_boundary(intent, policy, signer, ver
     assert verified.field_integrity_expires_at is not None
     reserve_at = verified.field_integrity_expires_at - timedelta(microseconds=1)
     assert state.reserve_execution(verified, reserve_at) is None
+
+    expires_at = verified.field_integrity_expires_at
+
+    class ControlledDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return expires_at.replace(tzinfo=None)
+            return expires_at.astimezone(tz)
+
+    monkeypatch.setattr("agentguard.adapters.storage.sqlite.state.datetime", ControlledDateTime)
     with pytest.raises(RuntimeError, match="field_integrity.expired_before_dispatch"):
-        state.mark_execution_dispatching(verified.execution_id, verified.field_integrity_expires_at)
+        state.mark_execution_dispatching(verified)
 
 
 def _staging_policy(policy: PolicyDocument, *, fresh_approval: bool = False) -> PolicyDocument:

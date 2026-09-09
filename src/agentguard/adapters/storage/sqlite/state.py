@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
@@ -677,46 +677,63 @@ class SQLiteState:
 
     def mark_execution_dispatching(
         self,
-        execution_id: str,
-        dispatching_at: datetime,
-    ) -> ExecutionRecord:
+        verified_execution: VerifiedExecution,
+    ) -> datetime:
+        expected_authority_digest = execution_authority_digest(verified_execution)
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
+            dispatching_at = datetime.now(UTC)
+            row = c.execute(
+                """
+                SELECT state,authority_digest,field_integrity_expires_at
+                FROM executions WHERE execution_id = ?
+                """,
+                (verified_execution.execution_id,),
+            ).fetchone()
+            if row is None or str(row["state"]) != ExecutionState.RESERVED.value:
+                c.execute("ROLLBACK")
+                raise RuntimeError("execution.not_reserved")
+            if str(row["authority_digest"]) != expected_authority_digest:
+                c.execute("ROLLBACK")
+                raise RuntimeError("execution.reserved_binding_mismatch")
+
+            stored_field_expiry = (
+                datetime.fromisoformat(str(row["field_integrity_expires_at"]))
+                if row["field_integrity_expires_at"] is not None
+                else None
+            )
+            if stored_field_expiry != verified_execution.field_integrity_expires_at:
+                c.execute("ROLLBACK")
+                raise RuntimeError("execution.reserved_binding_mismatch")
+            if verified_execution.authorization_expires_at <= dispatching_at:
+                c.execute("ROLLBACK")
+                raise RuntimeError("execution.authorization_expired")
+            if (
+                verified_execution.field_integrity_expires_at is not None
+                and verified_execution.field_integrity_expires_at <= dispatching_at
+            ):
+                c.execute("ROLLBACK")
+                raise RuntimeError("field_integrity.expired_before_dispatch")
+
             result = c.execute(
                 """
                 UPDATE executions
                 SET state = ?, dispatching_at = ?
-                WHERE execution_id = ? AND state = ?
-                  AND (field_integrity_expires_at IS NULL OR field_integrity_expires_at > ?)
+                WHERE execution_id = ? AND state = ? AND authority_digest = ?
                 """,
                 (
                     ExecutionState.DISPATCHING.value,
                     dispatching_at.isoformat(),
-                    execution_id,
+                    verified_execution.execution_id,
                     ExecutionState.RESERVED.value,
-                    dispatching_at.isoformat(),
+                    expected_authority_digest,
                 ),
             )
             if result.rowcount != 1:
-                row = c.execute(
-                    "SELECT state,field_integrity_expires_at FROM executions WHERE execution_id = ?",
-                    (execution_id,),
-                ).fetchone()
                 c.execute("ROLLBACK")
-                if (
-                    row is not None
-                    and str(row["state"]) == ExecutionState.RESERVED.value
-                    and row["field_integrity_expires_at"] is not None
-                    and datetime.fromisoformat(str(row["field_integrity_expires_at"]))
-                    <= dispatching_at
-                ):
-                    raise RuntimeError("field_integrity.expired_before_dispatch")
                 raise RuntimeError("execution.not_reserved")
             c.execute("COMMIT")
-        record = self.get_execution(execution_id)
-        if record is None:
-            raise RuntimeError("execution.record_missing")
-        return record
+        return dispatching_at
 
     def finish_execution(
         self,

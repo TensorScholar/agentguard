@@ -509,6 +509,7 @@
     },
     "DecisionReceipt": {
       "additionalProperties": false,
+      "description": "Signed, expiry-bounded, single-use, policy-contingent execution admission ticket.\n\nIssuance confers no execution slot: the receipt is redeemed exactly once at the\nprotected execution boundary, where the atomic reservation claims the nonce (keyed\nby nonce and decision id) together with the durable RESERVED record. Admission\nrevalidates the signature, intent binding, current policy agreement, credential,\napproval, budget, and validity window; preflight validation never consumes it.",
       "properties": {
         "action_digest": {
           "title": "Action Digest",
