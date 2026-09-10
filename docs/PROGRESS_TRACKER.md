@@ -4,16 +4,16 @@
 
 **Q04 / P0 — Execution Admission Correctness**
 
-Current engineering task: **Q04-03 — Exclude terminal reconciliation work**.
+Current engineering task: **Q04-04 — Reconciliation progress and fairness**.
 
 Feature expansion remains frozen until the execution-admission correctness queue is closed or explicitly re-scoped.
 
 ## Repository Baseline
 
-- Remote `main`: `e21ace441535ca1e1bcd266b00aaf7befa800fdf` — merge of PR #17 (Q04-02 unsafe startup recovery containment).
+- Remote `main`: `24e8d3eee606ac56fbaa6282a74a2d38fadd797b`.
 - Preserved Q01 commit: `7effe3e203d2123f5e6d4733706f78613b1f7bb8`.
 - Preserved Q02 commit / audited preflight head: `d8c4bccdbdf41cea349cf81acbba63e15611f1d7`.
-- Q04-03 working branch: `hardening/q04-03-resolved-reconciliation-exclusion`.
+- Q04-04 working branch: `hardening/q04-04-reconciliation-fairness`.
 - Showcase baseline: `848db15534d311070dbbf1470b8ef3ad39f98709`.
 - Declared release version: `0.2.0rc3`.
 - Source divergence: reconciled. The two previously local-only Q01/Q02 commits are now preserved in GitHub history through PR #14.
@@ -65,7 +65,7 @@ Automatic startup recovery was removed because liveness of previous executors ca
 
 ### Q04-03 — Exclude terminal reconciliation work
 
-**Status: COMPLETED.**
+**Status: CLOSED / MERGED via PR #18 (`f0f4bc16bec2c08552b040b37b332e7bb32a500b`).**
 
 Once an UNKNOWN execution has an authoritative terminal resolution (`CONFIRMED_SUCCEEDED`, `CONFIRMED_FAILED`, `CONFLICT`), it is excluded from automatic candidate selection by background reconciliation workers and rejected by default lease acquisition. This prevents terminal work from repeatedly consuming bounded worker capacity and starving pending executions.
 
@@ -75,13 +75,26 @@ Enforcement uses defense in depth:
 - Authoritative atomic lease enforcement: `SQLiteFencedReconciliationState.claim_reconciliation_lease()` inspects the latest `execution_resolutions` within `BEGIN IMMEDIATE`. It unconditionally rejects `CONFLICT`, and rejects `CONFIRMED_SUCCEEDED` / `CONFIRMED_FAILED` unless `allow_terminal_recheck=True`.
 - Worker prefilter optimization: `ReconciliationWorker.run_once()` checks `get_latest_execution_resolution()` and skips terminal records before bounded tick capacity is evaluated.
 
+### Q04-04 — Reconciliation progress and fairness
+
+**Status: COMPLETED.**
+
+A continuously running reconciliation worker uses process-local round-robin progression so a non-progressing early execution does not monopolize subsequent ticks. Busy leases do not consume reconciliation-attempt capacity.
+
+Enforcement:
+- Candidate rotation: At the start of `run_once()`, candidates snapshot is rotated so scanning begins immediately after the cursor execution from the previous tick. If the cursor is missing, it falls back to canonical storage order.
+- Attempt capacity bounding: Bounded provider attempts are governed by successfully acquired leases (`claimed >= max_items_per_tick`), preventing busy leases from consuming quota and starving later actionable executions.
+- Pre-reconciliation cursor advance: The cursor advances to the claimed execution ID immediately upon lease acquisition before provider reconciliation executes. A failing, `STILL_UNKNOWN`, or `UNSUPPORTED` candidate yields to subsequent executions on the next tick.
+
+Explicit limitation: Fairness cursor state is process-local. Restarting the worker, or repeatedly invoking `--once` in separate processes, resets traversal to canonical storage order. No durable or cross-restart scheduler fairness is claimed or introduced.
+
 ## Next Milestones
 
 1. Q04-01 atomic dispatch eligibility (closed).
 2. Q04-02 unsafe startup recovery containment (closed).
-3. Q04-03 exclude already-resolved reconciliation work (completed).
-4. Q04-04 reconciliation progress/fairness.
-5. Q04-05 separate provider-response hashing from authorization canonicalization.
+3. Q04-03 exclude already-resolved reconciliation work (closed).
+4. Q04-04 reconciliation progress/fairness (completed).
+5. Q04-05 separate provider-response hashing from authorization canonicalization (closed).
 6. Q04-06 claims alignment.
 7. Q04-07 integrated evaluation candidate.
 

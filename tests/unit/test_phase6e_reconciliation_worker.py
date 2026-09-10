@@ -327,6 +327,28 @@ class FailingService:
         raise RuntimeError("provider_reconciliation.test_failure")
 
 
+class SelectiveFailingService:
+    def __init__(
+        self,
+        state: SQLiteFencedReconciliationState,
+        clock: FixedClock,
+        failing_ids: set[str],
+    ) -> None:
+        self.state = state
+        self.clock = clock
+        self.failing_ids = failing_ids
+        self.calls: list[str] = []
+
+    def reconcile_execution(self, execution_id: str, reconciler: ConfigurableReconciler):
+        self.calls.append(execution_id)
+        if execution_id in self.failing_ids:
+            raise RuntimeError(f"provider_reconciliation.failure_{execution_id}")
+        execution = self.state.get_execution(execution_id)
+        assert execution is not None
+        evidence = reconciler.reconcile(execution)
+        return self.state.record_execution_resolution(execution_id, evidence, self.clock.now())
+
+
 def _worker(
     *,
     state: SQLiteFencedReconciliationState,
@@ -652,3 +674,503 @@ def test_unsupported_work_remains_eligible_on_subsequent_ticks(tmp_path) -> None
     assert result_2.reconciled == 1
     assert service.calls == 2
     assert reconciler.reconcile_calls == ["exec_1", "exec_1"]
+
+
+def test_busy_lease_does_not_consume_tick_quota(tmp_path) -> None:
+    """Prove Invariant A: Active lease contention does not consume provider-attempt quota in the same tick."""
+    path = tmp_path / "state.sqlite"
+    holder = SQLiteFencedReconciliationState(path)
+    state = SQLiteFencedReconciliationState(path)
+    # exec_1 is older (offset 10), exec_2 is newer (offset 5)
+    _insert_unknown(path, "exec_1", reserved_offset_sec=10)
+    _insert_unknown(path, "exec_2", reserved_offset_sec=5)
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    # Pre-claim lease on exec_1 with external holder
+    lease_1 = holder.claim_reconciliation_lease(
+        "exec_1", "external-holder", now=clock.now(), lease_seconds=30
+    )
+    assert lease_1 is not None
+
+    service = FakeService(state, clock)
+    reconciler = ConfigurableReconciler(
+        {
+            "exec_1": ReconciliationStatus.CONFIRMED_SUCCEEDED,
+            "exec_2": ReconciliationStatus.CONFIRMED_SUCCEEDED,
+        }
+    )
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects(
+            {
+                "exec_1": _binding("exec_1"),
+                "exec_2": _binding("exec_2"),
+            }
+        ),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-b", lease_seconds=30, max_items_per_tick=1
+        ),
+    )
+
+    # Same tick encounters busy exec_1, does not consume quota, and proceeds to claim & reconcile exec_2
+    result = worker.run_once()
+    assert result.scanned == 2
+    assert result.eligible == 2
+    assert result.busy == 1
+    assert result.claimed == 1
+    assert result.reconciled == 1
+    assert service.calls == 1
+    assert reconciler.reconcile_calls == ["exec_2"]
+    assert worker.cursor_id == "exec_2"
+
+
+def test_provider_failure_round_robin_progress(tmp_path) -> None:
+    """Prove Invariant B: Failing execution yields to subsequent actionable execution on next tick."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    _insert_unknown(path, "exec_1", reserved_offset_sec=10)
+    _insert_unknown(path, "exec_2", reserved_offset_sec=5)
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    service = SelectiveFailingService(state, clock, failing_ids={"exec_1"})
+    reconciler = ConfigurableReconciler(
+        {
+            "exec_1": ReconciliationStatus.CONFIRMED_SUCCEEDED,
+            "exec_2": ReconciliationStatus.CONFIRMED_SUCCEEDED,
+        }
+    )
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects(
+            {
+                "exec_1": _binding("exec_1"),
+                "exec_2": _binding("exec_2"),
+            }
+        ),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=1
+        ),
+    )
+
+    # Tick 1: exec_1 is claimed, provider fails
+    result_1 = worker.run_once()
+    assert result_1.claimed == 1
+    assert result_1.failed == 1
+    assert result_1.reconciled == 0
+    assert service.calls == ["exec_1"]
+    assert worker.cursor_id == "exec_1"
+
+    # Tick 2: Traversal rotates and exec_2 receives attempt instead of retrying exec_1
+    clock.advance(5)
+    result_2 = worker.run_once()
+    assert result_2.claimed == 1
+    assert result_2.reconciled == 1
+    assert result_2.failed == 0
+    assert service.calls == ["exec_1", "exec_2"]
+    assert worker.cursor_id == "exec_2"
+
+
+def test_still_unknown_round_robin_progress(tmp_path) -> None:
+    """Prove Invariant C: Non-progressing STILL_UNKNOWN execution yields opportunity to next execution."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    _insert_unknown(path, "exec_1", reserved_offset_sec=10)
+    _insert_unknown(path, "exec_2", reserved_offset_sec=5)
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    service = FakeService(state, clock)
+    reconciler = ConfigurableReconciler(
+        {
+            "exec_1": ReconciliationStatus.STILL_UNKNOWN,
+            "exec_2": ReconciliationStatus.CONFIRMED_SUCCEEDED,
+        }
+    )
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects(
+            {
+                "exec_1": _binding("exec_1"),
+                "exec_2": _binding("exec_2"),
+            }
+        ),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=1
+        ),
+    )
+
+    # Tick 1: Reconciles exec_1 -> STILL_UNKNOWN
+    result_1 = worker.run_once()
+    assert result_1.claimed == 1
+    assert result_1.reconciled == 1
+    assert reconciler.reconcile_calls == ["exec_1"]
+    assert worker.cursor_id == "exec_1"
+
+    # Tick 2: Traversal rotates; exec_2 gets opportunity
+    clock.advance(5)
+    result_2 = worker.run_once()
+    assert result_2.claimed == 1
+    assert result_2.reconciled == 1
+    assert reconciler.reconcile_calls == ["exec_1", "exec_2"]
+    assert worker.cursor_id == "exec_2"
+
+
+def test_unsupported_round_robin_progress(tmp_path) -> None:
+    """Prove Invariant D: Non-terminal UNSUPPORTED execution yields opportunity to next execution."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    _insert_unknown(path, "exec_1", reserved_offset_sec=10)
+    _insert_unknown(path, "exec_2", reserved_offset_sec=5)
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    service = FakeService(state, clock)
+    reconciler = ConfigurableReconciler(
+        {
+            "exec_1": ReconciliationStatus.UNSUPPORTED,
+            "exec_2": ReconciliationStatus.CONFIRMED_SUCCEEDED,
+        }
+    )
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects(
+            {
+                "exec_1": _binding("exec_1"),
+                "exec_2": _binding("exec_2"),
+            }
+        ),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=1
+        ),
+    )
+
+    # Tick 1: Reconciles exec_1 -> UNSUPPORTED
+    result_1 = worker.run_once()
+    assert result_1.claimed == 1
+    assert result_1.reconciled == 1
+    assert reconciler.reconcile_calls == ["exec_1"]
+    assert worker.cursor_id == "exec_1"
+    latest_1 = state.get_latest_execution_resolution("exec_1")
+    assert latest_1 is not None and latest_1.status == ReconciliationStatus.UNSUPPORTED
+
+    # Tick 2: Traversal rotates; exec_2 gets opportunity
+    clock.advance(5)
+    result_2 = worker.run_once()
+    assert result_2.claimed == 1
+    assert result_2.reconciled == 1
+    assert reconciler.reconcile_calls == ["exec_1", "exec_2"]
+    assert worker.cursor_id == "exec_2"
+
+
+def test_round_robin_cursor_wraps_around(tmp_path) -> None:
+    """Prove Invariant E: Traversal wraps cleanly back to first candidate after reaching end of snapshot."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    _insert_unknown(path, "exec_1", reserved_offset_sec=15)
+    _insert_unknown(path, "exec_2", reserved_offset_sec=10)
+    _insert_unknown(path, "exec_3", reserved_offset_sec=5)
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    service = FakeService(state, clock)
+    reconciler = ConfigurableReconciler(
+        {
+            "exec_1": ReconciliationStatus.STILL_UNKNOWN,
+            "exec_2": ReconciliationStatus.STILL_UNKNOWN,
+            "exec_3": ReconciliationStatus.STILL_UNKNOWN,
+        }
+    )
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects(
+            {
+                "exec_1": _binding("exec_1"),
+                "exec_2": _binding("exec_2"),
+                "exec_3": _binding("exec_3"),
+            }
+        ),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=1
+        ),
+    )
+
+    # Tick 1 -> exec_1
+    worker.run_once()
+    assert worker.cursor_id == "exec_1"
+
+    # Tick 2 -> exec_2
+    clock.advance(5)
+    worker.run_once()
+    assert worker.cursor_id == "exec_2"
+
+    # Tick 3 -> exec_3 (end of candidate list)
+    clock.advance(5)
+    worker.run_once()
+    assert worker.cursor_id == "exec_3"
+
+    # Tick 4 -> wraps around to exec_1
+    clock.advance(5)
+    worker.run_once()
+    assert worker.cursor_id == "exec_1"
+    assert reconciler.reconcile_calls == ["exec_1", "exec_2", "exec_3", "exec_1"]
+
+
+def test_all_busy_candidates_tick_terminates_cleanly(tmp_path) -> None:
+    """Prove Invariant F: When all candidates are busy, tick terminates without infinite loop."""
+    path = tmp_path / "state.sqlite"
+    holder = SQLiteFencedReconciliationState(path)
+    state = SQLiteFencedReconciliationState(path)
+    _insert_unknown(path, "exec_1", reserved_offset_sec=15)
+    _insert_unknown(path, "exec_2", reserved_offset_sec=10)
+    _insert_unknown(path, "exec_3", reserved_offset_sec=5)
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    for exec_id in ("exec_1", "exec_2", "exec_3"):
+        lease = holder.claim_reconciliation_lease(
+            exec_id, "external-holder", now=clock.now(), lease_seconds=30
+        )
+        assert lease is not None
+
+    service = FakeService(state, clock)
+    reconciler = ConfigurableReconciler()
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects(
+            {
+                "exec_1": _binding("exec_1"),
+                "exec_2": _binding("exec_2"),
+                "exec_3": _binding("exec_3"),
+            }
+        ),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=2
+        ),
+    )
+
+    result = worker.run_once()
+    assert result.scanned == 3
+    assert result.eligible == 3
+    assert result.busy == 3
+    assert result.claimed == 0
+    assert result.reconciled == 0
+    assert service.calls == 0
+    assert worker.cursor_id is None
+
+
+def test_terminal_resolutions_remain_excluded(tmp_path) -> None:
+    """Prove Invariant G: CONFIRMED_SUCCEEDED, CONFIRMED_FAILED, and CONFLICT remain excluded from scheduling."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    clock = FixedClock(NOW + timedelta(seconds=1))
+
+    # 1. exec_succ (CONFIRMED_SUCCEEDED)
+    _insert_unknown(path, "exec_succ", reserved_offset_sec=20)
+    lease_s = state.claim_reconciliation_lease(
+        "exec_succ", "setup", now=clock.now(), lease_seconds=10
+    )
+    assert lease_s is not None
+    with state.resolution_lease(lease_s):
+        state.record_execution_resolution(
+            "exec_succ",
+            ReconciliationEvidence(
+                status=ReconciliationStatus.CONFIRMED_SUCCEEDED,
+                source="provider",
+                evidence_digest="sha256:" + "1" * 64,
+                trust_level=EvidenceTrustLevel.PROVIDER_VERIFIED,
+                observed_at=clock.now(),
+            ),
+            clock.now(),
+        )
+
+    # 2. exec_fail (CONFIRMED_FAILED)
+    _insert_unknown(path, "exec_fail", reserved_offset_sec=15)
+    lease_f = state.claim_reconciliation_lease(
+        "exec_fail", "setup", now=clock.now(), lease_seconds=10
+    )
+    assert lease_f is not None
+    with state.resolution_lease(lease_f):
+        state.record_execution_resolution(
+            "exec_fail",
+            ReconciliationEvidence(
+                status=ReconciliationStatus.CONFIRMED_FAILED,
+                source="provider",
+                evidence_digest="sha256:" + "2" * 64,
+                trust_level=EvidenceTrustLevel.PROVIDER_VERIFIED,
+                observed_at=clock.now(),
+            ),
+            clock.now(),
+        )
+
+    # 3. exec_conf (CONFLICT)
+    _insert_unknown(path, "exec_conf", reserved_offset_sec=10)
+    lease_c1 = state.claim_reconciliation_lease(
+        "exec_conf", "setup", now=clock.now(), lease_seconds=10
+    )
+    assert lease_c1 is not None
+    with state.resolution_lease(lease_c1):
+        state.record_execution_resolution(
+            "exec_conf",
+            ReconciliationEvidence(
+                status=ReconciliationStatus.CONFIRMED_SUCCEEDED,
+                source="provider",
+                evidence_digest="sha256:" + "3" * 64,
+                trust_level=EvidenceTrustLevel.PROVIDER_VERIFIED,
+                observed_at=clock.now(),
+            ),
+            clock.now(),
+        )
+    clock.advance(1)
+    lease_c2 = state.claim_reconciliation_lease(
+        "exec_conf", "setup", now=clock.now(), lease_seconds=10, allow_terminal_recheck=True
+    )
+    assert lease_c2 is not None
+    with state.resolution_lease(lease_c2):
+        state.record_execution_resolution(
+            "exec_conf",
+            ReconciliationEvidence(
+                status=ReconciliationStatus.CONFIRMED_FAILED,
+                source="provider",
+                evidence_digest="sha256:" + "4" * 64,
+                trust_level=EvidenceTrustLevel.PROVIDER_VERIFIED,
+                observed_at=clock.now(),
+            ),
+            clock.now(),
+        )
+    latest_c = state.get_latest_execution_resolution("exec_conf")
+    assert latest_c is not None and latest_c.status == ReconciliationStatus.CONFLICT
+
+    # 4. exec_pending (actionable UNKNOWN)
+    _insert_unknown(path, "exec_pending", reserved_offset_sec=5)
+
+    service = FakeService(state, clock)
+    reconciler = ConfigurableReconciler({"exec_pending": ReconciliationStatus.CONFIRMED_SUCCEEDED})
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects(
+            {
+                "exec_succ": _binding("exec_succ"),
+                "exec_fail": _binding("exec_fail"),
+                "exec_conf": _binding("exec_conf"),
+                "exec_pending": _binding("exec_pending"),
+            }
+        ),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=10
+        ),
+    )
+
+    result = worker.run_once()
+    assert result.scanned == 1
+    assert result.eligible == 1
+    assert result.claimed == 1
+    assert result.reconciled == 1
+    assert reconciler.reconcile_calls == ["exec_pending"]
+    assert worker.cursor_id == "exec_pending"
+
+
+def test_cursor_advances_on_claim_even_when_provider_fails(tmp_path) -> None:
+    """Prove Invariant H: Cursor advances on successful lease claim before provider reconciliation executes."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    _insert_unknown(path, "exec_1", reserved_offset_sec=10)
+    _insert_unknown(path, "exec_2", reserved_offset_sec=5)
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    service = SelectiveFailingService(state, clock, failing_ids={"exec_1"})
+    reconciler = ConfigurableReconciler({"exec_2": ReconciliationStatus.CONFIRMED_SUCCEEDED})
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects(
+            {
+                "exec_1": _binding("exec_1"),
+                "exec_2": _binding("exec_2"),
+            }
+        ),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=1
+        ),
+    )
+
+    assert worker.cursor_id is None
+    result = worker.run_once()
+    assert result.claimed == 1
+    assert result.failed == 1
+    assert worker.cursor_id == "exec_1"
+
+
+def test_missing_cursor_falls_back_to_canonical_order(tmp_path) -> None:
+    """Prove Invariant I: If cursor execution is not found in snapshot, safely fall back to canonical storage order."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    _insert_unknown(path, "exec_1", reserved_offset_sec=10)
+    _insert_unknown(path, "exec_2", reserved_offset_sec=5)
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    service = FakeService(state, clock)
+    reconciler = ConfigurableReconciler(
+        {
+            "exec_1": ReconciliationStatus.CONFIRMED_SUCCEEDED,
+            "exec_2": ReconciliationStatus.CONFIRMED_SUCCEEDED,
+        }
+    )
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects(
+            {
+                "exec_1": _binding("exec_1"),
+                "exec_2": _binding("exec_2"),
+            }
+        ),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=1
+        ),
+    )
+
+    worker._cursor_id = "non_existent_execution_id"
+
+    result = worker.run_once()
+    assert result.claimed == 1
+    assert result.reconciled == 1
+    assert reconciler.reconcile_calls == ["exec_1"]
+    assert worker.cursor_id == "exec_1"
+
+
+def test_empty_execution_list_terminates_cleanly(tmp_path) -> None:
+    """Prove clean termination when executions snapshot is empty."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    clock = FixedClock(NOW)
+    service = FakeService(state, clock)
+    worker = _worker(state=state, clock=clock, service=service)
+
+    result = worker.run_once()
+    assert result.scanned == 0
+    assert result.eligible == 0
+    assert result.claimed == 0
+    assert result.reconciled == 0
+    assert result.busy == 0
+    assert worker.cursor_id is None
