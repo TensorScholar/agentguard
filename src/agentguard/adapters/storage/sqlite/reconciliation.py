@@ -19,6 +19,14 @@ from agentguard.ports.reconciliation_work import ReconciliationLease
 
 from .state import SQLiteState
 
+TERMINAL_RECONCILIATION_STATUSES = frozenset(
+    {
+        ReconciliationStatus.CONFIRMED_SUCCEEDED,
+        ReconciliationStatus.CONFIRMED_FAILED,
+        ReconciliationStatus.CONFLICT,
+    }
+)
+
 
 class ReconciliationLeaseError(RuntimeError):
     pass
@@ -93,6 +101,7 @@ class SQLiteFencedReconciliationState(SQLiteState):
         *,
         now: datetime,
         lease_seconds: int,
+        allow_terminal_recheck: bool = False,
     ) -> ReconciliationLease | None:
         self._validate_lease_request(owner_id, now, lease_seconds)
         now = now.astimezone(UTC)
@@ -109,6 +118,22 @@ class SQLiteFencedReconciliationState(SQLiteState):
                 if ExecutionState(str(execution[0])) != ExecutionState.UNKNOWN:
                     connection.execute("COMMIT")
                     return None
+
+                latest_resolution = connection.execute(
+                    """
+                    SELECT status FROM execution_resolutions
+                    WHERE execution_id = ? ORDER BY sequence DESC LIMIT 1
+                    """,
+                    (execution_id,),
+                ).fetchone()
+                if latest_resolution is not None:
+                    status = ReconciliationStatus(str(latest_resolution[0]))
+                    if status == ReconciliationStatus.CONFLICT:
+                        connection.execute("COMMIT")
+                        return None
+                    if not allow_terminal_recheck and status in TERMINAL_RECONCILIATION_STATUSES:
+                        connection.execute("COMMIT")
+                        return None
 
                 existing = connection.execute(
                     """

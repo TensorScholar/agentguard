@@ -55,6 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-response-bytes", type=int, default=4_000_000)
     parser.add_argument("--owner-id")
     parser.add_argument("--lease-seconds", type=int, default=60)
+    parser.add_argument(
+        "--allow-terminal-recheck",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="allow explicit operator re-check of executions with confirmed terminal resolutions",
+    )
     return parser
 
 
@@ -126,6 +132,7 @@ def entrypoint() -> None:
         owner_id,
         now=datetime.now(UTC),
         lease_seconds=args.lease_seconds,
+        allow_terminal_recheck=args.allow_terminal_recheck,
     )
     if lease is None:
         parser.error("execution is not UNKNOWN or reconciliation is already owned")

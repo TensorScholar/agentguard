@@ -91,11 +91,21 @@ class FakeState:
         self.claimed = False
         self.released = False
         self.scope_entered = False
+        self.allow_terminal_recheck: bool | None = None
         self.lease = object()
 
-    def claim_reconciliation_lease(self, execution_id, owner_id, *, now, lease_seconds):
+    def claim_reconciliation_lease(
+        self,
+        execution_id,
+        owner_id,
+        *,
+        now,
+        lease_seconds,
+        allow_terminal_recheck: bool = False,
+    ):
         del execution_id, owner_id, now, lease_seconds
         self.claimed = True
+        self.allow_terminal_recheck = allow_terminal_recheck
         return self.lease
 
     @contextmanager
@@ -221,6 +231,7 @@ def test_reconcile_cli_wires_operator_profile_closes_sender_and_uses_fence(
     assert profile.pending_values == frozenset({"waiting"})
     assert profile.provider_operation_id_field is None
     assert state.claimed is True
+    assert state.allow_terminal_recheck is True
     assert state.scope_entered is True
     assert state.released is True
     assert FakeSender.last is not None
@@ -228,3 +239,60 @@ def test_reconcile_cli_wires_operator_profile_closes_sender_and_uses_fence(
     assert FakeSender.last.max_response_bytes == 12345
     assert FakeSender.last.closed is True
     assert json.loads(capsys.readouterr().out)["status"] == "confirmed_succeeded"
+
+
+def test_reconcile_cli_supports_disabling_terminal_recheck(tmp_path, monkeypatch, capsys) -> None:
+    schema_path = tmp_path / "status-schema.json"
+    schema_path.write_text(
+        json.dumps(
+            {
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"requestId": {"type": "string"}},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    effect = _effect()
+    effects = FakeEffects(effect)
+    service = FakeService()
+    state = FakeState()
+
+    monkeypatch.setattr(reconcile_cli, "SQLiteProviderEffectRepository", lambda path: effects)
+    monkeypatch.setattr(
+        reconcile_cli.Ed25519Signer, "load_private", staticmethod(lambda path: FakeSigner())
+    )
+    monkeypatch.setattr(reconcile_cli, "Ed25519Verifier", lambda keys: object())
+    monkeypatch.setattr(reconcile_cli, "SQLiteFencedReconciliationState", lambda path: state)
+    monkeypatch.setattr(reconcile_cli, "AgentGuardService", lambda *args: service)
+    monkeypatch.setattr(http_server, "HTTPXUpstreamSender", FakeSender)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "agentguard-reconcile",
+            "--execution-id",
+            "exec_cli",
+            "--state",
+            str(tmp_path / "action.sqlite"),
+            "--provider-reconciliation-state",
+            str(tmp_path / "provider.sqlite"),
+            "--key",
+            str(tmp_path / "decision.pem"),
+            "--server-id",
+            "filesystem",
+            "--upstream-url",
+            "http://127.0.0.1:9010/mcp",
+            "--status-tool",
+            "operation_status",
+            "--status-schema",
+            str(schema_path),
+            "--no-allow-terminal-recheck",
+        ],
+    )
+
+    reconcile_cli.entrypoint()
+
+    assert state.claimed is True
+    assert state.allow_terminal_recheck is False

@@ -41,7 +41,7 @@ class FixedClock:
         self.value += timedelta(seconds=seconds)
 
 
-def _insert_unknown(path: Path, execution_id: str = "exec_1") -> None:
+def _insert_unknown(path: Path, execution_id: str = "exec_1", reserved_offset_sec: int = 2) -> None:
     with sqlite3.connect(path) as connection:
         connection.execute(
             """
@@ -59,7 +59,7 @@ def _insert_unknown(path: Path, execution_id: str = "exec_1") -> None:
                 "sha256:" + "1" * 64,
                 "sha256:" + "2" * 64,
                 "unknown",
-                (NOW - timedelta(seconds=2)).isoformat(),
+                (NOW - timedelta(seconds=reserved_offset_sec)).isoformat(),
                 (NOW - timedelta(seconds=1)).isoformat(),
                 NOW.isoformat(),
                 "execution.outcome_ambiguous",
@@ -271,10 +271,36 @@ class PresentProviderEffects:
         return self.binding if execution_id == self.binding.attempt.execution_id else None
 
 
+class MapProviderEffects:
+    def __init__(self, bindings: dict[str, ExternalEffectBinding]) -> None:
+        self.bindings = bindings
+
+    def get_external_effect_binding(self, execution_id: str) -> ExternalEffectBinding | None:
+        return self.bindings.get(execution_id)
+
+
 class StaticReconciler:
     def reconcile(self, execution: ExecutionRecord) -> ReconciliationEvidence:
         assert execution.execution_id == "exec_1"
         return _evidence()
+
+
+class ConfigurableReconciler:
+    def __init__(self, statuses: dict[str, ReconciliationStatus] | None = None) -> None:
+        self.statuses = statuses or {}
+        self.reconcile_calls: list[str] = []
+
+    def reconcile(self, execution: ExecutionRecord) -> ReconciliationEvidence:
+        self.reconcile_calls.append(execution.execution_id)
+        status = self.statuses.get(execution.execution_id, ReconciliationStatus.CONFIRMED_SUCCEEDED)
+        return ReconciliationEvidence(
+            status=status,
+            source="provider-status",
+            evidence_digest="sha256:" + "8" * 64,
+            trust_level=EvidenceTrustLevel.PROVIDER_VERIFIED,
+            observed_at=NOW + timedelta(seconds=1),
+            error_code=None,
+        )
 
 
 class FakeService:
@@ -457,3 +483,172 @@ def test_second_worker_observes_busy_lease_without_duplicate_reconciliation(tmp_
     assert result.busy == 1
     assert result.reconciled == 0
     assert service.calls == 0
+
+
+def test_repeated_worker_tick_does_not_reconcile_terminal_work(tmp_path) -> None:
+    """Prove Invariant D: Repeated worker tick does not invoke provider reconciliation again after terminal resolution."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    _insert_unknown(path, "exec_1")
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    service = FakeService(state, clock)
+    reconciler = ConfigurableReconciler({"exec_1": ReconciliationStatus.CONFIRMED_SUCCEEDED})
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects({"exec_1": _binding("exec_1")}),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=10
+        ),
+    )
+
+    # Tick 1: Reconciles exec_1 to CONFIRMED_SUCCEEDED
+    result_1 = worker.run_once()
+    assert result_1.reconciled == 1
+    assert service.calls == 1
+    assert reconciler.reconcile_calls == ["exec_1"]
+    assert len(state.list_execution_resolutions("exec_1")) == 1
+    latest = state.get_latest_execution_resolution("exec_1")
+    assert latest is not None and latest.status == ReconciliationStatus.CONFIRMED_SUCCEEDED
+
+    # Tick 2: Subsequent tick skips exec_1 completely
+    clock.advance(5)
+    result_2 = worker.run_once()
+    assert result_2.scanned == 0
+    assert result_2.eligible == 0
+    assert result_2.claimed == 0
+    assert result_2.reconciled == 0
+    # Service and reconciler were NOT called again
+    assert service.calls == 1
+    assert reconciler.reconcile_calls == ["exec_1"]
+
+
+def test_terminal_resolved_work_does_not_starve_unresolved_work_in_bounded_tick(tmp_path) -> None:
+    """Prove Invariant E: A terminal resolved exec_1 does not prevent unresolved exec_2 from being considered in bounded tick."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    # exec_1 is older (reserved_at = NOW - 10s)
+    _insert_unknown(path, "exec_1", reserved_offset_sec=10)
+    # exec_2 is newer (reserved_at = NOW - 5s)
+    _insert_unknown(path, "exec_2", reserved_offset_sec=5)
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    service = FakeService(state, clock)
+    reconciler = ConfigurableReconciler(
+        {
+            "exec_1": ReconciliationStatus.CONFIRMED_SUCCEEDED,
+            "exec_2": ReconciliationStatus.CONFIRMED_SUCCEEDED,
+        }
+    )
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects(
+            {
+                "exec_1": _binding("exec_1"),
+                "exec_2": _binding("exec_2"),
+            }
+        ),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=1
+        ),
+    )
+
+    # Tick 1: Reconciles exec_1 within bounded capacity (max_items_per_tick=1)
+    result_1 = worker.run_once()
+    assert result_1.reconciled == 1
+    assert service.calls == 1
+    assert reconciler.reconcile_calls == ["exec_1"]
+    assert len(state.list_execution_resolutions("exec_1")) == 1
+    assert len(state.list_execution_resolutions("exec_2")) == 0
+
+    # Tick 2: exec_1 is terminal and skipped, allowing exec_2 to be processed within bounded capacity
+    clock.advance(5)
+    result_2 = worker.run_once()
+    assert result_2.reconciled == 1
+    assert service.calls == 2
+    assert reconciler.reconcile_calls == ["exec_1", "exec_2"]
+    assert len(state.list_execution_resolutions("exec_2")) == 1
+    latest_2 = state.get_latest_execution_resolution("exec_2")
+    assert latest_2 is not None and latest_2.status == ReconciliationStatus.CONFIRMED_SUCCEEDED
+
+
+def test_still_unknown_work_remains_eligible_on_subsequent_ticks(tmp_path) -> None:
+    """Prove Invariant F: STILL_UNKNOWN remains eligible for future reconciliation."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    _insert_unknown(path, "exec_1")
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    service = FakeService(state, clock)
+    reconciler = ConfigurableReconciler({"exec_1": ReconciliationStatus.STILL_UNKNOWN})
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects({"exec_1": _binding("exec_1")}),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=10
+        ),
+    )
+
+    # Tick 1: Reconciles exec_1 to STILL_UNKNOWN
+    result_1 = worker.run_once()
+    assert result_1.reconciled == 1
+    assert service.calls == 1
+    assert reconciler.reconcile_calls == ["exec_1"]
+    latest = state.get_latest_execution_resolution("exec_1")
+    assert latest is not None and latest.status == ReconciliationStatus.STILL_UNKNOWN
+
+    # Tick 2: Because STILL_UNKNOWN is non-terminal, exec_1 remains eligible
+    clock.advance(5)
+    result_2 = worker.run_once()
+    assert result_2.eligible == 1
+    assert result_2.claimed == 1
+    assert result_2.reconciled == 1
+    assert service.calls == 2
+    assert reconciler.reconcile_calls == ["exec_1", "exec_1"]
+
+
+def test_unsupported_work_remains_eligible_on_subsequent_ticks(tmp_path) -> None:
+    """Prove Invariant G: Characterize and preserve existing UNSUPPORTED behavior as non-terminal."""
+    path = tmp_path / "state.sqlite"
+    state = SQLiteFencedReconciliationState(path)
+    _insert_unknown(path, "exec_1")
+
+    clock = FixedClock(NOW + timedelta(seconds=1))
+    service = FakeService(state, clock)
+    reconciler = ConfigurableReconciler({"exec_1": ReconciliationStatus.UNSUPPORTED})
+    worker = ReconciliationWorker(
+        service=service,  # type: ignore[arg-type]
+        state=state,
+        provider_effects=MapProviderEffects({"exec_1": _binding("exec_1")}),  # type: ignore[arg-type]
+        reconciler=reconciler,
+        clock=clock,
+        config=ReconciliationWorkerConfig(
+            owner_id="worker-a", lease_seconds=30, max_items_per_tick=10
+        ),
+    )
+
+    # Tick 1: Reconciles exec_1 to UNSUPPORTED
+    result_1 = worker.run_once()
+    assert result_1.reconciled == 1
+    assert service.calls == 1
+    assert reconciler.reconcile_calls == ["exec_1"]
+    latest = state.get_latest_execution_resolution("exec_1")
+    assert latest is not None and latest.status == ReconciliationStatus.UNSUPPORTED
+
+    # Tick 2: Because UNSUPPORTED is non-terminal, exec_1 remains eligible
+    clock.advance(5)
+    result_2 = worker.run_once()
+    assert result_2.eligible == 1
+    assert result_2.claimed == 1
+    assert result_2.reconciled == 1
+    assert service.calls == 2
+    assert reconciler.reconcile_calls == ["exec_1", "exec_1"]
