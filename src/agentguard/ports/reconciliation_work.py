@@ -27,6 +27,7 @@ class ReconciliationLeaseRepository(Protocol):
         *,
         now: datetime,
         lease_seconds: int,
+        allow_terminal_recheck: bool = False,
     ) -> ReconciliationLease | None: ...
 
     def renew_reconciliation_lease(

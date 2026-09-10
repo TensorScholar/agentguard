@@ -3,11 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from agentguard.domain import ExecutionState
+from agentguard.domain import ExecutionState, ReconciliationStatus
 from agentguard.ports.interfaces import Clock, ExecutionReconciler, ProviderEffectRepository
 from agentguard.ports.reconciliation_work import FencedReconciliationState
 
 from .service import AgentGuardService
+
+TERMINAL_RECONCILIATION_STATUSES = frozenset(
+    {
+        ReconciliationStatus.CONFIRMED_SUCCEEDED,
+        ReconciliationStatus.CONFIRMED_FAILED,
+        ReconciliationStatus.CONFLICT,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -114,6 +122,14 @@ class ReconciliationWorker:
             self._ready = True
             for execution in executions:
                 if execution.state != ExecutionState.UNKNOWN:
+                    continue
+                latest_resolution = self.state.get_latest_execution_resolution(
+                    execution.execution_id
+                )
+                if (
+                    latest_resolution is not None
+                    and latest_resolution.status in TERMINAL_RECONCILIATION_STATUSES
+                ):
                     continue
                 if eligible >= self.config.max_items_per_tick:
                     break
