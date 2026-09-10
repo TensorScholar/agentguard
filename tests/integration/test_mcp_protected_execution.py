@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from agentguard.adapters.protocols.mcp import (
+    PROTECTED_OUTCOME_UNKNOWN,
     PROTECTED_PROFILE_UNSUPPORTED,
     PROTECTED_REQUEST_REJECTED,
     SUPPORTED_PROTOCOL_PROFILE,
@@ -909,3 +910,33 @@ def test_proxy_rejects_invalid_settings_and_is_single_launch(signer, verifier, s
     proxy._has_run = True
     with pytest.raises(RuntimeError, match="single-launch"):
         proxy.run()
+
+
+def test_stdio_provider_result_with_finite_floats(signer, verifier, state) -> None:
+    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    transport = FakeTransport(
+        {"jsonrpc": "2.0", "result": {"score": 0.5, "price": 12.34, "ratio": 1e-6}}
+    )
+    response = execute_direct(proxy, transport, call_message(request_id=101))
+    assert "result" in response
+    assert response["result"] == {"score": 0.5, "price": 12.34, "ratio": 1e-6}
+    executions = state.list_executions()
+    assert len(executions) == 1
+    record = executions[0]
+    assert record.state == ExecutionState.SUCCEEDED
+    assert record.result_digest is not None
+    assert record.result_digest.startswith("sha256:")
+    assert record.error_code is None
+
+
+def test_stdio_digest_failure_maintains_caller_ledger_consistency(signer, verifier, state) -> None:
+    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    transport = FakeTransport({"jsonrpc": "2.0", "result": {"non_finite": float("nan")}})
+    response = execute_direct(proxy, transport, call_message(request_id=102))
+    assert "error" in response
+    assert response["error"]["code"] == PROTECTED_OUTCOME_UNKNOWN
+    executions = state.list_executions()
+    assert len(executions) == 1
+    record = executions[0]
+    assert record.state == ExecutionState.UNKNOWN
+    assert record.error_code == "execution.executor_exception"
