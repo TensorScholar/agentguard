@@ -10,7 +10,7 @@ AgentGuard `v0.2.0rc3` is a hardened release candidate for deterministic runtime
 
 - strict Policy v2 and `ActionIntent` validation with deterministic default-deny authorization;
 - signed decision/approval receipts and execution-time digest revalidation;
-- atomic approval use, decision nonce, authority lease, typed-release, staging, and execution reservation semantics;
+- atomic approval use, decision nonce, authority lease, typed-release, staging, execution reservation, and lock-safe serialized dispatch admission semantics;
 - signed delegated authority, field provenance, typed releases, staged execution, declared causal ancestry, and deterministic policy/authority analysis;
 - protected MCP stdio mediation with fail-closed fresh schema/inventory handling;
 - bounded protected MCP `2026-07-28` Streamable HTTP execution;
@@ -18,8 +18,9 @@ AgentGuard `v0.2.0rc3` is a hardened release candidate for deterministic runtime
 - provider-neutral credential authority with late secret resolution, durable profile/revocation state, and exact provider endpoint binding;
 - frozen provider/external-effect contracts with explicit idempotency/replay semantics and `RECONCILE_BEFORE_RETRY` as the safe default without stronger evidence;
 - durable external-effect binding before side-effecting dispatch on the configured HTTP provider path;
-- provider-specific durable reconciliation with explicit evidence trust levels and no blind redispatch;
-- single-host multi-process reconciliation leases, monotonic fencing tokens, crash takeover, stale-worker rejection, startup recovery, and health/readiness probes;
+- provider-specific durable reconciliation with explicit evidence trust levels, terminal resolution exclusion with operator recheck, and no blind redispatch;
+- single-host multi-process reconciliation leases, monotonic fencing tokens, crash takeover, stale-worker rejection, explicit operator recovery (automatic startup recovery disabled), claimed-attempt quota bounding, process-local round-robin fairness, and health/readiness probes;
+- dedicated provider-result hashing isolated from signing canonicalization, supporting finite JSON floating-point provider responses;
 - secret-minimized hash-chained audit, signed checkpoints, authenticated evidence manifests, and signed execution attestations;
 - reproducible wheel/normalized-sdist validation, deterministic SBOM/release manifest generation, checksums, clean-install smoke, non-root container smoke, cross-platform CI, Security, and CodeQL gates.
 

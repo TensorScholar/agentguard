@@ -30,10 +30,20 @@ AgentGuard addresses these integrity failures with **deterministic, fail-closed 
 ## Core Security Invariant
 
 ```text
-       Authorized action == Credentialed action == Executed action
+       Authorized Intent
+               │
+               ▼
+       Clamped Authority
+               │
+               ▼
+       Admitted Dispatch
+               │
+               ▼
+     Evidence-Bound Outcome
 ──────────────────────────────────────────────────────────────────────────
-✓ Every protected route passes through the enforcement boundary
-✓ Ambiguous external effects are reconciled before retry, not guessed
+✓ The dispatched normalized action must match the authorized decision, and credential use must remain within the decision's permitted authority
+✓ Traffic routed through AgentGuard's protected adapters passes through the enforcement boundary (AgentGuard cannot prove hidden or alternate execution routes do not exist)
+✓ Ambiguous external effects are reconciled before retry, not guessed; local evidence does not independently prove provider business truth
 ✓ Retained evidence is secret-minimized, hash-chained, and cryptographically signed
 ```
 
@@ -141,7 +151,7 @@ flowchart LR
 1. **Normalize:** Inbound tool proposals are parsed into a strictly typed, versioned `ActionIntent`.
 2. **Authorize:** The deterministic Policy v2 engine evaluates the intent (default-deny, blast-radius limits, verified provenance).
 3. **Sign:** If permitted, AgentGuard issues an Ed25519-signed `DecisionReceipt` containing the intent's canonical SHA-256 digest and a `credential_ceiling`.
-4. **Bind & Revalidate:** Before execution, AgentGuard re-verifies the canonical digest against the live call, clamps credentials to the decision ceiling, and atomically claims the decision nonce in SQLite to prevent replay.
+4. **Bind & Revalidate:** A `DecisionReceipt` can authorize at most one committed protected dispatch. Before execution, AgentGuard re-verifies the canonical digest against the live call, clamps credentials to the decision ceiling, and atomically claims the decision nonce in SQLite to prevent replay.
 5. **Durable Binding:** Before side-effecting dispatch, an `ExternalEffectBinding` is persisted. If the call times out or fails ambiguously, it remains `UNKNOWN`.
 6. **Reconciliation:** Ambiguous executions require provider-verified reconciliation before retry; blind retries are forbidden by default.
 7. **Attest:** Audit records are hash-chained and packaged into signed, verifiable evidence bundles.
