@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from agentguard.domain import ExecutionState, ReconciliationStatus
+from agentguard.domain import ExecutionRecord, ExecutionState, ReconciliationStatus
 from agentguard.ports.interfaces import Clock, ExecutionReconciler, ProviderEffectRepository
 from agentguard.ports.reconciliation_work import FencedReconciliationState
 
@@ -80,6 +81,21 @@ class ReconciliationWorker:
         self._last_tick_completed_at: datetime | None = None
         self._last_error: str | None = None
         self._consecutive_failed_ticks = 0
+        self._cursor_id: str | None = None
+
+    @property
+    def cursor_id(self) -> str | None:
+        return self._cursor_id
+
+    def _rotate_candidates(self, executions: Sequence[ExecutionRecord]) -> list[ExecutionRecord]:
+        exec_list = list(executions)
+        if not exec_list or self._cursor_id is None:
+            return exec_list
+        for index, execution in enumerate(exec_list):
+            if execution.execution_id == self._cursor_id:
+                return exec_list[index + 1 :] + exec_list[: index + 1]
+        self._cursor_id = None
+        return exec_list
 
     def probe_readiness(self) -> bool:
         try:
@@ -120,7 +136,10 @@ class ReconciliationWorker:
         try:
             executions = self.state.list_executions()
             self._ready = True
-            for execution in executions:
+            ordered_executions = self._rotate_candidates(executions)
+            for execution in ordered_executions:
+                if claimed >= self.config.max_items_per_tick:
+                    break
                 if execution.state != ExecutionState.UNKNOWN:
                     continue
                 latest_resolution = self.state.get_latest_execution_resolution(
@@ -131,8 +150,6 @@ class ReconciliationWorker:
                     and latest_resolution.status in TERMINAL_RECONCILIATION_STATUSES
                 ):
                     continue
-                if eligible >= self.config.max_items_per_tick:
-                    break
                 scanned += 1
                 if (
                     self.provider_effects.get_external_effect_binding(execution.execution_id)
@@ -151,6 +168,7 @@ class ReconciliationWorker:
                     busy += 1
                     continue
                 claimed += 1
+                self._cursor_id = execution.execution_id
                 try:
                     current = self.state.get_execution(execution.execution_id)
                     if current is None or current.state != ExecutionState.UNKNOWN:
@@ -166,6 +184,8 @@ class ReconciliationWorker:
                         self._last_error = f"{type(exc).__name__}:{exc}"
                 finally:
                     self.state.release_reconciliation_lease(lease)
+                if claimed >= self.config.max_items_per_tick:
+                    break
         except Exception as exc:
             self._ready = False
             self._last_error = f"{type(exc).__name__}:{exc}"
