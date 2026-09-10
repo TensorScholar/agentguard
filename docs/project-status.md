@@ -21,7 +21,7 @@ AgentGuard `v0.2.0rc3` is a hardened release candidate for deterministic runtime
 - provider-specific durable reconciliation with explicit evidence trust levels, terminal resolution exclusion with operator recheck, and no blind redispatch;
 - single-host multi-process reconciliation leases, monotonic fencing tokens, crash takeover, stale-worker rejection, explicit operator recovery (automatic startup recovery disabled), claimed-attempt quota bounding, process-local round-robin fairness, and health/readiness probes;
 - dedicated provider-result hashing isolated from signing canonicalization, supporting finite JSON floating-point provider responses;
-- secret-minimized hash-chained audit, signed checkpoints, authenticated evidence manifests, and signed execution attestations;
+- secret-minimized hash-chained audit, signed checkpoints, verifiable evidence manifests (with optional signature authentication), and signed execution attestations;
 - reproducible wheel/normalized-sdist validation, deterministic SBOM/release manifest generation, checksums, clean-install smoke, non-root container smoke, cross-platform CI, Security, and CodeQL gates.
 
 ## Engineering gaps closed on the current line

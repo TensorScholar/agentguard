@@ -38,7 +38,7 @@ This document formalizes the boundary separating AgentGuard from adjacent system
 │  • Atomic nonce consumption (blocks receipt replay & double spend)     │
 │  • Durable external-effect binding & RECONCILE_BEFORE_RETRY contracts  │
 │  • Single-host multi-process reconciliation leasing & fencing tokens   │
-│  • Secret-minimized hash-chained audit & signed evidence bundles       │
+│  • Secret-minimized hash-chained audit & verifiable evidence bundles   │
 ==========================================================================
                                     │  [Verified, Bounded Dispatch]
                                     ▼
@@ -86,5 +86,5 @@ This document formalizes the boundary separating AgentGuard from adjacent system
 
 ### 6. Observability & SIEM vs. AgentGuard
 - **SIEM & Centralized Logging (e.g., Splunk, Datadog, OpenTelemetry):** Long-term multi-system event correlation, visualization, and organization-wide alerting.
-- **AgentGuard:** Generates a local, tamper-evident, hash-chained ledger and portable signed evidence bundles. Exported checkpoints can be forwarded to independently controlled external storage or SIEMs for tamper detection.
+- **AgentGuard:** Generates a local, tamper-evident, hash-chained ledger and portable verifiable evidence bundles (with optional cryptographic attestations). Exported checkpoints can be forwarded to independently controlled external storage or SIEMs for tamper detection.
 
