@@ -337,3 +337,61 @@ def test_asgi_boundary_enforces_host_auth_and_relays_subscription_sse(
             headers={**headers, "authorization": "Bearer test-secret"},
         )
         assert bad_host.status_code == 403
+
+
+class FloatSender(FakeSender):
+    def __init__(self, result_data: dict[str, Any]) -> None:
+        super().__init__()
+        self.result_data = result_data
+
+    def send(self, body: bytes, headers: Mapping[str, str]) -> HTTPExchangeResponse:
+        message = json.loads(body)
+        if message.get("method") == "tools/call":
+            response = {
+                "jsonrpc": "2.0",
+                "id": message["id"],
+                "result": self.result_data,
+            }
+            return HTTPExchangeResponse(
+                200,
+                {"content-type": "application/json"},
+                json.dumps(response).encode(),
+            )
+        return super().send(body, headers)
+
+
+def test_http_provider_result_with_finite_floats(signer, verifier, state) -> None:
+    float_payload = {"score": 0.5, "price": 12.34, "ratio": 1e-6}
+    sender = FloatSender(float_payload)
+    subject = gateway(signer, verifier, state, sender)
+    call = tool_call(request_id=99)
+    response = subject.handle(json.dumps(call).encode(), request_headers(call))
+    assert response.status_code == 200
+    decoded = json.loads(response.body)
+    assert decoded["id"] == 99
+    assert "result" in decoded
+    assert decoded["result"] == float_payload
+    executions = state.list_executions()
+    assert len(executions) == 1
+    record = executions[0]
+    assert record.state == ExecutionState.SUCCEEDED
+    assert record.result_digest is not None
+    assert record.result_digest.startswith("sha256:")
+    assert record.error_code is None
+
+
+def test_http_provider_result_non_finite_float_rejected(signer, verifier, state) -> None:
+    sender = FloatSender({"score": float("nan")})
+    subject = gateway(signer, verifier, state, sender)
+    call = tool_call(request_id=100)
+    response = subject.handle(json.dumps(call).encode(), request_headers(call))
+    assert response.status_code == 200
+    decoded = json.loads(response.body)
+    assert decoded["id"] == 100
+    assert "error" in decoded
+    assert decoded["error"]["code"] == -32004
+    executions = state.list_executions()
+    assert len(executions) == 1
+    record = executions[0]
+    assert record.state == ExecutionState.UNKNOWN
+    assert record.error_code == "execution.executor_exception"

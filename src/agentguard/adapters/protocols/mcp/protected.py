@@ -24,6 +24,7 @@ from agentguard.domain import (
     VerifiedExecution,
 )
 from agentguard.engine.canonical import digest
+from agentguard.engine.provider_results import provider_result_digest
 from agentguard.ports import AmbiguousExecutionError, DefiniteExecutionFailure
 
 from .intent import intent_from_tools_call
@@ -487,8 +488,8 @@ class MCPProtectedExecutor:
             timeout_seconds=self.timeout_seconds,
             cancelled=lambda: self.session.is_cancelled(self.client_request_key),
         )
+        response_digest = provider_result_digest(response)
         self.response = response
-        response_digest = digest(response)
         if "error" in response:
             error = response.get("error")
             provider_status = error.get("code") if isinstance(error, dict) else None

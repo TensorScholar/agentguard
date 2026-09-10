@@ -17,6 +17,7 @@ from agentguard.domain import (
 )
 from agentguard.engine.canonical import digest
 from agentguard.engine.provider_contracts import credential_binding_from_verified_authority
+from agentguard.engine.provider_results import provider_result_digest
 from agentguard.ports import (
     AmbiguousExecutionError,
     CredentialMaterialResolver,
@@ -99,8 +100,8 @@ class MCPHTTPProtectedExecutor:
             raise AmbiguousExecutionError("mcp_http.malformed_provider_response")
         if parsed.get("id") != verified_execution.execution_id:
             raise AmbiguousExecutionError("mcp_http.response_id_mismatch")
+        result_digest = provider_result_digest(parsed)
         self.response = parsed
-        result_digest = digest(parsed)
         if "error" in parsed:
             error = parsed.get("error")
             provider_status = error.get("code") if isinstance(error, dict) else None
