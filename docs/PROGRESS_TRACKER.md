@@ -4,16 +4,16 @@
 
 **Q04 / P0 — Execution Admission Correctness**
 
-Current engineering task: **Q04-01 — Atomic dispatch eligibility**.
+Current engineering task: **Q04-02 — Unsafe startup recovery containment**.
 
 Feature expansion remains frozen until the execution-admission correctness queue is closed or explicitly re-scoped.
 
 ## Repository Baseline
 
-- Remote `main`: `c9d8f66d1b3669605f2b2d64ea9dc8b71f66b0a5` — merge of PR #14 preserving audited Q01/Q02 history.
+- Remote `main`: `ceedcecef91ee475d7db6b7756e7020b8756b01b` — merge of PR #16 (Q04-01 atomic dispatch admission).
 - Preserved Q01 commit: `7effe3e203d2123f5e6d4733706f78613b1f7bb8`.
 - Preserved Q02 commit / audited preflight head: `d8c4bccdbdf41cea349cf81acbba63e15611f1d7`.
-- Q04-01 working branch: `hardening/q04-01-atomic-dispatch-admission`.
+- Q04-02 working branch: `hardening/q04-02-recovery-containment`.
 - Showcase baseline: `848db15534d311070dbbf1470b8ef3ad39f98709`.
 - Declared release version: `0.2.0rc3`.
 - Source divergence: reconciled. The two previously local-only Q01/Q02 commits are now preserved in GitHub history through PR #14.
@@ -51,26 +51,22 @@ Validated in an isolated Python 3.12 environment with repository constraints:
 
 This local preflight is acceptance evidence for the audited source head. It is not a substitute for GitHub-hosted CI.
 
-## Current Work
-
 ### Q04-01 — Atomic dispatch eligibility
 
-Target invariant:
+**Status: CLOSED / MERGED via PR #16 (`ceedcecef91ee475d7db6b7756e7020b8756b01b`).**
 
-> On the protected execution path, executor invocation requires a committed admission transition for the reserved authority. Receipt expiry and applicable field-integrity expiry are checked against fresh trusted time sampled inside the serialized transaction after acquiring the SQLite write lock.
+Executor invocation requires a committed admission transition where expiry is checked using trusted time after serialized transition ownership inside SQLite `BEGIN IMMEDIATE`.
 
-Required proof sequence:
-1. add a deterministic lock-contention regression that fails on the defective baseline for the intended reason;
-2. acquire `BEGIN IMMEDIATE` before sampling admission time;
-3. enforce receipt expiry and field-integrity expiry using that fresh in-transaction time;
-4. commit `RESERVED -> DISPATCHING` before executor invocation;
-5. prove zero executor calls when admission fails;
-6. preserve normal execute, staged/commit, resumed reservation, replay/nonce, binding, and concurrent single-winner behavior.
+### Q04-02 — Unsafe startup recovery containment
+
+**Status: VALIDATED / AWAITING MERGE on branch `hardening/q04-02-recovery-containment`.**
+
+Automatic startup recovery was removed because liveness of previous executors cannot be established from shared local state. Ambient startup invocations were removed from HTTP gateway startup, reconciliation worker startup, and protected MCP proxy startup. Explicit recovery (`recover_incomplete_executions()`) remains available for controlled operator invocation.
 
 ## Next Milestones
 
-1. Q04-01 atomic dispatch eligibility.
-2. Q04-02 unsafe startup recovery containment.
+1. Q04-01 atomic dispatch eligibility (closed).
+2. Q04-02 unsafe startup recovery containment (validated).
 3. Q04-03 exclude already-resolved reconciliation work.
 4. Q04-04 reconciliation progress/fairness.
 5. Q04-05 separate provider-response hashing from authorization canonicalization.
@@ -140,8 +136,7 @@ Issue #12 remains open. Promotion debt includes:
 
 ## Risks
 
-- P0: receipt expiry can currently be evaluated using time sampled before SQLite write-lock acquisition, allowing admission after expiry under contention.
-- Startup recovery can classify another process's live `DISPATCHING` execution as `UNKNOWN`.
+- Stale or orphaned `DISPATCHING` records require explicit reconciliation or controlled operator recovery; automatic startup recovery was removed.
 - Reconciliation can repeatedly consume resolved work and starve later records.
 - Provider-output hashing currently reuses stricter signing canonicalization and can mishandle finite float JSON outputs.
 - Trusted normalization remains a fundamental TCB boundary.
@@ -154,4 +149,5 @@ Issue #12 remains open. Promotion debt includes:
 - Do not treat runner-less GitHub Actions failures as code regressions or as passing validation.
 - Do not loosen dependency constraints to accommodate environment drift.
 - Keep SQLite and the modular-monolith architecture unless correctness evidence requires change.
-- Keep Q04-01 bounded to dispatch admission; do not combine recovery, reconciliation, provider, crypto, dependency, CI, or showcase changes.
+- Keep Q04-01 bounded to dispatch admission; do not combine recovery, reconciliation, provider, crypto, dependency, CI, or showcase changes. **Merged via PR #16.**
+- Contain Q04-02 by removing ambient startup recovery without introducing distributed leases, new lifecycle states, or reconciliation redesign.

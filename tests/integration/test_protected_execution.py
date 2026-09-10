@@ -574,3 +574,251 @@ def test_dispatch_lock_wait_rechecks_authorization_after_lock(
     record = state.get_execution(verified.execution_id)
     assert record is not None
     assert record.state == ExecutionState.RESERVED
+
+
+def test_mcp_proxy_startup_does_not_recover_dispatching_execution(
+    intent, policy, signer, verifier, tmp_path, monkeypatch
+):
+    import sys
+
+    from agentguard.adapters.protocols.mcp.protected import MCPProtectedStdioProxy
+    from agentguard.domain import Principal
+
+    path = tmp_path / "mcp_recovery.sqlite"
+    state = SQLiteState(path)
+    service, broker, receipt, grant = _credential_flow(intent, policy, signer, verifier, state)
+    verified = validate_execution_authority(
+        intent,
+        receipt,
+        grant,
+        verifier,
+        execution_id="exec_live_mcp",
+        broker_grant_verifier=broker.verifier,
+        current_policy=policy,
+        execution_repository=state,
+    )
+    assert state.reserve_execution(verified, verified.verified_at) is None
+    state.mark_execution_dispatching(verified)
+
+    reopened_state = SQLiteState(path)
+    new_service = AgentGuardService(signer, verifier, reopened_state, broker.verifier)
+    principal = Principal(agent_id="test-agent", workload_id="workload-1", tenant_id="tenant-1")
+    proxy = MCPProtectedStdioProxy(
+        new_service,
+        policy,
+        principal,
+        "test-server",
+        [sys.executable, "-c", "pass"],
+    )
+
+    def stop_popen(*args, **kwargs):
+        raise RuntimeError("startup_complete")
+
+    monkeypatch.setattr("subprocess.Popen", stop_popen)
+    with pytest.raises(RuntimeError, match="startup_complete"):
+        proxy.run()
+
+    record = reopened_state.get_execution("exec_live_mcp")
+    assert record is not None
+    assert record.state == ExecutionState.DISPATCHING
+    events = reopened_state.list_events()
+    assert not any(e.event_type == AuditEventType.EXECUTION_UNKNOWN for e in events)
+
+
+def test_http_startup_does_not_recover_dispatching_execution(
+    intent, policy, signer, verifier, tmp_path, monkeypatch
+):
+    import sys
+
+    import yaml
+
+    from agentguard import http_cli
+
+    state_path = tmp_path / "http_state.sqlite"
+    provider_path = tmp_path / "http_provider.sqlite"
+    key_path = tmp_path / "private.pem"
+    policy_path = tmp_path / "policy.yaml"
+
+    signer.save_private(key_path)
+    policy_path.write_text(yaml.safe_dump(policy.model_dump(mode="json")), encoding="utf-8")
+
+    state = SQLiteState(state_path)
+    service, broker, receipt, grant = _credential_flow(intent, policy, signer, verifier, state)
+    verified = validate_execution_authority(
+        intent,
+        receipt,
+        grant,
+        verifier,
+        execution_id="exec_live_http",
+        broker_grant_verifier=broker.verifier,
+        current_policy=policy,
+        execution_repository=state,
+    )
+    assert state.reserve_execution(verified, verified.verified_at) is None
+    state.mark_execution_dispatching(verified)
+
+    initial_record = state.get_execution("exec_live_http")
+    assert initial_record is not None
+    assert initial_record.state == ExecutionState.DISPATCHING
+
+    monkeypatch.setenv("TEST_TOKEN", "mock-token")
+    monkeypatch.setattr("uvicorn.run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "agentguard-mcp-http",
+            "--server-id",
+            "test-server",
+            "--upstream-url",
+            "https://upstream.example/mcp",
+            "--policy",
+            str(policy_path),
+            "--key",
+            str(key_path),
+            "--state",
+            str(state_path),
+            "--provider-reconciliation-state",
+            str(provider_path),
+            "--listen-host",
+            "127.0.0.1",
+            "--port",
+            "8080",
+            "--access-token-env",
+            "TEST_TOKEN",
+        ],
+    )
+    http_cli.entrypoint()
+
+    reopened_state = SQLiteState(state_path)
+    record = reopened_state.get_execution("exec_live_http")
+    assert record is not None
+    assert record.state == ExecutionState.DISPATCHING
+    events = reopened_state.list_events()
+    assert not any(e.event_type == AuditEventType.EXECUTION_UNKNOWN for e in events)
+
+
+def test_reconcile_worker_startup_does_not_recover_dispatching_execution(
+    intent, policy, signer, verifier, tmp_path, monkeypatch
+):
+    import json
+    import sys
+
+    from agentguard import reconcile_worker_cli
+
+    state_path = tmp_path / "worker_state.sqlite"
+    provider_path = tmp_path / "worker_provider.sqlite"
+    key_path = tmp_path / "private.pem"
+    schema_path = tmp_path / "status_schema.json"
+
+    signer.save_private(key_path)
+    schema_path.write_text(
+        json.dumps(
+            {
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"requestId": {"type": "string"}, "status": {"type": "string"}},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state = SQLiteState(state_path)
+    service, broker, receipt, grant = _credential_flow(intent, policy, signer, verifier, state)
+    verified = validate_execution_authority(
+        intent,
+        receipt,
+        grant,
+        verifier,
+        execution_id="exec_live_worker",
+        broker_grant_verifier=broker.verifier,
+        current_policy=policy,
+        execution_repository=state,
+    )
+    assert state.reserve_execution(verified, verified.verified_at) is None
+    state.mark_execution_dispatching(verified)
+
+    initial_record = state.get_execution("exec_live_worker")
+    assert initial_record is not None
+    assert initial_record.state == ExecutionState.DISPATCHING
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "agentguard-reconcile-worker",
+            "--server-id",
+            "test-server",
+            "--upstream-url",
+            "https://upstream.example/mcp",
+            "--status-tool",
+            "operation_status",
+            "--status-schema",
+            str(schema_path),
+            "--status-lookup-argument",
+            "requestId",
+            "--status-field",
+            "status",
+            "--key",
+            str(key_path),
+            "--state",
+            str(state_path),
+            "--provider-reconciliation-state",
+            str(provider_path),
+            "--timeout-seconds",
+            "5",
+            "--lease-seconds",
+            "15",
+            "--health-check",
+        ],
+    )
+    with pytest.raises(SystemExit) as exc:
+        reconcile_worker_cli.entrypoint()
+    assert exc.value.code == 0
+
+    reopened_state = SQLiteState(state_path)
+    record = reopened_state.get_execution("exec_live_worker")
+    assert record is not None
+    assert record.state == ExecutionState.DISPATCHING
+    events = reopened_state.list_events()
+    assert not any(e.event_type == AuditEventType.EXECUTION_UNKNOWN for e in events)
+
+
+def test_explicit_recovery_converts_stranded_dispatching_to_unknown(
+    intent, policy, signer, verifier, tmp_path
+):
+    path = tmp_path / "explicit_recovery.sqlite"
+    state = SQLiteState(path)
+    service, broker, receipt, grant = _credential_flow(intent, policy, signer, verifier, state)
+    verified = validate_execution_authority(
+        intent,
+        receipt,
+        grant,
+        verifier,
+        execution_id="exec_explicit_recovery",
+        broker_grant_verifier=broker.verifier,
+        current_policy=policy,
+        execution_repository=state,
+    )
+    assert state.reserve_execution(verified, verified.verified_at) is None
+    state.mark_execution_dispatching(verified)
+
+    assert state.get_execution("exec_explicit_recovery").state == ExecutionState.DISPATCHING
+
+    reopened = SQLiteState(path)
+    recovery_service = AgentGuardService(signer, verifier, reopened, broker.verifier)
+    recovered = recovery_service.recover_incomplete_executions()
+    assert len(recovered) == 1
+    assert recovered[0].execution_id == "exec_explicit_recovery"
+    assert recovered[0].state == ExecutionState.UNKNOWN
+    assert recovered[0].error_code == "execution.recovered_ambiguous_dispatch"
+
+    updated = reopened.get_execution("exec_explicit_recovery")
+    assert updated is not None
+    assert updated.state == ExecutionState.UNKNOWN
+
+    events = [e for e in reopened.list_events() if e.execution_id == "exec_explicit_recovery"]
+    unknown_events = [e for e in events if e.event_type == AuditEventType.EXECUTION_UNKNOWN]
+    assert len(unknown_events) == 1
+    assert unknown_events[0].data.get("recovered") is True

@@ -173,7 +173,6 @@ def entrypoint() -> None:
     state = SQLiteFencedReconciliationState(args.state)
     provider_effects = SQLiteProviderEffectRepository(args.provider_reconciliation_state)
     service = AgentGuardService(signer, verifier, state)
-    service.recover_incomplete_executions()
 
     binding = MCPHTTPServerBinding.for_url(args.server_id, args.upstream_url)
     sender = HTTPXUpstreamSender(

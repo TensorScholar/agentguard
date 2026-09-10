@@ -70,6 +70,10 @@ Binding the service to a non-loopback interface increases the attack surface. St
 
 A valid AgentGuard signature proves that AgentGuard signed the recorded canonical evidence. It does not prove an unsigned provider's external business truth. Provider-confirmed outcomes therefore require the stronger configured provider verification contract.
 
+### Dispatcher liveness and ambient startup takeover
+
+AgentGuard cannot establish process or executor liveness from shared SQLite state alone. Startup of another process sharing the database is not evidence that the original dispatcher is dead; an in-flight execution may still be communicating with an external provider. Ambient startup takeover is therefore prohibited. Explicit recovery depends on external operational assurance that the active dispatcher is no longer live.
+
 ## Residual risk
 
-AgentGuard cannot prove that an application did not invoke an uninstrumented executor. It cannot infer hidden dependencies or provider semantics absent from the trusted integration. Hash chains without independently retained checkpoints cannot prove tail completeness. Local SQLite lease fencing does not become distributed consensus across hosts. File-level hardening does not replace kernel isolation, network policy, identity infrastructure, secret-manager policy, external penetration testing, soak testing, or production validation.
+AgentGuard cannot prove that an application did not invoke an uninstrumented executor. It cannot infer hidden dependencies or provider semantics absent from the trusted integration. A crashed executor may leave a record in `DISPATCHING` indefinitely until controlled recovery occurs, because shared database state alone cannot determine executor liveness. Hash chains without independently retained checkpoints cannot prove tail completeness. Local SQLite lease fencing does not become distributed consensus across hosts. File-level hardening does not replace kernel isolation, network policy, identity infrastructure, secret-manager policy, external penetration testing, soak testing, or production validation.

@@ -579,7 +579,6 @@ class MCPProtectedStdioProxy:
         if self._has_run:
             raise RuntimeError("protected MCP proxy instances are single-launch")
         self._has_run = True
-        self.service.recover_incomplete_executions()
         process = subprocess.Popen(
             self.server_command,
             stdin=subprocess.PIPE,
