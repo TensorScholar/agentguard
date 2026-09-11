@@ -62,22 +62,32 @@ Before tagging:
 - verify CI, Security, and CodeQL are all bound to the exact release commit;
 - verify release-manifest commit/version and SHA-256 hashes;
 - verify the final release tree is the one that passed the gates;
-- create an SSH-signed release tag for source endorsement:
+- create an SSH-signed release tag for source endorsement using a dedicated release-signing key:
   ```bash
   git config gpg.format ssh
-  git config user.signingkey ~/.ssh/id_ed25519
-  git tag -s -m "AgentGuard 0.2.0rc3" v0.2.0rc3 5c57bfe6d944cd05d268150277502bb42ca2e198
+  git config user.signingkey /path/to/agentguard-release-signing-key.pub
+  git tag -s -m "AgentGuard <release-version>" <release-tag> <exact-release-commit>
   ```
   Verify the tag with:
   ```bash
-  git -c gpg.ssh.allowedSignersFile=allowed_signers tag -v v0.2.0rc3
+  git -c gpg.ssh.allowedSignersFile=/path/to/trusted_allowed_signers tag -v <release-tag>
   ```
+  The `<exact-release-commit>` must be obtained from the already validated exact-main release candidate and independently checked before signing.
 
 Do not describe the release candidate as production-certified. Production promotion additionally requires deployment-specific threat review, independent penetration/security testing, long-duration soak testing, operational recovery exercises, and a controlled production pilot without unresolved critical findings.
 
 ## Cryptographic release authenticity and artifact verification
 
 AgentGuard uses OpenSSH SSHSIG over authenticated checksums to provide maintainer release endorsement and artifact authenticity/integrity without relying on third-party public logs or custom cryptographic signing implementations.
+
+### Dedicated release signing key requirements
+
+- The release-signing key is a **dedicated key** reserved exclusively for AgentGuard release signing.
+- It **MUST NOT** be the maintainer's ordinary GitHub SSH authentication key.
+- The private key remains outside the repository at all times and must never be stored in CI or version control.
+- The private key should be passphrase protected.
+- The corresponding public key and fingerprint are established independently during the official maintainer key ceremony.
+- No real release signing key is generated during development/hardening phases (such as Q05-02).
 
 ### Security and capability classification
 
@@ -93,13 +103,14 @@ Do not refer to maintainer signatures as "provenance"; true build provenance req
 
 ### Signing operations (Maintainer)
 
-Signing is a direct maintainer operation using standard OpenSSH tooling. No private signing keys are handled by repository scripts or stored in CI.
+Signing is a direct maintainer operation using standard OpenSSH tooling and the dedicated release-signing key. No private signing keys are handled by repository scripts or stored in CI.
 
-1. Generate the canonical distribution artifacts, SBOM, and release manifest via the validated build workflow.
-2. In the release artifact directory, create `release/SHA256SUMS` covering all distributions, `release/agentguard.cdx.json`, and `release/release-manifest.json`.
-3. Sign `release/SHA256SUMS` using `ssh-keygen`:
+1. Obtain and verify the `<exact-release-commit>` from the validated exact-main release candidate.
+2. Generate the canonical distribution artifacts, SBOM, and release manifest via the validated build workflow.
+3. In the release artifact directory, create `release/SHA256SUMS` covering all distributions in `dist/`, `release/agentguard.cdx.json`, and `release/release-manifest.json`.
+4. Sign `release/SHA256SUMS` using `ssh-keygen`:
    ```bash
-   ssh-keygen -Y sign -f ~/.ssh/id_ed25519 -n agentguard-release-v1 release/SHA256SUMS
+   ssh-keygen -Y sign -f /path/to/agentguard-release-signing-key -n agentguard-release-v1 release/SHA256SUMS
    ```
    This generates `release/SHA256SUMS.sig`.
 
@@ -110,12 +121,12 @@ Verification uses standard OpenSSH tooling and the standalone stdlib verificatio
 The verifier does NOT require `agentguard` or third-party cryptographic libraries to be installed.
 
 1. **Establish Trust Anchor**:
-   Maintain an independent OpenSSH `allowed_signers` file containing authorized maintainer public keys.
+   Maintain an independent OpenSSH `allowed_signers` file containing authorized maintainer release public keys.
    Format:
    ```text
    <signer-identity> ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... <optional comment>
    ```
-   *Never* accept an `allowed_signers` file packaged inside an untrusted release bundle.
+   The verifier strictly enforces that the `allowed_signers` file is located outside the release artifact root. *Never* accept an `allowed_signers` file packaged inside an untrusted release bundle.
 
 2. **Execute Verification**:
    ```bash
@@ -125,17 +136,21 @@ The verifier does NOT require `agentguard` or third-party cryptographic librarie
      --signer-identity maintainer@agentguard.dev \
      --namespace agentguard-release-v1 \
      --expected-project agentguard \
-     --expected-version 0.2.0rc3 \
-     --expected-commit 5c57bfe6d944cd05d268150277502bb42ca2e198
+     --expected-version <release-version> \
+     --expected-commit <exact-release-commit>
    ```
 
-### Verification guarantees and transitive trust chain
+### Verification guarantees and cryptographic trust chain
 
-`scripts/verify_release.py` enforces fail-closed checks across the entire artifact hierarchy:
+`scripts/verify_release.py` enforces fail-closed checks across the authenticated release artifact/evidence set:
 
-1. **Cryptographic signature check**: Invokes `ssh-keygen -Y verify` against `release/SHA256SUMS` and `release/SHA256SUMS.sig` using the specified namespace and trusted `allowed_signers`.
-2. **Safe checksum parsing**: Rejects malformed lines, non-hex SHA-256 digests, path traversal attempts (`..`), absolute paths, backslashes, duplicate file entries, and symlinks.
-3. **Distribution file integrity**: Computes actual SHA-256 digests for all files in `release/SHA256SUMS` and verifies exact matches against disk.
-4. **Manifest and commit binding**: Parses `release/release-manifest.json` and verifies project name, semantic version, and the full 40-character hex Git commit SHA.
-5. **Cross-artifact consistency**: Verifies that every distribution file (`dist/*`) and SBOM (`release/agentguard.cdx.json`) is present in both `release/SHA256SUMS` and `release-manifest.json`, with matching digests and exact file sizes.
-6. **Transitive binding**: Because `release/SHA256SUMS` includes `release/release-manifest.json` (which binds the exact commit) and all distributions/SBOMs, authenticating `SHA256SUMS` cryptographically seals the entire release bundle to the verified commit SHA.
+1. **External trust anchor enforcement**: Verifies that the supplied `allowed_signers` file is strictly external to the artifact root directory.
+2. **Cryptographic signature check**: Invokes `ssh-keygen -Y verify` against `release/SHA256SUMS` and `release/SHA256SUMS.sig` using the specified namespace and trusted `allowed_signers`.
+3. **Safe checksum parsing**: Rejects malformed lines, non-hex SHA-256 digests, path traversal attempts (`..`), absolute paths, backslashes, duplicate file entries, and symlinks.
+4. **Distribution file integrity & exact set matching**: Verifies exact set equivalence `ACTUAL_DIST_FILES == MANIFEST_DIST_FILES == SHA256SUMS_DIST_FILES`. Rejects any extra, missing, unchecksummed, or unmanifested regular files, subdirectories, symlinks, or non-regular files in `dist/`.
+5. **Manifest and commit binding**: Parses `release/release-manifest.json` and verifies project name, semantic version, and the full 40-character hex Git commit SHA.
+6. **Cross-artifact consistency**:
+   - `release/SHA256SUMS` directly authenticates all distribution archives (`dist/*`), the CycloneDX SBOM (`release/agentguard.cdx.json`), and the release manifest (`release/release-manifest.json`).
+   - `release/release-manifest.json` independently records project, version, exact commit, and distribution artifact names, digests, and byte sizes. The verifier cross-checks all manifest distribution entries against actual disk files and `SHA256SUMS`.
+   - The SBOM is authenticated directly through `SHA256SUMS`.
+7. **Transitive binding**: Because `release/SHA256SUMS` includes `release/release-manifest.json` (which binds the exact commit) and all distributions and the SBOM, authenticating `SHA256SUMS` cryptographically seals the authenticated release artifact/evidence set to the verified commit SHA.

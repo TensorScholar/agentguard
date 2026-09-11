@@ -443,6 +443,88 @@ def test_missing_artifact_fails(release_bundle):
         )
 
 
+def test_allowed_signers_inside_artifact_root_fails(release_bundle):
+    internal_signers = release_bundle["artifact_root"] / "allowed_signers"
+    internal_signers.write_text(
+        release_bundle["allowed_signers"].read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ReleaseVerificationError,
+        match="trust anchor must be external to release bundle",
+    ):
+        verify_release(
+            artifact_root=release_bundle["artifact_root"],
+            allowed_signers_path=internal_signers,
+            signer_identity=release_bundle["signer_identity"],
+            namespace=release_bundle["namespace"],
+            expected_project=release_bundle["expected_project"],
+            expected_version=release_bundle["expected_version"],
+            expected_commit=release_bundle["expected_commit"],
+        )
+
+
+def test_unchecksummed_extra_dist_artifact_fails(release_bundle):
+    extra_file = release_bundle["artifact_root"] / "dist" / "extra.whl"
+    extra_file.write_bytes(b"extra unchecksummed content")
+    # File is in dist/, but NOT added to SHA256SUMS and NOT added to manifest.
+    with pytest.raises(
+        ReleaseVerificationError,
+        match="unmanifested distribution file in dist directory",
+    ):
+        verify_release(
+            artifact_root=release_bundle["artifact_root"],
+            allowed_signers_path=release_bundle["allowed_signers"],
+            signer_identity=release_bundle["signer_identity"],
+            namespace=release_bundle["namespace"],
+            expected_project=release_bundle["expected_project"],
+            expected_version=release_bundle["expected_version"],
+            expected_commit=release_bundle["expected_commit"],
+        )
+
+
+def test_unexpected_directory_in_dist_fails(release_bundle):
+    nested_dir = release_bundle["artifact_root"] / "dist" / "unexpected_subdir"
+    nested_dir.mkdir()
+    with pytest.raises(
+        ReleaseVerificationError,
+        match="unexpected directory in dist directory",
+    ):
+        verify_release(
+            artifact_root=release_bundle["artifact_root"],
+            allowed_signers_path=release_bundle["allowed_signers"],
+            signer_identity=release_bundle["signer_identity"],
+            namespace=release_bundle["namespace"],
+            expected_project=release_bundle["expected_project"],
+            expected_version=release_bundle["expected_version"],
+            expected_commit=release_bundle["expected_commit"],
+        )
+
+
+def test_dist_symlink_fails(release_bundle, tmp_path):
+    evil_target = tmp_path / "evil.whl"
+    evil_target.write_bytes(b"evil")
+    link_path = release_bundle["artifact_root"] / "dist" / "evil_symlink.whl"
+    try:
+        link_path.symlink_to(evil_target)
+    except OSError:
+        pytest.skip("symlink not supported")
+
+    with pytest.raises(
+        ReleaseVerificationError,
+        match="symlink forbidden in dist directory",
+    ):
+        verify_release(
+            artifact_root=release_bundle["artifact_root"],
+            allowed_signers_path=release_bundle["allowed_signers"],
+            signer_identity=release_bundle["signer_identity"],
+            namespace=release_bundle["namespace"],
+            expected_project=release_bundle["expected_project"],
+            expected_version=release_bundle["expected_version"],
+            expected_commit=release_bundle["expected_commit"],
+        )
+
+
 def test_extra_dist_artifact_not_in_manifest_fails(release_bundle):
     extra_file = release_bundle["artifact_root"] / "dist" / "extra.whl"
     extra_content = b"extra"
@@ -454,7 +536,37 @@ def test_extra_dist_artifact_not_in_manifest_fails(release_bundle):
     )
     release_bundle["re_sign"]()
 
-    with pytest.raises(ReleaseVerificationError, match="absent from release manifest"):
+    with pytest.raises(
+        ReleaseVerificationError,
+        match="unmanifested distribution file in dist directory",
+    ):
+        verify_release(
+            artifact_root=release_bundle["artifact_root"],
+            allowed_signers_path=release_bundle["allowed_signers"],
+            signer_identity=release_bundle["signer_identity"],
+            namespace=release_bundle["namespace"],
+            expected_project=release_bundle["expected_project"],
+            expected_version=release_bundle["expected_version"],
+            expected_commit=release_bundle["expected_commit"],
+        )
+
+
+def test_manifest_boolean_size_fails(release_bundle):
+    manifest = json.loads(release_bundle["manifest_file"].read_text(encoding="utf-8"))
+    manifest["artifacts"][0]["size_bytes"] = True
+    release_bundle["manifest_file"].write_text(json.dumps(manifest), encoding="utf-8")
+    new_manifest_hash = _sha256_bytes(release_bundle["manifest_file"].read_bytes())
+
+    lines = []
+    for line in release_bundle["checksums_file"].read_text(encoding="utf-8").splitlines():
+        if "release-manifest.json" in line:
+            lines.append(f"{new_manifest_hash}  release/release-manifest.json")
+        else:
+            lines.append(line)
+    release_bundle["checksums_file"].write_text("\n".join(lines) + "\n", encoding="utf-8")
+    release_bundle["re_sign"]()
+
+    with pytest.raises(ReleaseVerificationError, match="invalid manifest artifact size_bytes"):
         verify_release(
             artifact_root=release_bundle["artifact_root"],
             allowed_signers_path=release_bundle["allowed_signers"],

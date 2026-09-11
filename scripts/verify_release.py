@@ -260,7 +260,7 @@ def verify_manifest(
             )
         sha256 = sha256.lower()
 
-        if not isinstance(size_bytes, int) or size_bytes < 0:
+        if isinstance(size_bytes, bool) or not isinstance(size_bytes, int) or size_bytes < 0:
             raise ReleaseVerificationError(
                 f"invalid manifest artifact size_bytes for {name}: {size_bytes!r}"
             )
@@ -277,12 +277,50 @@ def verify_manifest(
     if expected_cdx_rel not in checksum_map:
         raise ReleaseVerificationError(f"SBOM file {expected_cdx_rel!r} is missing from SHA256SUMS")
 
+    dist_dir = artifact_root / "dist"
+    if not dist_dir.is_dir():
+        raise ReleaseVerificationError(f"distribution directory does not exist: {dist_dir}")
+
+    actual_dist_names: set[str] = set()
+    for item in dist_dir.iterdir():
+        if item.is_symlink():
+            raise ReleaseVerificationError(f"symlink forbidden in dist directory: {item.name}")
+        if item.is_dir():
+            raise ReleaseVerificationError(f"unexpected directory in dist directory: {item.name}")
+        if not item.is_file():
+            raise ReleaseVerificationError(f"non-regular file in dist directory: {item.name}")
+        actual_dist_names.add(item.name)
+
+    manifest_dist_names: set[str] = set(manifest_entries_map.keys())
+    checksum_dist_names: set[str] = {Path(p).name for p in checksum_map if p.startswith("dist/")}
+
+    # Strict semantic equivalence: ACTUAL_DIST_FILES == MANIFEST_DIST_FILES == SHA256SUMS_DIST_FILES
+    if actual_dist_names != manifest_dist_names:
+        extra_on_disk = sorted(actual_dist_names - manifest_dist_names)
+        if extra_on_disk:
+            raise ReleaseVerificationError(
+                f"unmanifested distribution file in dist directory: {extra_on_disk[0]}"
+            )
+        missing_on_disk = sorted(manifest_dist_names - actual_dist_names)
+        if missing_on_disk:
+            raise ReleaseVerificationError(
+                f"manifest distribution file missing from dist directory: {missing_on_disk[0]}"
+            )
+
+    if checksum_dist_names != manifest_dist_names:
+        extra_in_checksums = sorted(checksum_dist_names - manifest_dist_names)
+        if extra_in_checksums:
+            raise ReleaseVerificationError(
+                f"distribution file in SHA256SUMS absent from release manifest: {extra_in_checksums[0]}"
+            )
+        missing_in_checksums = sorted(manifest_dist_names - checksum_dist_names)
+        if missing_in_checksums:
+            raise ReleaseVerificationError(
+                f"manifest artifact {missing_in_checksums[0]!r} (dist/{missing_in_checksums[0]}) is missing from SHA256SUMS"
+            )
+
     for name, entry in manifest_entries_map.items():
         dist_rel = f"dist/{name}"
-        if dist_rel not in checksum_map:
-            raise ReleaseVerificationError(
-                f"manifest artifact {name!r} ({dist_rel}) is missing from SHA256SUMS"
-            )
         if checksum_map[dist_rel] != entry["sha256"]:
             raise ReleaseVerificationError(
                 f"digest disagreement for {name}: manifest has {entry['sha256']}, SHA256SUMS has {checksum_map[dist_rel]}"
@@ -292,14 +330,6 @@ def verify_manifest(
             raise ReleaseVerificationError(
                 f"size disagreement for {name}: manifest declares {entry['size_bytes']} bytes, actual file has {dist_file.stat().st_size} bytes"
             )
-
-    for checksum_rel in checksum_map:
-        if checksum_rel.startswith("dist/"):
-            artifact_name = Path(checksum_rel).name
-            if artifact_name not in manifest_entries_map:
-                raise ReleaseVerificationError(
-                    f"distribution file {checksum_rel!r} in SHA256SUMS is absent from release manifest"
-                )
 
     return manifest
 
@@ -323,6 +353,18 @@ def verify_release(
         raise ReleaseVerificationError(
             f"allowed_signers file does not exist: {allowed_signers_path}"
         )
+
+    if allowed_signers_path == artifact_root:
+        raise ReleaseVerificationError(
+            f"trust anchor must be external to release bundle: allowed_signers path is the artifact root: {allowed_signers_path}"
+        )
+    try:
+        allowed_signers_path.relative_to(artifact_root)
+        raise ReleaseVerificationError(
+            f"trust anchor must be external to release bundle: allowed_signers path {allowed_signers_path} is located inside artifact root {artifact_root}"
+        )
+    except ValueError:
+        pass  # Expected: allowed_signers is outside artifact_root
 
     checksums_path = artifact_root / "release" / "SHA256SUMS"
     signature_path = artifact_root / "release" / "SHA256SUMS.sig"
