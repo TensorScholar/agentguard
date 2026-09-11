@@ -15,7 +15,8 @@ Feature expansion remains frozen until the execution-admission correctness queue
 - Preserved Q02 commit / audited preflight head: `d8c4bccdbdf41cea349cf81acbba63e15611f1d7`.
 - Active working branch: `docs/q04-06-core-claims-alignment`.
 - Reference repository: `TensorScholar/agentguard-reference`.
-- Audited reference baseline: `029aa4b9eb8aee5d2be91d7f813369a248dd80b6`.
+- Reference repository Q04-06 baseline: `30b018239d56d600015e6ca2d2baeb0dde193ce6`.
+- Validated reference implementation head: `8ed4632105c4067e7d0c68a0f3e469f4f5a5bca8`.
 - Declared release version: `0.2.0rc3`.
 - Source divergence: reconciled. The two previously local-only Q01/Q02 commits are now preserved in GitHub history through PR #14.
 
