@@ -135,13 +135,13 @@ jobs:
           - **Dependency Audit**: PASS
           - **AgentGuard Gate**: PASS
 
-          ```text
+          \`\`\`text
           CI_EXECUTION_CLASS=self-hosted
           HOSTED_CI_REPLACED=false
           TRUST_SCOPE=trusted-owner-same-repository-only
           RUNNER_PERSISTENCE=persistent
           SELF_HOSTED_RUNNER_GENERAL_PR_SAFE=false
-          ```
+          \`\`\`
           EOF
 
           if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f evidence/self-hosted-evidence.md ]; then
