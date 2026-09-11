@@ -1,0 +1,186 @@
+name: Self-hosted validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-hosted-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Self-hosted validation
+    runs-on:
+      - self-hosted
+      - macOS
+      - ARM64
+      - agentguard-core
+    timeout-minutes: 20
+    if: >-
+      github.actor == 'TensorScholar' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          clean: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Create isolated virtual environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENV="$RUNNER_TEMP/agentguard-q05-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python -m venv "$VENV"
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+          echo "AGENTGUARD_Q05_VENV=$VENV" >> "$GITHUB_ENV"
+
+      - name: Safe environment provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== Safe Environment Provenance ==="
+          uname -a
+          uname -m
+          sw_vers
+          python --version
+          python -m pip --version
+          git --version
+          echo "GITHUB_SHA: ${GITHUB_SHA}"
+          echo "HEAD_SHA: $(git rev-parse HEAD)"
+          echo "RUNNER_NAME: ${{ runner.name }}"
+          echo "RUNNER_OS: ${{ runner.os }}"
+          echo "RUNNER_ARCH: ${{ runner.arch }}"
+          echo "EVENT_NAME: ${{ github.event_name }}"
+
+      - name: Install dependencies and check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -c requirements/runtime-validated.txt -e '.[http]'
+          python -m pip install -r requirements/validation.txt
+          python -m pip check
+
+      - name: Engineering gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          make check
+
+      - name: Dependency security audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip_audit \
+            --progress-spinner off \
+            --timeout 60
+
+      - name: MCP security gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.event.pull_request.base.sha }}"
+            python -m agentguard.cli gate \
+              --changed-from "$BASE_REF" \
+              --fail-on-risk high \
+              --format findings-json \
+              --output evidence/agentguard-findings.json \
+              --summary-output evidence/agentguard-summary.md
+          else
+            python -m agentguard.cli scan \
+              --format findings-json \
+              --output evidence/agentguard-findings.json \
+              --summary-output evidence/agentguard-summary.md
+          fi
+
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f evidence/agentguard-summary.md ]; then
+            cat evidence/agentguard-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Generate safe evidence summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          cat <<EOF > evidence/self-hosted-evidence.md
+          # Self-Hosted CI Execution Evidence
+
+          - **Event Type**: ${{ github.event_name }}
+          - **Commit SHA**: ${{ github.sha }}
+          - **Git HEAD**: $(git rev-parse HEAD)
+          - **Runner Name**: ${{ runner.name }}
+          - **Runner OS**: ${{ runner.os }}
+          - **Runner Architecture**: ${{ runner.arch }}
+          - **Python Version**: $(python --version 2>&1)
+          - **Pip Check**: PASS
+          - **Make Check**: PASS
+          - **Dependency Audit**: PASS
+          - **AgentGuard Gate**: PASS
+
+          \`\`\`text
+          CI_EXECUTION_CLASS=self-hosted
+          HOSTED_CI_REPLACED=false
+          TRUST_SCOPE=trusted-owner-same-repository-only
+          RUNNER_PERSISTENCE=persistent
+          SELF_HOSTED_RUNNER_GENERAL_PR_SAFE=false
+          \`\`\`
+          EOF
+
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f evidence/self-hosted-evidence.md ]; then
+            cat evidence/self-hosted-evidence.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Evidence completeness gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s evidence/self-hosted-evidence.md
+          test -s evidence/agentguard-findings.json
+          test -s evidence/agentguard-summary.md
+
+      - name: Upload safe evidence artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: self-hosted-validation-evidence
+          path: |
+            evidence/self-hosted-evidence.md
+            evidence/agentguard-findings.json
+            evidence/agentguard-summary.md
+          if-no-files-found: error
+
+      - name: Cleanup isolated virtual environment
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${AGENTGUARD_Q05_VENV:-}" ] && [ -n "${RUNNER_TEMP:-}" ]; then
+            case "$AGENTGUARD_Q05_VENV" in
+              "$RUNNER_TEMP"/agentguard-q05-*)
+                if [ -d "$AGENTGUARD_Q05_VENV" ]; then
+                  echo "Safely removing isolated venv: $AGENTGUARD_Q05_VENV"
+                  rm -rf "$AGENTGUARD_Q05_VENV"
+                else
+                  echo "Venv directory does not exist: $AGENTGUARD_Q05_VENV"
+                fi
+                ;;
+              *)
+                echo "Refusing to delete unverified path: $AGENTGUARD_Q05_VENV" >&2
+                exit 1
+                ;;
+            esac
+          fi
