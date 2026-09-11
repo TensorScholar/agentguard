@@ -464,6 +464,102 @@ def test_allowed_signers_inside_artifact_root_fails(release_bundle):
         )
 
 
+def test_allowed_signers_symlink_inside_artifact_root_fails(release_bundle):
+    symlink_signers = release_bundle["artifact_root"] / "allowed_signers_symlink"
+    try:
+        symlink_signers.symlink_to(release_bundle["allowed_signers"].resolve())
+    except OSError:
+        pytest.skip("symlinks not supported")
+
+    with pytest.raises(
+        ReleaseVerificationError,
+        match="trust anchor must not be a symlink",
+    ):
+        verify_release(
+            artifact_root=release_bundle["artifact_root"],
+            allowed_signers_path=symlink_signers,
+            signer_identity=release_bundle["signer_identity"],
+            namespace=release_bundle["namespace"],
+            expected_project=release_bundle["expected_project"],
+            expected_version=release_bundle["expected_version"],
+            expected_commit=release_bundle["expected_commit"],
+        )
+
+
+def test_checksums_symlink_fails(release_bundle, tmp_path):
+    external_checksums = tmp_path / "external_SHA256SUMS"
+    external_checksums.write_text("malicious content\n", encoding="utf-8")
+    checksums_file = release_bundle["checksums_file"]
+    checksums_file.unlink()
+    try:
+        checksums_file.symlink_to(external_checksums)
+    except OSError:
+        pytest.skip("symlinks not supported")
+
+    with pytest.raises(
+        ReleaseVerificationError,
+        match="checksums file must not be a symlink",
+    ):
+        verify_release(
+            artifact_root=release_bundle["artifact_root"],
+            allowed_signers_path=release_bundle["allowed_signers"],
+            signer_identity=release_bundle["signer_identity"],
+            namespace=release_bundle["namespace"],
+            expected_project=release_bundle["expected_project"],
+            expected_version=release_bundle["expected_version"],
+            expected_commit=release_bundle["expected_commit"],
+        )
+
+
+def test_signature_symlink_fails(release_bundle, tmp_path):
+    external_sig = tmp_path / "external_signature.sig"
+    external_sig.write_text("untrusted signature\n", encoding="utf-8")
+    sig_file = release_bundle["signature_file"]
+    sig_file.unlink()
+    try:
+        sig_file.symlink_to(external_sig)
+    except OSError:
+        pytest.skip("symlinks not supported")
+
+    with pytest.raises(
+        ReleaseVerificationError,
+        match="signature file must not be a symlink",
+    ):
+        verify_release(
+            artifact_root=release_bundle["artifact_root"],
+            allowed_signers_path=release_bundle["allowed_signers"],
+            signer_identity=release_bundle["signer_identity"],
+            namespace=release_bundle["namespace"],
+            expected_project=release_bundle["expected_project"],
+            expected_version=release_bundle["expected_version"],
+            expected_commit=release_bundle["expected_commit"],
+        )
+
+
+def test_release_directory_symlink_fails(release_bundle, tmp_path):
+    external_release = tmp_path / "external_release_dir"
+    shutil.copytree(release_bundle["artifact_root"] / "release", external_release)
+    shutil.rmtree(release_bundle["artifact_root"] / "release")
+    try:
+        (release_bundle["artifact_root"] / "release").symlink_to(external_release)
+    except OSError:
+        pytest.skip("symlinks not supported")
+
+    with pytest.raises(
+        ReleaseVerificationError,
+        match="release directory must not be a symlink",
+    ):
+        verify_release(
+            artifact_root=release_bundle["artifact_root"],
+            allowed_signers_path=release_bundle["allowed_signers"],
+            signer_identity=release_bundle["signer_identity"],
+            namespace=release_bundle["namespace"],
+            expected_project=release_bundle["expected_project"],
+            expected_version=release_bundle["expected_version"],
+            expected_commit=release_bundle["expected_commit"],
+        )
+
+
 def test_unchecksummed_extra_dist_artifact_fails(release_bundle):
     extra_file = release_bundle["artifact_root"] / "dist" / "extra.whl"
     extra_file.write_bytes(b"extra unchecksummed content")

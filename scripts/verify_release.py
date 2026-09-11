@@ -33,10 +33,18 @@ def verify_sshsig(
     signer_identity: str,
     namespace: str,
 ) -> str:
+    if checksums_path.is_symlink():
+        raise ReleaseVerificationError(f"checksum file must not be a symlink: {checksums_path}")
     if not checksums_path.is_file():
         raise ReleaseVerificationError(f"checksum file not found: {checksums_path}")
+    if signature_path.is_symlink():
+        raise ReleaseVerificationError(f"signature file must not be a symlink: {signature_path}")
     if not signature_path.is_file():
         raise ReleaseVerificationError(f"signature file not found: {signature_path}")
+    if allowed_signers_path.is_symlink():
+        raise ReleaseVerificationError(
+            f"allowed_signers file must not be a symlink: {allowed_signers_path}"
+        )
     if not allowed_signers_path.is_file():
         raise ReleaseVerificationError(f"allowed_signers file not found: {allowed_signers_path}")
     if not signer_identity.strip():
@@ -344,31 +352,106 @@ def verify_release(
     expected_version: str,
     expected_commit: str,
 ) -> dict[str, Any]:
-    artifact_root = artifact_root.resolve()
+    if artifact_root.is_symlink():
+        raise ReleaseVerificationError(f"artifact root must not be a symlink: {artifact_root}")
     if not artifact_root.is_dir():
         raise ReleaseVerificationError(f"artifact root directory does not exist: {artifact_root}")
 
-    allowed_signers_path = allowed_signers_path.resolve()
-    if not allowed_signers_path.is_file():
+    # 1. Enforce allowed_signers externality and disallow symlinks
+    if allowed_signers_path.is_symlink():
         raise ReleaseVerificationError(
-            f"allowed_signers file does not exist: {allowed_signers_path}"
+            f"trust anchor must not be a symlink: {allowed_signers_path}"
         )
 
-    if allowed_signers_path == artifact_root:
+    abs_signers = allowed_signers_path.absolute()
+    abs_root = artifact_root.absolute()
+    if abs_signers == abs_root:
         raise ReleaseVerificationError(
             f"trust anchor must be external to release bundle: allowed_signers path is the artifact root: {allowed_signers_path}"
         )
     try:
-        allowed_signers_path.relative_to(artifact_root)
+        abs_signers.relative_to(abs_root)
         raise ReleaseVerificationError(
             f"trust anchor must be external to release bundle: allowed_signers path {allowed_signers_path} is located inside artifact root {artifact_root}"
         )
     except ValueError:
-        pass  # Expected: allowed_signers is outside artifact_root
+        pass
 
-    checksums_path = artifact_root / "release" / "SHA256SUMS"
-    signature_path = artifact_root / "release" / "SHA256SUMS.sig"
-    manifest_path = artifact_root / "release" / "release-manifest.json"
+    if not allowed_signers_path.is_file():
+        raise ReleaseVerificationError(
+            f"allowed_signers file does not exist or is not a regular file: {allowed_signers_path}"
+        )
+
+    resolved_signers = allowed_signers_path.resolve()
+    resolved_root = artifact_root.resolve()
+    if resolved_signers == resolved_root:
+        raise ReleaseVerificationError(
+            f"trust anchor must be external to release bundle: allowed_signers path is the artifact root: {allowed_signers_path}"
+        )
+    try:
+        resolved_signers.relative_to(resolved_root)
+        raise ReleaseVerificationError(
+            f"trust anchor must be external to release bundle: allowed_signers path {allowed_signers_path} resolves inside artifact root {artifact_root}"
+        )
+    except ValueError:
+        pass
+
+    # 2. Reject symlinked release/ and dist/ directories before accessing control files
+    release_dir = artifact_root / "release"
+    if release_dir.is_symlink():
+        raise ReleaseVerificationError(f"release directory must not be a symlink: {release_dir}")
+    if not release_dir.is_dir():
+        raise ReleaseVerificationError(
+            f"release directory does not exist or is not a directory: {release_dir}"
+        )
+    try:
+        resolved_release_dir = release_dir.resolve()
+        resolved_release_dir.relative_to(resolved_root)
+    except (ValueError, OSError) as exc:
+        raise ReleaseVerificationError(
+            f"release directory must resolve underneath artifact root: {exc}"
+        )
+
+    dist_dir = artifact_root / "dist"
+    if dist_dir.is_symlink():
+        raise ReleaseVerificationError(f"dist directory must not be a symlink: {dist_dir}")
+    if not dist_dir.is_dir():
+        raise ReleaseVerificationError(
+            f"dist directory does not exist or is not a directory: {dist_dir}"
+        )
+    try:
+        resolved_dist_dir = dist_dir.resolve()
+        resolved_dist_dir.relative_to(resolved_root)
+    except (ValueError, OSError) as exc:
+        raise ReleaseVerificationError(
+            f"dist directory must resolve underneath artifact root: {exc}"
+        )
+
+    # 3. Reject symlinked release control files before reading or passing to ssh-keygen
+    checksums_path = release_dir / "SHA256SUMS"
+    signature_path = release_dir / "SHA256SUMS.sig"
+    manifest_path = release_dir / "release-manifest.json"
+    sbom_path = release_dir / "agentguard.cdx.json"
+
+    for ctl_name, ctl_path in [
+        ("checksums", checksums_path),
+        ("signature", signature_path),
+        ("manifest", manifest_path),
+        ("SBOM", sbom_path),
+    ]:
+        if ctl_path.is_symlink():
+            raise ReleaseVerificationError(f"{ctl_name} file must not be a symlink: {ctl_path}")
+        if not ctl_path.is_file():
+            raise ReleaseVerificationError(
+                f"{ctl_name} file does not exist or is not a regular file: {ctl_path}"
+            )
+        try:
+            resolved_ctl = ctl_path.resolve()
+            resolved_ctl.relative_to(resolved_root)
+        except (ValueError, OSError) as exc:
+            raise ReleaseVerificationError(
+                f"{ctl_name} file must resolve underneath artifact root: {exc}"
+            )
 
     ssh_msg = verify_sshsig(
         checksums_path=checksums_path,
