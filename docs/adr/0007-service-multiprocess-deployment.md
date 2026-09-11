@@ -59,13 +59,13 @@ inside the fenced scope. It therefore cannot silently race an active background 
 
 `agentguard-reconcile-worker`:
 
-- runs startup recovery for stranded core executions;
+- excludes automatic startup recovery to prevent taking over live dispatches (operator recovery is explicit);
 - considers UNKNOWN executions and processes only those with durable external-effect bindings;
 - claims work before provider lookup;
 - requires the lease TTL to exceed the configured provider timeout by more than five seconds;
-- bounds eligible provider work per tick and bounds polling intervals;
-- does not allow earlier unbound UNKNOWN records to consume the eligible-work limit and starve a
-  later bound execution;
+- bounds claimed provider reconciliation attempts per tick and bounds polling intervals;
+- does not allow earlier unbound UNKNOWN records or busy leases to consume attempt capacity and starve a
+  later actionable execution;
 - handles SIGINT/SIGTERM with a graceful stop boundary;
 - emits structured JSON operational diagnostics without raw credentials or provider response
   bodies;
@@ -76,8 +76,8 @@ process may take over only after the recorded expiry, which prevents immediate c
 after a crash.
 
 The Phase 6D provider repository intentionally exposes point lookup rather than a binding-list work
-index. Consequently, the SQLite worker may inspect more UNKNOWN rows than its eligible-work limit
-when old unbound rows exist. This is an explicit single-host operational limitation, not a reason to
+index. Consequently, the SQLite worker may inspect more UNKNOWN rows than its claimed-attempt limit
+when old unbound or terminal rows exist. This is an explicit single-host operational limitation, not a reason to
 change the frozen provider contract in Phase 6E. A future indexed candidate-discovery adapter may
 optimize scanning while preserving the same ownership and fencing semantics.
 

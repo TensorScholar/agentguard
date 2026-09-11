@@ -4,7 +4,7 @@
 
 AgentGuard is designed to preserve the following properties on traffic that actually crosses a protected adapter:
 
-- the executed action must match the signed authorization decision;
+- the dispatched normalized action must match the signed authorization decision, and credential use must remain within the decision's permitted authority;
 - approval, delegated authority, typed releases, and capability leases must not expand their signed bounds;
 - credential material must stay inside the approved provider/audience/scope/tenant/lifetime boundary;
 - provider secrets must not be persisted in decision grants, external-effect bindings, audit, or execution evidence;
@@ -25,12 +25,12 @@ The threat set includes argument/action substitution, confused deputy behavior, 
 ## Trust boundaries
 
 1. **Agent/model/client process** — untrusted proposal source.
-2. **Protocol adapter** — trusted to parse the supported protocol subset, derive exact action identity, and route protected calls through authorization.
+2. **Protocol adapter & trusted normalization** — trusted normalization is an explicit TCB boundary; trusted to parse the supported protocol subset, derive exact action identity, and route protected calls through authorization.
 3. **Action-integrity kernel** — trusted deterministic policy, receipt, authority, execution, and reconciliation checks.
 4. **Signer/verifier roots** — trusted key boundary; private signing material should remain outside model/tool control.
 5. **Credential authority/source** — trusted to resolve only the configured secret/profile and to preserve provider binding.
-6. **Provider executor/transport** — trusted to send the exact verified effect to the bound provider endpoint.
-7. **Provider reconciler** — trusted only to the assurance level it is configured to emit; `PROVIDER_VERIFIED` requires an independently trusted provider verification contract.
+6. **Provider executor/transport** — trusted transport boundary to send the exact verified effect to the bound provider endpoint.
+7. **Provider reconciler** — trusted only to the assurance level it is configured to emit; `PROVIDER_VERIFIED` requires an independently trusted provider verification contract. Local signed evidence does not independently establish external provider business truth.
 8. **SQLite state** — trusted local transactional/durability boundary for replay, reservations, execution state, and single-host lease fencing.
 9. **Independent checkpoint store** — required to detect complete local-ledger replacement/truncation beyond the retained anchor.
 10. **Operating system/network** — outside AgentGuard's control; deployment controls must provide process, filesystem, secret, and egress isolation.
@@ -76,4 +76,4 @@ AgentGuard cannot establish process or executor liveness from shared SQLite stat
 
 ## Residual risk
 
-AgentGuard cannot prove that an application did not invoke an uninstrumented executor. It cannot infer hidden dependencies or provider semantics absent from the trusted integration. A crashed executor may leave a record in `DISPATCHING` indefinitely until controlled recovery occurs, because shared database state alone cannot determine executor liveness. Hash chains without independently retained checkpoints cannot prove tail completeness. Local SQLite lease fencing does not become distributed consensus across hosts. File-level hardening does not replace kernel isolation, network policy, identity infrastructure, secret-manager policy, external penetration testing, soak testing, or production validation.
+AgentGuard cannot prove that an application did not invoke an uninstrumented executor, and hidden bypass routes around the enforcement boundary cannot be disproven by AgentGuard alone. It cannot infer hidden dependencies or provider semantics absent from the trusted integration. A crashed executor may leave a record in `DISPATCHING` indefinitely until controlled operator recovery occurs, because shared database state alone cannot determine executor liveness. Process-local reconciliation fairness within a running worker daemon does not provide distributed or cross-restart fairness. Hash chains without independently retained checkpoints cannot prove tail completeness. Local SQLite lease fencing does not become distributed consensus across hosts. File-level hardening does not replace kernel isolation, network policy, identity infrastructure, secret-manager policy, external penetration testing, soak testing, or production validation.

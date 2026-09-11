@@ -4,17 +4,19 @@
 
 **Q04 / P0 — Execution Admission Correctness**
 
-Current engineering task: **Q04-04 — Reconciliation progress and fairness**.
+Current engineering task: **Q04-06 — Claims alignment**.
 
 Feature expansion remains frozen until the execution-admission correctness queue is closed or explicitly re-scoped.
 
 ## Repository Baseline
 
-- Remote `main`: `24e8d3eee606ac56fbaa6282a74a2d38fadd797b`.
+- Remote `main`: `f7338a9a0ef6e07b39f371cc4c17f93a72f4ec37`.
 - Preserved Q01 commit: `7effe3e203d2123f5e6d4733706f78613b1f7bb8`.
 - Preserved Q02 commit / audited preflight head: `d8c4bccdbdf41cea349cf81acbba63e15611f1d7`.
-- Q04-04 working branch: `hardening/q04-04-reconciliation-fairness`.
-- Showcase baseline: `848db15534d311070dbbf1470b8ef3ad39f98709`.
+- Active working branch: `docs/q04-06-core-claims-alignment`.
+- Reference repository: `TensorScholar/agentguard-reference`.
+- Reference repository Q04-06 baseline: `30b018239d56d600015e6ca2d2baeb0dde193ce6`.
+- Validated reference implementation head: `8ed4632105c4067e7d0c68a0f3e469f4f5a5bca8`.
 - Declared release version: `0.2.0rc3`.
 - Source divergence: reconciled. The two previously local-only Q01/Q02 commits are now preserved in GitHub history through PR #14.
 
@@ -34,9 +36,9 @@ Boundary: cryptographic verification establishes authenticity relative to the tr
 
 ### Q02 — DecisionReceipt temporal hardening
 
-**Status: PARTIAL, intentionally not closed.**
+**Status: SUPERSEDED / CLOSED by Q04-01.**
 
-The protected execution path rechecks authorization expiry immediately before requesting the transition to `DISPATCHING`. This closes stale `RESERVED` dispatch in the no-contention case, but does not establish expiry correctness when SQLite write-lock acquisition blocks after the service sampled time.
+The protected execution path rechecks authorization expiry immediately before requesting the transition to `DISPATCHING`. The remaining lock-contention race—where SQLite write-lock acquisition blocks after the service sampled time—was formally closed by Q04-01, which moved authoritative expiry checking inside SQLite `BEGIN IMMEDIATE` after serialized transition ownership.
 
 ### Q04-00 — Exact-source preflight
 
@@ -77,7 +79,7 @@ Enforcement uses defense in depth:
 
 ### Q04-04 — Reconciliation progress and fairness
 
-**Status: COMPLETED.**
+**Status: CLOSED / MERGED via PR #20 (`f7338a9a0ef6e07b39f371cc4c17f93a72f4ec37`).**
 
 A continuously running reconciliation worker uses process-local round-robin progression so a non-progressing early execution does not monopolize subsequent ticks. Busy leases do not consume reconciliation-attempt capacity.
 
@@ -88,14 +90,20 @@ Enforcement:
 
 Explicit limitation: Fairness cursor state is process-local. Restarting the worker, or repeatedly invoking `--once` in separate processes, resets traversal to canonical storage order. No durable or cross-restart scheduler fairness is claimed or introduced.
 
+### Q04-05 — Separate provider-response hashing
+
+**Status: CLOSED / MERGED via PR #19 (`24e8d3eee606ac56fbaa6282a74a2d38fadd797b`).**
+
+Provider-result hashing was separated from signed-authorization canonicalization. Authorization canonicalization continues to reject floating-point values to ensure cross-platform deterministic signing. Provider-result hashing normalizes finite JSON floating-point numbers without altering non-float types or signing canonicalization, allowing valid provider JSON payloads with finite floats to be reliably hashed and recorded without spurious conversion to `UNKNOWN`.
+
 ## Next Milestones
 
 1. Q04-01 atomic dispatch eligibility (closed).
 2. Q04-02 unsafe startup recovery containment (closed).
 3. Q04-03 exclude already-resolved reconciliation work (closed).
-4. Q04-04 reconciliation progress/fairness (completed).
+4. Q04-04 reconciliation progress/fairness (closed).
 5. Q04-05 separate provider-response hashing from authorization canonicalization (closed).
-6. Q04-06 claims alignment.
+6. Q04-06 claims alignment (active).
 7. Q04-07 integrated evaluation candidate.
 
 These tasks must remain separate unless a correctness dependency proves otherwise.
@@ -126,8 +134,7 @@ The project does **not** currently establish:
 - absence of hidden alternate execution routes around the mediation boundary;
 - provider business truth solely from locally signed evidence;
 - multi-host distributed coordination correctness;
-- production certification, independent security review, or penetration-test assurance;
-- Q04-01 lock-contention expiry correctness until the current task is completed and validated.
+- production certification, independent security review, or penetration-test assurance.
 
 ## Product Validation Status
 
@@ -162,8 +169,7 @@ Issue #12 remains open. Promotion debt includes:
 ## Risks
 
 - Stale or orphaned `DISPATCHING` records require explicit reconciliation or controlled operator recovery; automatic startup recovery was removed.
-- Reconciliation of non-progressing (busy, failing, STILL_UNKNOWN) records can starve later records (Q04-04 remains open); terminal resolved work is excluded (Q04-03 closed).
-- Provider-output hashing currently reuses stricter signing canonicalization and can mishandle finite float JSON outputs.
+- Background reconciliation worker fairness is process-local and resets to canonical storage order on worker restart or one-shot invocation; multi-host or durable fairness is not established.
 - Trusted normalization remains a fundamental TCB boundary.
 - Stable logical business-operation identity can diverge from fresh AgentGuard authorization identity.
 - Current repository CI capacity/governance debt limits hosted evidence quality.
@@ -176,4 +182,6 @@ Issue #12 remains open. Promotion debt includes:
 - Keep SQLite and the modular-monolith architecture unless correctness evidence requires change.
 - Keep Q04-01 bounded to dispatch admission; do not combine recovery, reconciliation, provider, crypto, dependency, CI, or showcase changes. **Merged via PR #16.**
 - Contain Q04-02 by removing ambient startup recovery without introducing distributed leases, new lifecycle states, or reconciliation redesign. **Merged via PR #17.**
-- Exclude terminal reconciliation work (`CONFIRMED_SUCCEEDED`, `CONFIRMED_FAILED`, `CONFLICT`) via atomic storage enforcement in `claim_reconciliation_lease()` and worker optimization in `run_once()` while preserving `UNKNOWN` execution state. Keep Q04-04 progress/fairness separate.
+- Exclude terminal reconciliation work (`CONFIRMED_SUCCEEDED`, `CONFIRMED_FAILED`, `CONFLICT`) via atomic storage enforcement in `claim_reconciliation_lease()` and worker optimization in `run_once()` while preserving `UNKNOWN` execution state. Keep Q04-04 progress/fairness separate. **Merged via PR #18.**
+- Implement claimed-attempt quota bounding and process-local round-robin candidate rotation in `ReconciliationWorker.run_once()` so busy leases and non-progressing executions yield across ticks without introducing durable scheduler state. **Merged via PR #20.**
+- Separate provider-result hashing (`canonical_json_bytes_for_provider_result`) from signed-security canonicalization (`canonical_json_bytes`), normalizing finite JSON floats while preserving strict float rejection for signed authorization objects. **Merged via PR #19.**

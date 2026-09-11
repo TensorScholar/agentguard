@@ -23,20 +23,22 @@ This document states the current technical and operational boundary of the `0.2.
 - Broader provider-specific credential integrations remain adapters that must independently prove audience/scope/tenant/lifetime and revocation semantics.
 - External-effect bindings prove what AgentGuard intended to send and where; they do not prove the external provider's business truth.
 - `AGENTGUARD_SIGNED` and `PROVIDER_CORRELATED` evidence cannot confirm an ambiguous external outcome. Only a trusted provider-specific reconciler may emit `PROVIDER_VERIFIED` evidence that confirms success or failure.
-- Reconciliation never redispatches automatically. Without proven provider idempotency/replay safety, the default remains `RECONCILE_BEFORE_RETRY`.
+- Reconciliation never redispatches automatically. Without proven provider idempotency/replay safety, the default remains `RECONCILE_BEFORE_RETRY`. Automatic background workers exclude terminal resolutions (`CONFIRMED_SUCCEEDED`, `CONFIRMED_FAILED`, `CONFLICT`), while explicit operator reconciliation may recheck confirmed terminal outcomes to synthesize `CONFLICT` upon contradictory evidence.
 - `REVERSIBLE` and `COMPENSATABLE` staging classifications do not implement generic provider-side undo or compensation.
 
 ## State and deployment boundary
 
 - The supported SQLite service topology is **single-host, multi-process**. Processes must share a local filesystem database with ordinary SQLite locking/durability semantics.
+- Automatic startup recovery is disabled because shared SQLite state alone cannot determine executor liveness; recovering stranded `DISPATCHING` executions is strictly an explicit, controlled operator action.
 - Lease fencing prevents a stale reconciliation worker from committing authoritative resolution state after expiry/takeover, but it is not a distributed consensus protocol.
+- Reconciliation worker fairness is strictly process-local to a continuously running worker daemon. Restarting the worker process or invoking `--once` resets candidate traversal to canonical storage order. No durable, cross-restart, or distributed scheduler fairness is claimed.
 - Network filesystems and cross-host SQLite deployment are not covered by the correctness claim. Multi-host HA requires a shared transactional adapter that proves equivalent atomic reservation, lease, fencing, and durability properties.
 - Owner-only file modes are applied on POSIX systems. On Windows, sensitive-file protection depends on deployment NTFS ACL configuration; POSIX `0600` semantics cannot be inferred from `st_mode`.
 - Signed checkpoints detect retained-prefix mismatch only when exported to independently controlled storage. A checkpoint kept beside the database does not protect against complete local state replacement.
 
 ## Authorization-model boundary
 
-- Canonical JSON supports the signed schema subset and rejects floats; this release candidate does not claim full RFC 8785 behavior for arbitrary JSON numbers.
+- Canonical JSON for signed security objects supports the signed schema subset and intentionally rejects Python floating-point values. Provider-result hashing is a separate domain that normalizes and accepts finite JSON floating-point numbers while rejecting non-finite values (`NaN` and `Infinity`); this release candidate does not claim full RFC 8785 behavior or universal cross-runtime canonicalization.
 - Authority grants are AgentGuard-signed capabilities, not workload identity proof. Caller/workload identity proofing remains an external control.
 - Capability scope matching is intentionally exact for protocol/server/tool/operation/resource dimensions; future richer predicates must preserve monotonic attenuation.
 - Allocated capability budgets are conservative. Revoked, expired, or unused allocations are not automatically reclaimed because silent reclamation can multiply authority.

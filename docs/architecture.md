@@ -55,7 +55,7 @@ High-impact staged execution separates durable prepare from commit. Commit re-ru
 
 ### DecisionReceipt temporal semantics
 
-A `DecisionReceipt` is a signed, expiry-bounded, single-use, policy-contingent **execution admission ticket**, redeemable exactly once at the protected execution boundary. It is not a reservation: issuance (`authorize`) performs no execution-state mutation beyond audit appends, and holding a receipt confers no owned execution slot.
+A `DecisionReceipt` is a signed, expiry-bounded, single-use, policy-contingent **execution admission ticket**. A `DecisionReceipt` can authorize at most one committed protected dispatch; it does not guarantee exactly-once external execution. It is not a reservation: issuance (`authorize`) performs no execution-state mutation beyond audit appends, and holding a receipt confers no owned execution slot.
 
 - **Admission ticket.** The receipt binds the normalized intent, policy result, credential ceiling, budget, staging requirement, and validity window to a fresh single-use nonce. It authorizes one admission *attempt*; the attempt still revalidates everything before any side effect.
 - **Policy-contingent validation.** Admission requires the current policy to digest-match the receipt **and** re-evaluate identically (effect, matched rules, staging). A policy change between decision and execution fails admission; the receipt never freezes permission across policy drift.
@@ -110,7 +110,7 @@ Without evidence that replay is safe, the default policy is `RECONCILE_BEFORE_RE
 
 ## Durable provider reconciliation
 
-An execution that reached ambiguous provider I/O remains durably `UNKNOWN`. Reconciliation is a separate append-only evidence lifecycle; it never rewrites the original execution state and never redispatches automatically.
+An execution that reached ambiguous provider I/O remains durably `UNKNOWN`. Reconciliation is a separate append-only evidence lifecycle; it never rewrites the original execution state and never redispatches automatically. `executions.state` permanently remains `UNKNOWN` to preserve authentic dispatch lineage.
 
 Provider evidence carries an explicit trust level:
 
@@ -118,13 +118,23 @@ Provider evidence carries an explicit trust level:
 - `PROVIDER_CORRELATED` — correlated provider operation evidence without a trusted provider truth assertion;
 - `PROVIDER_VERIFIED` — evidence from a reconciler whose provider verification contract is independently trusted.
 
-Only `PROVIDER_VERIFIED` evidence may confirm an `UNKNOWN` execution as succeeded or failed. Conflicting confirming evidence becomes an explicit conflict rather than last-write-wins. Provider operation identifiers are persisted as digests.
+Only `PROVIDER_VERIFIED` evidence may confirm an `UNKNOWN` execution as succeeded or failed. Conflicting confirming evidence becomes an explicit `CONFLICT` rather than last-write-wins. Provider operation identifiers are persisted as digests. Provider result hashing (`agentguard.engine.provider_results`) is isolated from signing canonicalization, validating and normalizing the JSON domain to accept finite IEEE-754 floating-point values while rejecting non-finite values (`NaN`, `Infinity`).
+
+### Terminal resolution exclusion and operator recheck
+
+Automatic background reconciliation workers exclude executions with authoritative terminal resolutions (`CONFIRMED_SUCCEEDED`, `CONFIRMED_FAILED`, `CONFLICT`) from candidate scheduling, preventing completed work from consuming worker capacity. Explicit operator reconciliation (`agentguard-reconcile`) retains the ability to re-check `CONFIRMED_SUCCEEDED` and `CONFIRMED_FAILED` resolutions via `claim_reconciliation_lease(..., allow_terminal_recheck=True)` to synthesize `CONFLICT` if contradictory provider evidence emerges. Once `CONFLICT` is reached, it remains permanently terminal and cannot be rechecked. Non-terminal resolutions (`STILL_UNKNOWN`, `UNSUPPORTED`) remain eligible for ongoing reconciliation.
 
 ## Single-host multi-process reconciliation
 
 Multiple reconciliation processes coordinate through durable SQLite leases. Acquisition uses SQLite transactional locking; every takeover receives a monotonically newer fencing token. Authoritative resolution commits revalidate owner, token, and expiry in the same transaction that writes the resolution.
 
 A stale worker may have observed provider evidence before losing its lease, but it cannot commit authoritative resolution state after expiry/takeover. The one-shot operator reconciliation CLI and background worker participate in the same ownership protocol.
+
+### Worker progress and fairness
+
+Background reconciliation worker ticks bound provider reconciliation attempt capacity by successfully claimed leases (`claimed >= max_items_per_tick`), not by candidate encounters. Active lease contention (`busy`) does not consume attempt capacity, allowing subsequent unleased actionable executions to proceed within the same tick.
+
+In a continuously running worker daemon, candidate scanning advances via process-local round-robin cursor progression. The cursor advances to the claimed execution ID immediately upon successful lease acquisition prior to provider reconciliation, guaranteeing that a failing, `STILL_UNKNOWN`, or `UNSUPPORTED` execution yields to subsequent candidates on the next tick. Fairness state is strictly process-local: worker process restarts or separate one-shot (`--once`) CLI invocations reset traversal to canonical storage order. No durable, cross-restart, or distributed scheduler fairness is claimed.
 
 This is intentionally a **single-host, multi-process** contract. It is not distributed consensus and does not claim correctness for network filesystems or independent hosts. A future shared-state adapter must preserve the same atomic reservation and fencing invariants.
 

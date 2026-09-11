@@ -15,7 +15,7 @@
 - Persist external-effect bindings before side-effecting dispatch and add provider-specific durable
   reconciliation with explicit `PROVIDER_VERIFIED` evidence semantics.
 - Add single-host multi-process reconciliation leases with monotonic fencing tokens, crash-safe
-  takeover, stale-worker rejection, startup recovery, bounded worker polling, and operational probes.
+  takeover, stale-worker rejection, explicit operator recovery, bounded worker polling, and operational probes.
 - Require TLS, Bearer authentication, and an explicit Host allowlist before non-loopback HTTP binding;
   browser-reachable mode additionally requires an explicit Origin allowlist.
 

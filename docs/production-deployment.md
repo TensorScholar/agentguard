@@ -38,7 +38,7 @@ The validated Phase 6E topology is bounded to one host:
 - reconciliation workers contend for `UNKNOWN` executions through SQLite leases and monotonic fencing tokens;
 - an expired worker lease may be taken over, but a stale token cannot commit authoritative resolution state;
 - provider reconciliation remains evidence-bound and never makes `UNKNOWN` blindly retryable;
-- startup recovery handles stranded protected-execution state according to the execution contract;
+- explicit operator recovery allows classifying stranded DISPATCHING executions as UNKNOWN after external dispatcher quiescence is verified (automatic startup recovery is disabled);
 - worker diagnostics are structured JSON and do not include raw credential material or provider response bodies.
 
 All coordinating processes must use the same local filesystem database. Do **not** put the SQLite coordination database on a network filesystem and infer cross-host correctness from single-host tests.
@@ -80,7 +80,7 @@ Do not place provider secret values in policy, durable grants, reconciliation me
 - `--owner-id` for a stable operator-selected process identity when desired;
 - `--lease-seconds` for ownership expiry;
 - `--poll-seconds` for bounded polling;
-- `--max-items-per-tick` for eligible-work bounding;
+- `--max-items-per-tick` for claimed-attempt bounding (busy leases do not consume attempt capacity);
 - `--once` for one bounded pass;
 - `--health-check` for executable durable-state readiness.
 
