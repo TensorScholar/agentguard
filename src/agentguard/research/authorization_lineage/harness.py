@@ -30,7 +30,7 @@ from .arms import (
 )
 from .fence import ConventionalReconciliationFence
 from .models import Arm, ProviderEvidence, ProviderStratum, Schedule, TrialObservation, TrialSpec
-from .provider import SimulatedProvider
+from .provider import IndependentEffectOracleProcess, SimulatedProvider
 
 ResearchArm: TypeAlias = A0Arm | A1Arm | B4Arm
 ResearchTicket: TypeAlias = AgentGuardTicket | B4Ticket
@@ -79,9 +79,8 @@ class DevTrialHarness:
         allow_same_slot_retry: bool = False,
     ) -> DispatchRecord:
         if isinstance(arm, B4Arm):
-            b4_ticket = cast(B4Ticket, ticket)
             return arm.dispatch(
-                b4_ticket,
+                cast(B4Ticket, ticket),
                 trial_id=spec.trial_id,
                 provider_simulator=provider,
                 provider=spec.provider,
@@ -90,9 +89,8 @@ class DevTrialHarness:
                 parent_attempt_id=parent_attempt_id,
                 allow_same_slot_retry=allow_same_slot_retry,
             )
-        agentguard_ticket = cast(AgentGuardTicket, ticket)
         return arm.dispatch(
-            agentguard_ticket,
+            cast(AgentGuardTicket, ticket),
             trial_id=spec.trial_id,
             provider_simulator=provider,
             provider=spec.provider,
@@ -161,7 +159,8 @@ class DevTrialHarness:
         if trial_root.exists() and any(trial_root.iterdir()):
             raise HarnessProtocolError("DEV trial namespace must be clean")
         trial_root.mkdir(parents=True, exist_ok=True)
-        provider = SimulatedProvider(trial_root / "provider.sqlite", trial_root / "oracle.sqlite")
+        oracle_process = IndependentEffectOracleProcess(trial_root / "oracle.sqlite")
+        provider = SimulatedProvider(trial_root / "provider.sqlite", oracle_process.sink)
         arm = self._arm(spec, trial_root)
         arm.register_alpha(spec.alpha, spec.effect_key)
         started = time.monotonic()
@@ -197,8 +196,9 @@ class DevTrialHarness:
                         )
                     )
                 else:
-                    handle = cast(AuthorityHandle, authority)
-                    self._try(lambda: arm.issue_ticket(handle, spec.trial_id))
+                    self._try(
+                        lambda: arm.issue_ticket(cast(AuthorityHandle, authority), spec.trial_id)
+                    )
 
             elif spec.schedule == Schedule.S3:
                 _, first = self._new_ticket(arm, spec)
@@ -343,7 +343,9 @@ class DevTrialHarness:
                             unsafe_successor = arm.root_allocations > roots_before
                         else:
                             unsafe_successor = True
-                if spec.schedule == Schedule.S10 and spec.provider != ProviderStratum.P1:
+                if spec.schedule == Schedule.S10:
+                    # A cancellation acknowledgement is not provider no-effect proof. Releasing the
+                    # predecessor after replacement pressure exercises late execution; P1 dedups it.
                     provider.commit(first_result.attempt_id)
 
             elif spec.schedule == Schedule.S9:
@@ -458,6 +460,7 @@ class DevTrialHarness:
                 raise HarnessProtocolError(f"unimplemented schedule: {spec.schedule.value}")
 
         except HarnessProtocolError:
+            oracle_process.close()
             raise
         except Exception:
             unresolved = True
@@ -484,7 +487,7 @@ class DevTrialHarness:
             credentials = arm.credentials
             independent_opportunities = 1 if spec.provider == ProviderStratum.P1 else allocations
 
-        return TrialObservation(
+        observation = TrialObservation(
             trial_id=spec.trial_id,
             arm=spec.arm,
             provider=spec.provider,
@@ -506,3 +509,5 @@ class DevTrialHarness:
             slot_hold_seconds=duration,
             duration_seconds=duration,
         )
+        oracle_process.close()
+        return observation
