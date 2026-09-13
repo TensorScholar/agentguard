@@ -83,11 +83,7 @@ class DispatchRecord:
 
 
 class _ResearchProviderExecutor(ProtectedExecutor):
-    """Thin study provider adapter behind AgentGuard's real protected execution boundary.
-
-    This intentionally reuses the real AgentGuard authorization/reservation/dispatch lifecycle while
-    substituting the frozen local P1-P4 provider simulator for a production external provider.
-    """
+    """Thin study provider adapter behind AgentGuard's real protected execution boundary."""
 
     def __init__(
         self,
@@ -137,7 +133,7 @@ class A0Arm:
     """Pinned current-AgentGuard arm using the real core protected execution service.
 
     Provider behavior is supplied by the common frozen study simulator. S11 uses AgentGuard's real
-    `SQLiteFencedReconciliationState`. The arm does not add token-independent alpha dedup state.
+    `SQLiteFencedReconciliationState`. The arm adds no token-independent alpha dedup state.
     """
 
     def __init__(self, root: Path) -> None:
@@ -170,7 +166,6 @@ class A0Arm:
         self.credentials = 0
 
     def register_alpha(self, alpha: str, effect_key: str) -> None:
-        # A0 intentionally has no durable token-independent alpha state.
         del alpha, effect_key
 
     @staticmethod
@@ -381,6 +376,20 @@ class A1Arm(A0Arm):
             behavior=behavior,
         )
 
+    @staticmethod
+    def _lineage_evidence(
+        lineage_attempt_id: str, provider_evidence: ProviderEvidence
+    ) -> ProviderEvidence:
+        """Translate provider/execution correlation into the alpha-ledger attempt namespace."""
+
+        return ProviderEvidence(
+            attempt_id=lineage_attempt_id,
+            status=provider_evidence.status,
+            authoritative=provider_evidence.authoritative,
+            no_effect_certified=provider_evidence.no_effect_certified,
+            predecessor_fenced=provider_evidence.predecessor_fenced,
+        )
+
     def dispatch_successor(
         self,
         *,
@@ -394,12 +403,6 @@ class A1Arm(A0Arm):
         idempotency_key: str | None,
         behavior: DispatchBehavior,
     ) -> DispatchRecord:
-        """Safely continue the same alpha slot with fresh AgentGuard authority when permitted.
-
-        P1 preserves the same idempotency key. P2/P3 require authoritative no-effect evidence; P3
-        additionally requires a delivery fence. P4 therefore cannot enter this path.
-        """
-
         if provider == ProviderStratum.P1:
             lineage_attempt_id = self.lineage.begin_attempt(
                 alpha,
@@ -411,7 +414,11 @@ class A1Arm(A0Arm):
         else:
             if evidence is None:
                 raise LineageLedgerError("lineage.successor_requires_evidence")
-            self.lineage.apply_no_effect_evidence(alpha, evidence, provider)
+            self.lineage.apply_no_effect_evidence(
+                alpha,
+                self._lineage_evidence(predecessor_lineage_attempt_id, evidence),
+                provider,
+            )
             lineage_attempt_id = self.lineage.begin_attempt(
                 alpha,
                 provider,
