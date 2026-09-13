@@ -97,7 +97,6 @@ def invalid_observation(
         schedule=spec.schedule,
         replicate=spec.replicate,
         block_seed=spec.block_seed,
-        execution_order=spec.execution_order,
         alpha=spec.alpha,
         effect_key=spec.effect_key,
         root_or_slot_allocations=0,
