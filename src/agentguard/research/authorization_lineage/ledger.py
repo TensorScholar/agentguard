@@ -20,15 +20,15 @@ class SlotSnapshot:
     slot_id: str
     state: SlotState
     root_handle: str | None
+    active_attempt_id: str | None
     attempt_count: int
 
 
 class AuthorizationInstanceLedger:
-    """Research-only durable ledger for one token-independent authorization instance.
+    """Research-only token-independent authorization ledger.
 
-    The ledger deliberately uses ordinary SQLite transactions. A1 composes this with the real
-    AgentGuard protected path; B4 uses it as the conventional durable baseline. It is not a new
-    production persistence adapter.
+    The ledger deliberately uses ordinary SQLite transactions. A1 composes it with the real
+    AgentGuard protected path; B4 uses the same conservation mechanism as a conventional baseline.
     """
 
     _SCHEMA = """
@@ -39,6 +39,7 @@ class AuthorizationInstanceLedger:
         budget INTEGER NOT NULL CHECK(budget = 1),
         slot_id TEXT NOT NULL UNIQUE,
         slot_state TEXT NOT NULL,
+        active_attempt_id TEXT,
         root_claim_token TEXT,
         root_handle TEXT,
         created_at TEXT NOT NULL,
@@ -57,7 +58,7 @@ class AuthorizationInstanceLedger:
         updated_at TEXT NOT NULL,
         FOREIGN KEY(alpha) REFERENCES authorization_instances(alpha)
     );
-    CREATE INDEX IF NOT EXISTS idx_attempts_alpha ON attempts(alpha, created_at);
+    CREATE INDEX IF NOT EXISTS idx_attempts_alpha ON attempts(alpha,created_at);
     CREATE TABLE IF NOT EXISTS lineage_events(
         sequence INTEGER PRIMARY KEY AUTOINCREMENT,
         alpha TEXT NOT NULL,
@@ -99,7 +100,8 @@ class AuthorizationInstanceLedger:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT * FROM authorization_instances WHERE alpha = ?", (alpha,)
+                "SELECT effect_key,budget,slot_id FROM authorization_instances WHERE alpha=?",
+                (alpha,),
             ).fetchone()
             if row is None:
                 slot_id = "slot_" + uuid4().hex
@@ -121,27 +123,26 @@ class AuthorizationInstanceLedger:
         return self.snapshot(alpha)
 
     def claim_root(self, alpha: str, claim_token: str) -> bool:
-        """Claim the sole AgentGuard root-issuance opportunity for A1.
+        """Claim the sole root-issuance opportunity for A1.
 
-        A crash after this claim is conservative: the claim remains occupied and cannot silently mint
-        another root. Recovery is intentionally not automatic in the research implementation.
+        A crash after the claim is conservative: the claim remains occupied until explicit DEV
+        recovery rather than silently permitting another independent root.
         """
 
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT root_claim_token,root_handle FROM authorization_instances WHERE alpha = ?",
+                "SELECT root_claim_token,root_handle FROM authorization_instances WHERE alpha=?",
                 (alpha,),
             ).fetchone()
             if row is None:
                 connection.execute("ROLLBACK")
                 raise LineageLedgerError("lineage.authorization_instance_missing")
-            existing_claim = row["root_claim_token"]
-            existing_handle = row["root_handle"]
-            if existing_handle is not None:
+            if row["root_handle"] is not None:
                 connection.execute("COMMIT")
                 return False
-            if existing_claim is None:
+            existing = row["root_claim_token"]
+            if existing is None:
                 connection.execute(
                     "UPDATE authorization_instances SET root_claim_token=?,updated_at=? WHERE alpha=?",
                     (claim_token, self._now(), alpha),
@@ -150,15 +151,14 @@ class AuthorizationInstanceLedger:
                 connection.execute("COMMIT")
                 return True
             connection.execute("COMMIT")
-            return str(existing_claim) == claim_token
+            return str(existing) == claim_token
 
     def bind_root(self, alpha: str, claim_token: str, root_handle: str) -> None:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             updated = connection.execute(
                 """
-                UPDATE authorization_instances
-                SET root_handle=?,updated_at=?
+                UPDATE authorization_instances SET root_handle=?,updated_at=?
                 WHERE alpha=? AND root_claim_token=? AND root_handle IS NULL
                 """,
                 (root_handle, self._now(), alpha, claim_token),
@@ -182,7 +182,7 @@ class AuthorizationInstanceLedger:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT slot_state,slot_id FROM authorization_instances WHERE alpha=?", (alpha,)
+                "SELECT slot_id,slot_state FROM authorization_instances WHERE alpha=?", (alpha,)
             ).fetchone()
             if row is None:
                 connection.execute("ROLLBACK")
@@ -209,34 +209,49 @@ class AuthorizationInstanceLedger:
         idempotency_key: str | None = None,
         allow_same_slot_retry: bool = False,
     ) -> str:
+        """Atomically claim the sole slot for a new dispatch attempt.
+
+        A P1 same-idempotency retry is the only path allowed to replace the active UNKNOWN attempt
+        without prior no-effect release. The slot transition is committed in the same transaction as
+        attempt creation, preventing S4 from creating two independent admissions.
+        """
+
         attempt_id = "attempt_" + uuid4().hex
         now = self._now()
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT slot_id,slot_state FROM authorization_instances WHERE alpha=?", (alpha,)
+                """
+                SELECT slot_id,slot_state,active_attempt_id
+                FROM authorization_instances WHERE alpha=?
+                """,
+                (alpha,),
             ).fetchone()
             if row is None:
                 connection.execute("ROLLBACK")
                 raise LineageLedgerError("lineage.authorization_instance_missing")
             state = SlotState(str(row["slot_state"]))
-            allowed = state == SlotState.RESERVED
-            if allow_same_slot_retry and provider == ProviderStratum.P1 and state == SlotState.UNKNOWN:
-                allowed = True
+            normal_admission = state == SlotState.RESERVED and row["active_attempt_id"] is None
+            p1_retry = allow_same_slot_retry and provider == ProviderStratum.P1 and state == SlotState.UNKNOWN
+            if p1_retry:
                 if idempotency_key is None:
                     connection.execute("ROLLBACK")
                     raise LineageLedgerError("lineage.p1_retry_requires_idempotency_key")
                 previous = connection.execute(
                     """
-                    SELECT idempotency_key FROM attempts
-                    WHERE alpha=? ORDER BY created_at DESC LIMIT 1
+                    SELECT attempt_id,idempotency_key FROM attempts
+                    WHERE alpha=? ORDER BY rowid DESC LIMIT 1
                     """,
                     (alpha,),
                 ).fetchone()
-                if previous is None or previous[0] != idempotency_key:
+                if (
+                    previous is None
+                    or str(previous["idempotency_key"]) != idempotency_key
+                    or parent_attempt_id != str(previous["attempt_id"])
+                ):
                     connection.execute("ROLLBACK")
-                    raise LineageLedgerError("lineage.p1_retry_key_changed")
-            if not allowed:
+                    raise LineageLedgerError("lineage.p1_retry_binding_changed")
+            if not normal_admission and not p1_retry:
                 connection.execute("ROLLBACK")
                 raise LineageLedgerError("lineage.successor_not_admissible")
             if parent_attempt_id is not None:
@@ -265,13 +280,31 @@ class AuthorizationInstanceLedger:
                     now,
                 ),
             )
-            self._event(connection, alpha, "attempt.created", attempt_id)
+            connection.execute(
+                """
+                UPDATE authorization_instances
+                SET slot_state=?,active_attempt_id=?,updated_at=? WHERE alpha=?
+                """,
+                (SlotState.DISPATCHING.value, attempt_id, now, alpha),
+            )
+            self._event(connection, alpha, "attempt.admitted", attempt_id)
             connection.execute("COMMIT")
         return attempt_id
 
     def mark_dispatching(self, alpha: str, attempt_id: str) -> None:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            active = connection.execute(
+                "SELECT active_attempt_id,slot_state FROM authorization_instances WHERE alpha=?",
+                (alpha,),
+            ).fetchone()
+            if (
+                active is None
+                or str(active["active_attempt_id"]) != attempt_id
+                or SlotState(str(active["slot_state"])) != SlotState.DISPATCHING
+            ):
+                connection.execute("ROLLBACK")
+                raise LineageLedgerError("lineage.attempt_not_active")
             updated = connection.execute(
                 """
                 UPDATE attempts SET state=?,potentially_effectful=1,updated_at=?
@@ -288,10 +321,6 @@ class AuthorizationInstanceLedger:
             if updated.rowcount != 1:
                 connection.execute("ROLLBACK")
                 raise LineageLedgerError("lineage.attempt_not_reserved")
-            connection.execute(
-                "UPDATE authorization_instances SET slot_state=?,updated_at=? WHERE alpha=?",
-                (SlotState.DISPATCHING.value, self._now(), alpha),
-            )
             self._event(connection, alpha, "attempt.dispatching", attempt_id)
             connection.execute("COMMIT")
 
@@ -302,6 +331,7 @@ class AuthorizationInstanceLedger:
             AttemptState.UNKNOWN,
             SlotState.UNKNOWN,
             "attempt.unknown",
+            clear_active=False,
         )
 
     def mark_effect(self, alpha: str, attempt_id: str) -> None:
@@ -311,6 +341,7 @@ class AuthorizationInstanceLedger:
             AttemptState.CONFIRMED_EFFECT,
             SlotState.CONFIRMED_EFFECT,
             "attempt.confirmed_effect",
+            clear_active=False,
         )
 
     def apply_no_effect_evidence(
@@ -327,11 +358,16 @@ class AuthorizationInstanceLedger:
             raise LineageLedgerError("lineage.p4_cannot_release_unknown")
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT active_attempt_id FROM authorization_instances WHERE alpha=?", (alpha,)
+            ).fetchone()
+            if row is None or str(row["active_attempt_id"]) != evidence.attempt_id:
+                connection.execute("ROLLBACK")
+                raise LineageLedgerError("lineage.no_effect_attempt_not_active")
             updated = connection.execute(
                 """
                 UPDATE attempts SET state=?,potentially_effectful=0,updated_at=?
-                WHERE attempt_id=? AND alpha=?
-                  AND state IN (?,?)
+                WHERE attempt_id=? AND alpha=? AND state IN (?,?)
                 """,
                 (
                     AttemptState.CONFIRMED_NO_EFFECT.value,
@@ -346,7 +382,10 @@ class AuthorizationInstanceLedger:
                 connection.execute("ROLLBACK")
                 raise LineageLedgerError("lineage.attempt_not_releasable")
             connection.execute(
-                "UPDATE authorization_instances SET slot_state=?,updated_at=? WHERE alpha=?",
+                """
+                UPDATE authorization_instances
+                SET slot_state=?,active_attempt_id=NULL,updated_at=? WHERE alpha=?
+                """,
                 (SlotState.RESERVED.value, self._now(), alpha),
             )
             self._event(connection, alpha, "slot.transferred_after_no_effect", evidence.attempt_id)
@@ -359,9 +398,17 @@ class AuthorizationInstanceLedger:
         attempt_state: AttemptState,
         slot_state: SlotState,
         event_type: str,
+        *,
+        clear_active: bool,
     ) -> None:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT active_attempt_id FROM authorization_instances WHERE alpha=?", (alpha,)
+            ).fetchone()
+            if row is None or str(row["active_attempt_id"]) != attempt_id:
+                connection.execute("ROLLBACK")
+                raise LineageLedgerError("lineage.attempt_not_active")
             updated = connection.execute(
                 "UPDATE attempts SET state=?,updated_at=? WHERE attempt_id=? AND alpha=?",
                 (attempt_state.value, self._now(), attempt_id, alpha),
@@ -370,8 +417,16 @@ class AuthorizationInstanceLedger:
                 connection.execute("ROLLBACK")
                 raise LineageLedgerError("lineage.attempt_missing")
             connection.execute(
-                "UPDATE authorization_instances SET slot_state=?,updated_at=? WHERE alpha=?",
-                (slot_state.value, self._now(), alpha),
+                """
+                UPDATE authorization_instances
+                SET slot_state=?,active_attempt_id=?,updated_at=? WHERE alpha=?
+                """,
+                (
+                    slot_state.value,
+                    None if clear_active else attempt_id,
+                    self._now(),
+                    alpha,
+                ),
             )
             self._event(connection, alpha, event_type, attempt_id)
             connection.execute("COMMIT")
@@ -392,8 +447,38 @@ class AuthorizationInstanceLedger:
             slot_id=str(row["slot_id"]),
             state=SlotState(str(row["slot_state"])),
             root_handle=str(row["root_handle"]) if row["root_handle"] is not None else None,
+            active_attempt_id=(
+                str(row["active_attempt_id"]) if row["active_attempt_id"] is not None else None
+            ),
             attempt_count=int(attempts[0]),
         )
+
+    def independent_effect_opportunities(self, alpha: str) -> int:
+        """Count currently unresolved/realized independent effect opportunities for P-M1 support."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT provider_stratum,idempotency_key,potentially_effectful,state
+                FROM attempts WHERE alpha=?
+                """,
+                (alpha,),
+            ).fetchall()
+        p1_keys: set[str] = set()
+        independent = 0
+        for row in rows:
+            if int(row["potentially_effectful"]) != 1:
+                continue
+            provider = ProviderStratum(str(row["provider_stratum"]))
+            if provider == ProviderStratum.P1:
+                key = row["idempotency_key"]
+                if key is None:
+                    independent += 1
+                else:
+                    p1_keys.add(str(key))
+            else:
+                independent += 1
+        return independent + len(p1_keys)
 
     def counts(self, alpha: str) -> dict[str, int]:
         with self._connect() as connection:
@@ -414,4 +499,5 @@ class AuthorizationInstanceLedger:
             "root_handle_bound": int(root[0] is not None),
             "attempts": int(attempts[0]),
             "potentially_effectful_attempts": int(sends[0]),
+            "independent_effect_opportunities": self.independent_effect_opportunities(alpha),
         }
