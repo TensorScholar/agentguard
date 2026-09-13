@@ -110,7 +110,6 @@ class TrialObservation:
     schedule: Schedule
     replicate: int
     block_seed: str
-    execution_order: int
     alpha: str
     effect_key: str
     root_or_slot_allocations: int
