@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -23,6 +23,7 @@ from agentguard.domain import (
     ExecutionStatus,
     PolicyDocument,
     ProtectedExecutionResult,
+    VerifiedExecution,
 )
 from agentguard.engine.canonical import digest
 from agentguard.ports import AmbiguousExecutionError, ProtectedExecutor
@@ -32,6 +33,11 @@ from .models import ProviderEvidence, ProviderStratum
 from .provider import SimulatedProvider
 
 DispatchBehavior = Literal["normal", "unknown_no_effect", "commit_response_lost", "delayed"]
+
+_B4_AUDIENCE = "payments.internal"
+_B4_SCOPES = frozenset({"refund:create"})
+_B4_TENANT = "acme"
+_B4_CREDENTIAL_TTL_SECONDS = 30
 
 
 @dataclass(frozen=True)
@@ -52,10 +58,20 @@ class AgentGuardTicket:
 
 
 @dataclass(frozen=True)
+class B4CredentialBinding:
+    audience: str
+    scopes: frozenset[str]
+    tenant_id: str
+    issued_at: datetime
+    expires_at: datetime
+
+
+@dataclass(frozen=True)
 class B4Ticket:
     alpha: str
     effect_key: str
     ticket_id: str
+    credential: B4CredentialBinding
 
 
 @dataclass(frozen=True)
@@ -63,9 +79,16 @@ class DispatchRecord:
     attempt_id: str
     status: ExecutionStatus
     potentially_effectful: bool
+    lineage_attempt_id: str | None = None
 
 
 class _ResearchProviderExecutor(ProtectedExecutor):
+    """Thin study provider adapter behind AgentGuard's real protected execution boundary.
+
+    This intentionally reuses the real AgentGuard authorization/reservation/dispatch lifecycle while
+    substituting the frozen local P1-P4 provider simulator for a production external provider.
+    """
+
     def __init__(
         self,
         *,
@@ -84,10 +107,8 @@ class _ResearchProviderExecutor(ProtectedExecutor):
         self.behavior = behavior
         self.attempt_id: str | None = None
 
-    def execute(self, verified_execution: object) -> ProtectedExecutionResult:
-        execution_id = getattr(verified_execution, "execution_id", None)
-        if not isinstance(execution_id, str):
-            raise RuntimeError("research.executor_missing_execution_id")
+    def execute(self, verified_execution: VerifiedExecution) -> ProtectedExecutionResult:
+        execution_id = verified_execution.execution_id
         self.attempt_id = execution_id
         self.provider_simulator.accept(
             trial_id=self.trial_id,
@@ -113,7 +134,11 @@ class _ResearchProviderExecutor(ProtectedExecutor):
 
 
 class A0Arm:
-    """Pinned current-AgentGuard arm using the actual protected execution service."""
+    """Pinned current-AgentGuard arm using the real core protected execution service.
+
+    Provider behavior is supplied by the common frozen study simulator. S11 uses AgentGuard's real
+    `SQLiteFencedReconciliationState`. The arm does not add token-independent alpha dedup state.
+    """
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -268,24 +293,66 @@ class A1Arm(A0Arm):
     def register_alpha(self, alpha: str, effect_key: str) -> None:
         self.lineage.register(alpha, effect_key)
 
+    def _issue_fresh_bound_authority(self, alpha: str, effect_key: str) -> AuthorityHandle:
+        principal = self._intent_template.principal
+        root = self.service.issue_root_authority(principal, self._scope(), self.authority_signer)
+        lease = self.service.issue_capability_lease(
+            root.grant_id, principal, maximum_uses=1, ttl_seconds=300
+        )
+        reference = self.service.authority_reference(root.grant_id, lease.lease_id)
+        self.root_allocations += 1
+        return AuthorityHandle(alpha, effect_key, root.grant_id, lease.lease_id, reference)
+
     def acquire_authority(self, alpha: str, effect_key: str) -> AuthorityHandle:
         self.lineage.register(alpha, effect_key)
         claim = "claim_" + uuid4().hex
         if self.lineage.claim_root(alpha, claim):
-            principal = self._intent_template.principal
-            root = self.service.issue_root_authority(principal, self._scope(), self.authority_signer)
-            lease = self.service.issue_capability_lease(
-                root.grant_id, principal, maximum_uses=1, ttl_seconds=300
-            )
-            encoded = root.grant_id + "|" + lease.lease_id
+            handle = self._issue_fresh_bound_authority(alpha, effect_key)
+            encoded = handle.root_grant_id + "|" + handle.lease_id
             self.lineage.bind_root(alpha, claim, encoded)
-            self.root_allocations += 1
         encoded = self.lineage.root_handle(alpha)
         if encoded is None:
             raise LineageLedgerError("lineage.root_claim_incomplete")
         root_id, lease_id = encoded.split("|", 1)
         reference = self.service.authority_reference(root_id, lease_id)
         return AuthorityHandle(alpha, effect_key, root_id, lease_id, reference)
+
+    def _dispatch_pre_admitted(
+        self,
+        *,
+        lineage_attempt_id: str,
+        ticket: AgentGuardTicket,
+        trial_id: str,
+        provider_simulator: SimulatedProvider,
+        provider: ProviderStratum,
+        idempotency_key: str | None,
+        behavior: DispatchBehavior,
+    ) -> DispatchRecord:
+        alpha = ticket.authority.alpha
+        self.lineage.mark_dispatching(alpha, lineage_attempt_id)
+        try:
+            record = A0Arm.dispatch(
+                self,
+                ticket,
+                trial_id=trial_id,
+                provider_simulator=provider_simulator,
+                provider=provider,
+                idempotency_key=idempotency_key,
+                behavior=behavior,
+            )
+        except Exception:
+            self.lineage.mark_unknown(alpha, lineage_attempt_id)
+            raise
+        if record.status == ExecutionStatus.SUCCESS:
+            self.lineage.mark_effect(alpha, lineage_attempt_id)
+        else:
+            self.lineage.mark_unknown(alpha, lineage_attempt_id)
+        return DispatchRecord(
+            attempt_id=record.attempt_id,
+            status=record.status,
+            potentially_effectful=record.potentially_effectful,
+            lineage_attempt_id=lineage_attempt_id,
+        )
 
     def dispatch(
         self,
@@ -299,63 +366,73 @@ class A1Arm(A0Arm):
     ) -> DispatchRecord:
         alpha = ticket.authority.alpha
         self.lineage.reserve_slot(alpha)
-        attempt_id = self.lineage.begin_attempt(
+        lineage_attempt_id = self.lineage.begin_attempt(
             alpha,
             provider,
             idempotency_key=idempotency_key,
-            allow_same_slot_retry=False,
         )
-        # AgentGuard owns its own execution_id. The research attempt is the alpha-level parent
-        # opportunity and is therefore distinct from the protected execution id.
-        self.lineage.mark_dispatching(alpha, attempt_id)
-        try:
-            record = super().dispatch(
-                ticket,
-                trial_id=trial_id,
-                provider_simulator=provider_simulator,
-                provider=provider,
-                idempotency_key=idempotency_key,
-                behavior=behavior,
-            )
-        except Exception:
-            self.lineage.mark_unknown(alpha, attempt_id)
-            raise
-        if record.status == ExecutionStatus.SUCCESS:
-            self.lineage.mark_effect(alpha, attempt_id)
-        else:
-            self.lineage.mark_unknown(alpha, attempt_id)
-        return DispatchRecord(record.attempt_id, record.status, record.potentially_effectful)
+        return self._dispatch_pre_admitted(
+            lineage_attempt_id=lineage_attempt_id,
+            ticket=ticket,
+            trial_id=trial_id,
+            provider_simulator=provider_simulator,
+            provider=provider,
+            idempotency_key=idempotency_key,
+            behavior=behavior,
+        )
 
-    def admit_successor(
+    def dispatch_successor(
         self,
         *,
         alpha: str,
-        provider: ProviderStratum,
-        predecessor_attempt_id: str,
+        effect_key: str,
+        predecessor_lineage_attempt_id: str,
         evidence: ProviderEvidence | None,
+        trial_id: str,
+        provider_simulator: SimulatedProvider,
+        provider: ProviderStratum,
         idempotency_key: str | None,
-    ) -> str:
+        behavior: DispatchBehavior,
+    ) -> DispatchRecord:
+        """Safely continue the same alpha slot with fresh AgentGuard authority when permitted.
+
+        P1 preserves the same idempotency key. P2/P3 require authoritative no-effect evidence; P3
+        additionally requires a delivery fence. P4 therefore cannot enter this path.
+        """
+
         if provider == ProviderStratum.P1:
-            return self.lineage.begin_attempt(
+            lineage_attempt_id = self.lineage.begin_attempt(
                 alpha,
                 provider,
-                parent_attempt_id=predecessor_attempt_id,
+                parent_attempt_id=predecessor_lineage_attempt_id,
                 idempotency_key=idempotency_key,
                 allow_same_slot_retry=True,
             )
-        if evidence is None:
-            raise LineageLedgerError("lineage.successor_requires_evidence")
-        self.lineage.apply_no_effect_evidence(alpha, evidence, provider)
-        return self.lineage.begin_attempt(
-            alpha,
-            provider,
-            parent_attempt_id=predecessor_attempt_id,
+        else:
+            if evidence is None:
+                raise LineageLedgerError("lineage.successor_requires_evidence")
+            self.lineage.apply_no_effect_evidence(alpha, evidence, provider)
+            lineage_attempt_id = self.lineage.begin_attempt(
+                alpha,
+                provider,
+                parent_attempt_id=predecessor_lineage_attempt_id,
+                idempotency_key=idempotency_key,
+            )
+        handle = self._issue_fresh_bound_authority(alpha, effect_key)
+        ticket = self.issue_ticket(handle, trial_id)
+        return self._dispatch_pre_admitted(
+            lineage_attempt_id=lineage_attempt_id,
+            ticket=ticket,
+            trial_id=trial_id,
+            provider_simulator=provider_simulator,
+            provider=provider,
             idempotency_key=idempotency_key,
+            behavior=behavior,
         )
 
 
 class B4Arm:
-    """Strong conventional transactional ledger baseline with no AgentGuard receipt machinery."""
+    """Strong conventional transactional ledger baseline without AgentGuard receipt machinery."""
 
     def __init__(self, root: Path) -> None:
         root.mkdir(parents=True, exist_ok=True)
@@ -375,9 +452,30 @@ class B4Arm:
         snapshot = self.lineage.snapshot(alpha)
         if snapshot.effect_key != effect_key:
             raise LineageLedgerError("lineage.effect_key_mismatch")
+        now = datetime.now(UTC)
+        credential = B4CredentialBinding(
+            audience=_B4_AUDIENCE,
+            scopes=_B4_SCOPES,
+            tenant_id=_B4_TENANT,
+            issued_at=now,
+            expires_at=now + timedelta(seconds=_B4_CREDENTIAL_TTL_SECONDS),
+        )
         self.receipts += 1
         self.credentials += 1
-        return B4Ticket(alpha, effect_key, "ticket_" + uuid4().hex)
+        return B4Ticket(alpha, effect_key, "ticket_" + uuid4().hex, credential)
+
+    @staticmethod
+    def _validate_ticket(ticket: B4Ticket) -> None:
+        now = datetime.now(UTC)
+        credential = ticket.credential
+        if credential.expires_at <= now:
+            raise LineageLedgerError("b4.credential_expired")
+        if (
+            credential.audience != _B4_AUDIENCE
+            or credential.scopes != _B4_SCOPES
+            or credential.tenant_id != _B4_TENANT
+        ):
+            raise LineageLedgerError("b4.credential_binding_mismatch")
 
     def dispatch(
         self,
@@ -391,6 +489,7 @@ class B4Arm:
         parent_attempt_id: str | None = None,
         allow_same_slot_retry: bool = False,
     ) -> DispatchRecord:
+        self._validate_ticket(ticket)
         attempt_id = self.lineage.begin_attempt(
             ticket.alpha,
             provider,
@@ -410,37 +509,49 @@ class B4Arm:
         if behavior == "normal":
             provider_simulator.commit(attempt_id)
             self.lineage.mark_effect(ticket.alpha, attempt_id)
-            return DispatchRecord(attempt_id, ExecutionStatus.SUCCESS, True)
+            return DispatchRecord(attempt_id, ExecutionStatus.SUCCESS, True, attempt_id)
         if behavior == "commit_response_lost":
             provider_simulator.commit(attempt_id)
         elif behavior == "delayed":
             provider_simulator.set_delayed(attempt_id)
         self.lineage.mark_unknown(ticket.alpha, attempt_id)
-        return DispatchRecord(attempt_id, ExecutionStatus.UNKNOWN, True)
+        return DispatchRecord(attempt_id, ExecutionStatus.UNKNOWN, True, attempt_id)
 
-    def admit_successor(
+    def dispatch_successor(
         self,
         *,
         alpha: str,
-        provider: ProviderStratum,
+        effect_key: str,
         predecessor_attempt_id: str,
         evidence: ProviderEvidence | None,
+        trial_id: str,
+        provider_simulator: SimulatedProvider,
+        provider: ProviderStratum,
         idempotency_key: str | None,
-    ) -> str:
+        behavior: DispatchBehavior,
+    ) -> DispatchRecord:
         if provider == ProviderStratum.P1:
-            return self.lineage.begin_attempt(
-                alpha,
-                provider,
-                parent_attempt_id=predecessor_attempt_id,
+            ticket = self.issue_ticket(alpha, effect_key)
+            return self.dispatch(
+                ticket,
+                trial_id=trial_id,
+                provider_simulator=provider_simulator,
+                provider=provider,
                 idempotency_key=idempotency_key,
+                behavior=behavior,
+                parent_attempt_id=predecessor_attempt_id,
                 allow_same_slot_retry=True,
             )
         if evidence is None:
             raise LineageLedgerError("lineage.successor_requires_evidence")
         self.lineage.apply_no_effect_evidence(alpha, evidence, provider)
-        return self.lineage.begin_attempt(
-            alpha,
-            provider,
-            parent_attempt_id=predecessor_attempt_id,
+        ticket = self.issue_ticket(alpha, effect_key)
+        return self.dispatch(
+            ticket,
+            trial_id=trial_id,
+            provider_simulator=provider_simulator,
+            provider=provider,
             idempotency_key=idempotency_key,
+            behavior=behavior,
+            parent_attempt_id=predecessor_attempt_id,
         )
