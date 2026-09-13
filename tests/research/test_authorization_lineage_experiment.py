@@ -40,6 +40,7 @@ def _spec(arm: Arm, provider: ProviderStratum, schedule: Schedule, suffix: str) 
         schedule=schedule,
         replicate=0,
         block_seed="DEV-NOT-CONFIRMATORY",
+        execution_order=0,
         alpha=f"alpha-dev-{suffix}",
         effect_key=f"effect-dev-{suffix}",
     )
