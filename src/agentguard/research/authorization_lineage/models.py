@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
-
 PROTOCOL_ID: Final = "AG-LINEAGE-PREREG-v1.0"
 A0_SHA: Final = "7e5659a26ee232e2a7352a20b2b3bd87a1b4e0cf"
 PREREG_SHA256: Final = "5d217f2d531e05c74fe99236e19c509370ebda31e2130998dca7b0ca9473fe9e"
