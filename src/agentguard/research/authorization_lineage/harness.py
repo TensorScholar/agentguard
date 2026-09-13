@@ -29,7 +29,7 @@ from .arms import (
     _ResearchProviderExecutor,
 )
 from .fence import ConventionalReconciliationFence
-from .models import Arm, ProviderStratum, Schedule, TrialObservation, TrialSpec
+from .models import Arm, ProviderEvidence, ProviderStratum, Schedule, TrialObservation, TrialSpec
 from .provider import SimulatedProvider
 
 ResearchArm: TypeAlias = A0Arm | A1Arm | B4Arm
@@ -106,7 +106,6 @@ class DevTrialHarness:
             call()
             return True
         except Exception:
-            # A SUT rejection/exception after the schedule starts is an outcome, not an exclusion.
             return False
 
     @staticmethod
@@ -120,18 +119,15 @@ class DevTrialHarness:
         provider: SimulatedProvider,
         predecessor: DispatchRecord,
         *,
-        evidence: object | None = None,
+        evidence: ProviderEvidence | None = None,
     ) -> bool:
         if isinstance(arm, A1Arm):
-            typed_evidence = evidence if evidence is None else provider.status(predecessor.attempt_id)
-            if spec.provider == ProviderStratum.P3 and evidence is not None:
-                typed_evidence = evidence
             return self._try(
                 lambda: arm.dispatch_successor(
                     alpha=spec.alpha,
                     effect_key=spec.effect_key,
                     predecessor_lineage_attempt_id=self._lineage_parent(predecessor),
-                    evidence=typed_evidence,  # type: ignore[arg-type]
+                    evidence=evidence,
                     trial_id=spec.trial_id,
                     provider_simulator=provider,
                     provider=spec.provider,
@@ -140,13 +136,12 @@ class DevTrialHarness:
                 )
             )
         if isinstance(arm, B4Arm):
-            typed_evidence = evidence if evidence is None else evidence
             return self._try(
                 lambda: arm.dispatch_successor(
                     alpha=spec.alpha,
                     effect_key=spec.effect_key,
                     predecessor_attempt_id=predecessor.attempt_id,
-                    evidence=typed_evidence,  # type: ignore[arg-type]
+                    evidence=evidence,
                     trial_id=spec.trial_id,
                     provider_simulator=provider,
                     provider=spec.provider,
@@ -244,12 +239,11 @@ class DevTrialHarness:
                     )
 
             elif spec.schedule == Schedule.S6:
-                authority, ticket = self._new_ticket(arm, spec)
+                _, ticket = self._new_ticket(arm, spec)
                 operator_interventions += 1
                 if isinstance(arm, B4Arm):
                     b4_ticket = cast(B4Ticket, ticket)
                     attempt_id = arm.lineage.begin_attempt(spec.alpha, spec.provider)
-                    # Durable RESERVED reached. Apply full fresh replacement pressure before resume.
                     try:
                         _, replacement = self._new_ticket(arm, spec)
                         self._try(
@@ -294,7 +288,6 @@ class DevTrialHarness:
                     if isinstance(arm, A1Arm):
                         arm.lineage.reserve_slot(spec.alpha)
                         lineage_attempt_id = arm.lineage.begin_attempt(spec.alpha, spec.provider)
-                    # Full fresh replacement pressure while the exact execution is RESERVED.
                     try:
                         _, replacement = self._new_ticket(arm, spec)
                         self._try(
@@ -342,17 +335,7 @@ class DevTrialHarness:
                 )
                 unresolved = first_result.status == ExecutionStatus.UNKNOWN
                 roots_before = arm.root_allocations if isinstance(arm, A0Arm) else 1
-                admitted = False
-                try:
-                    if spec.provider == ProviderStratum.P1 and isinstance(arm, (A1Arm, B4Arm)):
-                        admitted = self._safe_successor(arm, spec, provider, first_result)
-                    elif isinstance(arm, A0Arm) and not isinstance(arm, A1Arm):
-                        admitted = self._safe_successor(arm, spec, provider, first_result)
-                    else:
-                        # P2/P3/P4 have no release evidence in S7/S8/S10.
-                        admitted = self._safe_successor(arm, spec, provider, first_result)
-                except Exception:
-                    admitted = False
+                admitted = self._safe_successor(arm, spec, provider, first_result)
                 if admitted:
                     unresolved = False
                     if spec.provider != ProviderStratum.P1:
@@ -361,7 +344,6 @@ class DevTrialHarness:
                         else:
                             unsafe_successor = True
                 if spec.schedule == Schedule.S10 and spec.provider != ProviderStratum.P1:
-                    # Cancellation after a potentially effectful send is not proof of no effect.
                     provider.commit(first_result.attempt_id)
 
             elif spec.schedule == Schedule.S9:
@@ -376,14 +358,15 @@ class DevTrialHarness:
                     evidence = provider.certify_no_effect_and_fence(first_result.attempt_id)
                 roots_before = arm.root_allocations if isinstance(arm, A0Arm) else 1
                 admitted = False
-                if spec.provider == ProviderStratum.P1:
-                    admitted = self._safe_successor(arm, spec, provider, first_result)
-                elif spec.provider == ProviderStratum.P3:
+                if spec.provider in {ProviderStratum.P1, ProviderStratum.P3}:
                     admitted = self._safe_successor(
-                        arm, spec, provider, first_result, evidence=evidence
+                        arm,
+                        spec,
+                        provider,
+                        first_result,
+                        evidence=evidence if spec.provider == ProviderStratum.P3 else None,
                     )
                 elif isinstance(arm, A0Arm) and not isinstance(arm, A1Arm):
-                    # A0 has no alpha-level gate and may reissue despite non-terminal evidence.
                     admitted = self._safe_successor(arm, spec, provider, first_result)
                 else:
                     admitted = self._safe_successor(
@@ -477,7 +460,6 @@ class DevTrialHarness:
         except HarnessProtocolError:
             raise
         except Exception:
-            # Unexpected SUT failures after a valid schedule begins remain outcomes.
             unresolved = True
 
         duration = max(0.0, time.monotonic() - started)
@@ -517,7 +499,6 @@ class DevTrialHarness:
             attempts=attempts,
             successor_admitted_while_predecessor_potentially_effectful=unsafe_successor,
             stale_reconciler_commit_accepted=stale_commit_accepted,
-            # External completion truth is computed later from the independent oracle.
             legitimate_completion=False,
             unresolved=unresolved,
             operator_interventions=operator_interventions,
