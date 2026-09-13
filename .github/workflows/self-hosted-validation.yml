@@ -69,10 +69,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -c requirements/runtime-validated.txt -e '.[http]'
-          python -m pip install -r requirements/validation.txt
+          python -m pip install --upgrade pip==26.2.1
+          python -m pip install -c requirements/confirmatory-runtime-lock.txt -e '.[http]'
+          python -m pip install -c requirements/confirmatory-runtime-lock.txt -r requirements/validation.txt
           python -m pip check
+
+      - name: Confirmatory runtime preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python -m agentguard.research.authorization_lineage.preflight \
+            --expected-git-commit "$GITHUB_SHA" \
+            --output evidence/confirmatory-preflight.json
 
       - name: Engineering gate
         shell: bash
@@ -128,6 +137,7 @@ jobs:
           - **Runner Architecture**: ${{ runner.arch }}
           - **Python Version**: $(python --version 2>&1)
           - **Pip Check**: PASS
+          - **Confirmatory Runtime Preflight**: PASS
           - **Make Check**: PASS
           - **Dependency Audit**: PASS
           - **AgentGuard Gate**: PASS
@@ -150,6 +160,7 @@ jobs:
         run: |
           set -euo pipefail
           test -s evidence/self-hosted-evidence.md
+          test -s evidence/confirmatory-preflight.json
           test -s evidence/agentguard-findings.json
           test -s evidence/agentguard-summary.md
 
@@ -159,6 +170,7 @@ jobs:
           name: self-hosted-validation-evidence
           path: |
             evidence/self-hosted-evidence.md
+            evidence/confirmatory-preflight.json
             evidence/agentguard-findings.json
             evidence/agentguard-summary.md
           if-no-files-found: error
