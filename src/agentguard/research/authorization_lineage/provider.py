@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import multiprocessing
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from multiprocessing.connection import Connection
 from pathlib import Path
 from uuid import uuid4
 
@@ -18,32 +20,54 @@ class OracleIsolationError(RuntimeError):
     pass
 
 
-class _OracleWriter:
-    """Write-only capability handed to the provider simulator.
+_ORACLE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS effects(
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    trial_id TEXT NOT NULL,
+    effect_id TEXT NOT NULL UNIQUE,
+    provider_stratum TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    logical_effect_key_digest TEXT NOT NULL,
+    idempotency_key_digest TEXT,
+    request_fingerprint TEXT NOT NULL,
+    committed_at TEXT NOT NULL
+);
+"""
 
-    The simulator receives no count/query method and no alpha mapping. Analysis opens the same file
-    separately through IndependentEffectOracleReader after the trial.
-    """
 
-    _SCHEMA = """
-    CREATE TABLE IF NOT EXISTS effects(
-        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-        trial_id TEXT NOT NULL,
-        effect_id TEXT NOT NULL UNIQUE,
-        provider_stratum TEXT NOT NULL,
-        attempt_id TEXT NOT NULL,
-        logical_effect_key_digest TEXT NOT NULL,
-        idempotency_key_digest TEXT,
-        request_fingerprint TEXT NOT NULL,
-        committed_at TEXT NOT NULL
-    );
-    """
+def _oracle_worker(path_text: str, receiver: Connection) -> None:
+    """Separate-process ground-truth writer. It exposes no query channel."""
 
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(path) as connection:
-            connection.executescript(self._SCHEMA)
+    path = Path(path_text)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(path) as connection:
+        connection.executescript(_ORACLE_SCHEMA)
+    try:
+        while True:
+            message = receiver.recv()
+            if message is None:
+                return
+            if not isinstance(message, tuple) or len(message) != 8:
+                raise OracleIsolationError("oracle.invalid_append_message")
+            with sqlite3.connect(path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO effects(
+                        trial_id,effect_id,provider_stratum,attempt_id,logical_effect_key_digest,
+                        idempotency_key_digest,request_fingerprint,committed_at
+                    ) VALUES(?,?,?,?,?,?,?,?)
+                    """,
+                    message,
+                )
+    finally:
+        receiver.close()
+
+
+@dataclass(frozen=True)
+class OracleAppendSink:
+    """Write-only provider capability. It contains no oracle DB path and no read method."""
+
+    _sender: Connection
 
     def append(
         self,
@@ -58,26 +82,56 @@ class _OracleWriter:
         request_fingerprint = _sha256(
             "|".join((trial_id, provider.value, attempt_id, effect_key, idempotency_key or ""))
         )
-        with sqlite3.connect(self._path) as connection:
-            connection.execute(
-                """
-                INSERT INTO effects(
-                    trial_id,effect_id,provider_stratum,attempt_id,logical_effect_key_digest,
-                    idempotency_key_digest,request_fingerprint,committed_at
-                ) VALUES(?,?,?,?,?,?,?,?)
-                """,
-                (
-                    trial_id,
-                    effect_id,
-                    provider.value,
-                    attempt_id,
-                    _sha256(effect_key),
-                    _sha256(idempotency_key) if idempotency_key is not None else None,
-                    request_fingerprint,
-                    datetime.now(UTC).isoformat(),
-                ),
+        self._sender.send(
+            (
+                trial_id,
+                effect_id,
+                provider.value,
+                attempt_id,
+                _sha256(effect_key),
+                _sha256(idempotency_key) if idempotency_key is not None else None,
+                request_fingerprint,
+                datetime.now(UTC).isoformat(),
             )
+        )
         return effect_id
+
+
+class IndependentEffectOracleProcess:
+    """Own the independent effect database in a dedicated spawned process."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        self._sender = sender
+        self._process = context.Process(
+            target=_oracle_worker,
+            args=(str(path), receiver),
+            name="agentguard-research-effect-oracle",
+            daemon=False,
+        )
+        self._process.start()
+        receiver.close()
+        self.sink = OracleAppendSink(self._sender)
+        self._closed = False
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._sender.send(None)
+        self._sender.close()
+        self._process.join(timeout=10.0)
+        if self._process.is_alive():
+            self._process.terminate()
+            self._process.join(timeout=2.0)
+            raise OracleIsolationError("oracle.process_shutdown_timeout")
+        if self._process.exitcode != 0:
+            raise OracleIsolationError(
+                f"oracle.process_failed:{self._process.exitcode}"
+            )
 
 
 class IndependentEffectOracleReader:
@@ -114,7 +168,7 @@ class ProviderAcceptResult:
 
 
 class SimulatedProvider:
-    """Local provider contract implementation used only by the preregistered experiment."""
+    """Local P1-P4 provider state. Ground truth leaves only through a write-only sink."""
 
     _SCHEMA = """
     CREATE TABLE IF NOT EXISTS operations(
@@ -133,14 +187,12 @@ class SimulatedProvider:
     CREATE INDEX IF NOT EXISTS idx_provider_idem ON operations(stratum,idempotency_key);
     """
 
-    def __init__(self, state_path: Path, oracle_path: Path) -> None:
-        if state_path.resolve() == oracle_path.resolve():
-            raise OracleIsolationError("provider and oracle storage must be distinct")
+    def __init__(self, state_path: Path, oracle_sink: OracleAppendSink) -> None:
         self.state_path = state_path
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(state_path) as connection:
             connection.executescript(self._SCHEMA)
-        self._oracle = _OracleWriter(oracle_path)
+        self._oracle_sink = oracle_sink
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.state_path, timeout=30.0)
@@ -213,7 +265,7 @@ class SimulatedProvider:
         return ProviderAcceptResult(attempt_id, accepted=True, deduplicated=deduplicated)
 
     def commit(self, attempt_id: str) -> bool:
-        """Commit one business mutation; returns True only for a newly created external effect."""
+        """Commit one business mutation; True means a newly created external effect."""
 
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -263,7 +315,7 @@ class SimulatedProvider:
                 str(row["idempotency_key"]) if row["idempotency_key"] is not None else None
             )
             connection.execute("COMMIT")
-        self._oracle.append(
+        self._oracle_sink.append(
             trial_id=trial_id,
             provider=provider,
             attempt_id=attempt_id,
