@@ -18,7 +18,6 @@ from .analysis import (
 from .arms import A0Arm, A1Arm, B4Arm
 from .harness import DevTrialHarness
 from .models import A0_SHA, PREREG_SHA256, PROTOCOL_ID, Arm, ProviderStratum, Schedule, TrialSpec
-from .preflight import ConfirmatoryPreflightError, run_confirmatory_preflight
 from .provider import IndependentEffectOracleReader, SimulatedProvider
 from .statistics import (
     analyze_study,
@@ -41,7 +40,6 @@ __all__ = [
     "Arm",
     "B4Arm",
     "ConfirmatoryCorpusError",
-    "ConfirmatoryPreflightError",
     "DevTrialHarness",
     "HarnessInvalidReason",
     "IndependentEffectOracleReader",
@@ -61,7 +59,6 @@ __all__ = [
     "holm_adjust",
     "manifest_sha256",
     "master_seed",
-    "run_confirmatory_preflight",
     "safety_cell_reports",
     "summarize",
     "validate_confirmatory_corpus",
