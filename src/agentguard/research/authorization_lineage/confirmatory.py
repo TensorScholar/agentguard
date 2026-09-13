@@ -8,7 +8,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, Protocol, Sequence, cast
 
-from .harness import DevTrialHarness
 from .models import (
     AnalyzedTrial,
     Arm,
@@ -59,6 +58,17 @@ def _sha256_bytes(value: bytes) -> str:
 
 def _sha256_text(value: str) -> str:
     return _sha256_bytes(value.encode())
+
+
+def _require_sha256(value: str, name: str) -> None:
+    if len(value) != 64:
+        raise ConfirmatoryEvidenceError(f"{name} must be an exact lowercase SHA-256")
+    try:
+        parsed = int(value, 16)
+    except ValueError as exc:
+        raise ConfirmatoryEvidenceError(f"{name} must be an exact lowercase SHA-256") from exc
+    if f"{parsed:064x}" != value:
+        raise ConfirmatoryEvidenceError(f"{name} must be an exact lowercase SHA-256")
 
 
 def _object_dict(value: object, name: str) -> dict[str, object]:
@@ -188,6 +198,17 @@ def _block_key(spec: TrialSpec) -> tuple[ProviderStratum, Schedule, int, str]:
     return spec.provider, spec.schedule, spec.replicate, spec.block_seed
 
 
+def _block_id(spec: TrialSpec) -> str:
+    return "|".join(
+        (
+            spec.provider.value,
+            spec.schedule.value,
+            str(spec.replicate),
+            spec.block_seed,
+        )
+    )
+
+
 def block_sequence_filename(spec: TrialSpec) -> str:
     return (
         f"{spec.provider.value}-{spec.schedule.value}-{spec.replicate:03d}-"
@@ -258,17 +279,11 @@ def run_confirmatory_block(
 ) -> tuple[TrialObservation, TrialObservation, TrialObservation]:
     """Execute one frozen block strictly in execution_order and retain hash-chained evidence."""
 
+    _require_sha256(expected_manifest_sha256, "expected_manifest_sha256")
     ordered = _validated_block(block)
     sequence_path = sequence_root / block_sequence_filename(ordered[0])
     writer = _SequenceWriter(sequence_path)
-    block_id = "|".join(
-        (
-            ordered[0].provider.value,
-            ordered[0].schedule.value,
-            str(ordered[0].replicate),
-            ordered[0].block_seed,
-        )
-    )
+    block_id = _block_id(ordered[0])
     writer.append(
         "block.start",
         block_id=block_id,
@@ -361,7 +376,9 @@ def validate_block_records(
 ) -> tuple[TrialExecutionEvidence, TrialExecutionEvidence, TrialExecutionEvidence]:
     """Validate the logical execution sequence after hash-chain verification."""
 
+    _require_sha256(expected_manifest_sha256, "expected_manifest_sha256")
     ordered = _validated_block(block)
+    expected_block_id = _block_id(ordered[0])
     if len(records) != 8:
         raise ConfirmatoryEvidenceError("confirmatory block sequence must contain exactly 8 records")
     if _string(records[0].get("event"), "block.start.event") != "block.start":
@@ -369,6 +386,8 @@ def validate_block_records(
     if _string(records[-1].get("event"), "block.finish.event") != "block.finish":
         raise ConfirmatoryEvidenceError("confirmatory block sequence is missing block.finish")
     for boundary in (records[0], records[-1]):
+        if _string(boundary.get("block_id"), "block.block_id") != expected_block_id:
+            raise ConfirmatoryEvidenceError("execution sequence block identity mismatch")
         if _string(boundary.get("manifest_sha256"), "block.manifest_sha256") != expected_manifest_sha256:
             raise ConfirmatoryEvidenceError("execution sequence manifest identity mismatch")
         if _string(boundary.get("block_seed"), "block.block_seed") != ordered[0].block_seed:
@@ -383,6 +402,8 @@ def validate_block_records(
         if _string(finish.get("event"), "trial.finish.event") != "trial.finish":
             raise ConfirmatoryEvidenceError("execution sequence skipped or duplicated a trial.finish")
         for record in (start, finish):
+            if _string(record.get("block_id"), "trial.block_id") != expected_block_id:
+                raise ConfirmatoryEvidenceError("runtime trial block identity mismatch")
             if _string(record.get("trial_id"), "trial.trial_id") != spec.trial_id:
                 raise ConfirmatoryEvidenceError("runtime trial order does not match frozen execution_order")
             if _integer(record.get("execution_order"), "trial.execution_order") != spec.execution_order:
@@ -470,6 +491,7 @@ def validate_execution_sequences(
     expected_manifest_sha256: str,
     sequence_root: Path,
 ) -> dict[str, TrialExecutionEvidence]:
+    _require_sha256(expected_manifest_sha256, "expected_manifest_sha256")
     blocks = _group_blocks(manifest)
     expected_names = {block_sequence_filename(block[0]) for block in blocks}
     actual_names = {path.name for path in sequence_root.glob("*.jsonl")}
@@ -733,6 +755,7 @@ def authoritative_confirmatory_corpus(
     expected_manifest_sha256: str,
     sequence_root: Path,
 ) -> tuple[AnalyzedTrial, ...]:
+    _require_sha256(expected_manifest_sha256, "expected_manifest_sha256")
     execution = validate_execution_sequences(
         manifest,
         evidence_root=evidence_root,
