@@ -468,38 +468,38 @@ class DevTrialHarness:
                 current_resolution: Callable[[], bool]
                 if isinstance(arm, B4Arm):
                     fence = ConventionalReconciliationFence(trial_root / "b4-fence.sqlite")
-                    old = fence.claim(spec.alpha, "worker-old", now=t0, lease_seconds=1)
-                    new = fence.claim(
+                    b4_old = fence.claim(spec.alpha, "worker-old", now=t0, lease_seconds=1)
+                    b4_new = fence.claim(
                         spec.alpha,
                         "worker-new",
                         now=t0 + timedelta(seconds=2),
                         lease_seconds=5,
                     )
-                    if old is None or new is None:
+                    if b4_old is None or b4_new is None:
                         raise HarnessScheduleError(
                             "B4 reconciliation takeover could not be established"
                         )
                     stale_commit_accepted = fence.commit_is_current(
-                        old, now=t0 + timedelta(seconds=2)
+                        b4_old, now=t0 + timedelta(seconds=2)
                     )
 
                     def current_resolution() -> bool:
-                        return fence.commit_is_current(new, now=t0 + timedelta(seconds=2))
+                        return fence.commit_is_current(b4_new, now=t0 + timedelta(seconds=2))
 
                 else:
-                    old = arm.state.claim_reconciliation_lease(
+                    ag_old = arm.state.claim_reconciliation_lease(
                         first_result.attempt_id,
                         "worker-old",
                         now=t0,
                         lease_seconds=1,
                     )
-                    new = arm.state.claim_reconciliation_lease(
+                    ag_new = arm.state.claim_reconciliation_lease(
                         first_result.attempt_id,
                         "worker-new",
                         now=t0 + timedelta(seconds=2),
                         lease_seconds=5,
                     )
-                    if old is None or new is None:
+                    if ag_old is None or ag_new is None:
                         raise HarnessScheduleError(
                             "AgentGuard reconciliation takeover could not be established"
                         )
@@ -511,7 +511,7 @@ class DevTrialHarness:
                         trust_level=EvidenceTrustLevel.PROVIDER_CORRELATED,
                     )
                     try:
-                        with arm.state.resolution_lease(old):
+                        with arm.state.resolution_lease(ag_old):
                             arm.state.record_execution_resolution(
                                 first_result.attempt_id,
                                 recon_evidence,
@@ -522,7 +522,7 @@ class DevTrialHarness:
                         stale_commit_accepted = False
 
                     def current_resolution() -> bool:
-                        with arm.state.resolution_lease(new):
+                        with arm.state.resolution_lease(ag_new):
                             arm.state.record_execution_resolution(
                                 first_result.attempt_id,
                                 recon_evidence,
@@ -560,7 +560,11 @@ class DevTrialHarness:
                     admitted = successor_future.result()
                 if admitted:
                     unresolved = False
-                    if spec.provider != ProviderStratum.P1:
+                    if (
+                        spec.provider != ProviderStratum.P1
+                        and isinstance(arm, A0Arm)
+                        and not isinstance(arm, A1Arm)
+                    ):
                         unsafe_successor = arm.root_allocations > roots_before
 
             else:
