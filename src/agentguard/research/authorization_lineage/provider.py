@@ -35,13 +35,23 @@ CREATE TABLE IF NOT EXISTS effects(
 """
 
 
-def _oracle_worker(path_text: str, receiver: Connection) -> None:
+def _oracle_worker(path_text: str, receiver: Connection, ready_sender: Connection) -> None:
     """Separate-process ground-truth writer. It exposes no query channel."""
 
     path = Path(path_text)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as connection:
-        connection.executescript(_ORACLE_SCHEMA)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(path) as connection:
+            connection.executescript(_ORACLE_SCHEMA)
+        ready_sender.send("READY")
+    except Exception as exc:
+        try:
+            ready_sender.send(f"ERROR:{type(exc).__name__}")
+        finally:
+            ready_sender.close()
+            receiver.close()
+        return
+    ready_sender.close()
     try:
         while True:
             message = receiver.recv()
@@ -82,18 +92,21 @@ class OracleAppendSink:
         request_fingerprint = _sha256(
             "|".join((trial_id, provider.value, attempt_id, effect_key, idempotency_key or ""))
         )
-        self._sender.send(
-            (
-                trial_id,
-                effect_id,
-                provider.value,
-                attempt_id,
-                _sha256(effect_key),
-                _sha256(idempotency_key) if idempotency_key is not None else None,
-                request_fingerprint,
-                datetime.now(UTC).isoformat(),
+        try:
+            self._sender.send(
+                (
+                    trial_id,
+                    effect_id,
+                    provider.value,
+                    attempt_id,
+                    _sha256(effect_key),
+                    _sha256(idempotency_key) if idempotency_key is not None else None,
+                    request_fingerprint,
+                    datetime.now(UTC).isoformat(),
+                )
             )
-        )
+        except (BrokenPipeError, EOFError, OSError) as exc:
+            raise OracleIsolationError("oracle.append_channel_failed") from exc
         return effect_id
 
 
@@ -105,33 +118,61 @@ class IndependentEffectOracleProcess:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         context = multiprocessing.get_context("spawn")
         receiver, sender = context.Pipe(duplex=False)
+        ready_receiver, ready_sender = context.Pipe(duplex=False)
         self._sender = sender
         self._process = context.Process(
             target=_oracle_worker,
-            args=(str(path), receiver),
+            args=(str(path), receiver, ready_sender),
             name="agentguard-research-effect-oracle",
             daemon=False,
         )
         self._process.start()
         receiver.close()
+        ready_sender.close()
+        try:
+            if not ready_receiver.poll(10.0):
+                self._terminate_startup_failure()
+                raise OracleIsolationError("oracle.process_startup_timeout")
+            message = ready_receiver.recv()
+        except (EOFError, OSError) as exc:
+            self._terminate_startup_failure()
+            raise OracleIsolationError("oracle.process_startup_channel_failed") from exc
+        finally:
+            ready_receiver.close()
+        if message != "READY" or not self._process.is_alive():
+            self._terminate_startup_failure()
+            raise OracleIsolationError(f"oracle.process_startup_failed:{message}")
         self.sink = OracleAppendSink(self._sender)
         self._closed = False
+
+    def _terminate_startup_failure(self) -> None:
+        try:
+            self._sender.close()
+        finally:
+            if self._process.is_alive():
+                self._process.terminate()
+            self._process.join(timeout=2.0)
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
-        self._sender.send(None)
-        self._sender.close()
+        send_error = False
+        try:
+            self._sender.send(None)
+        except (BrokenPipeError, EOFError, OSError):
+            send_error = True
+        finally:
+            self._sender.close()
         self._process.join(timeout=10.0)
         if self._process.is_alive():
             self._process.terminate()
             self._process.join(timeout=2.0)
             raise OracleIsolationError("oracle.process_shutdown_timeout")
         if self._process.exitcode != 0:
-            raise OracleIsolationError(
-                f"oracle.process_failed:{self._process.exitcode}"
-            )
+            raise OracleIsolationError(f"oracle.process_failed:{self._process.exitcode}")
+        if send_error:
+            raise OracleIsolationError("oracle.shutdown_channel_failed")
 
 
 class IndependentEffectOracleReader:
