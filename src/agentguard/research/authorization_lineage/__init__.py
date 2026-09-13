@@ -16,6 +16,17 @@ from .analysis import (
     validate_confirmatory_manifest,
 )
 from .arms import A0Arm, A1Arm, B4Arm
+from .confirmatory import (
+    ConfirmatoryEvidenceError,
+    TrialExecutionEvidence,
+    authoritative_confirmatory_corpus,
+    block_sequence_filename,
+    derive_authoritative_trial,
+    run_confirmatory_block,
+    validate_block_execution,
+    validate_execution_sequences,
+    verify_supplied_analysis,
+)
 from .harness import DevTrialHarness
 from .models import A0_SHA, PREREG_SHA256, PROTOCOL_ID, Arm, ProviderStratum, Schedule, TrialSpec
 from .provider import IndependentEffectOracleReader, SimulatedProvider
@@ -40,6 +51,7 @@ __all__ = [
     "Arm",
     "B4Arm",
     "ConfirmatoryCorpusError",
+    "ConfirmatoryEvidenceError",
     "DevTrialHarness",
     "HarnessInvalidReason",
     "IndependentEffectOracleReader",
@@ -48,21 +60,29 @@ __all__ = [
     "ProviderStratum",
     "Schedule",
     "SimulatedProvider",
+    "TrialExecutionEvidence",
     "TrialSpec",
     "analyze_confirmatory_study",
     "analyze_study",
     "analyze_trial",
+    "authoritative_confirmatory_corpus",
+    "block_sequence_filename",
     "build_confirmatory_manifest",
     "build_forensic_bundle",
+    "derive_authoritative_trial",
     "exact_binomial_interval",
     "exact_mcnemar_pvalue",
     "holm_adjust",
     "manifest_sha256",
     "master_seed",
+    "run_confirmatory_block",
     "safety_cell_reports",
     "summarize",
+    "validate_block_execution",
     "validate_confirmatory_corpus",
     "validate_confirmatory_manifest",
+    "validate_execution_sequences",
     "validate_trace",
+    "verify_supplied_analysis",
     "write_forensic_bundle",
 ]
