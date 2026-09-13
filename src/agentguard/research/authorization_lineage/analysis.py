@@ -129,8 +129,6 @@ def analyze_trial(
             external_effect_violation=False,
             unsafe_successor_violation=False,
         )
-    # Raw root/grant count is a secondary endpoint. A second root can be a safe continuation of the
-    # same slot under P1 or a P3 fenced transfer; P-M1 concerns independent effect opportunities.
     lineage_violation = observation.independent_live_slots_max > 1
     return AnalyzedTrial(
         observation=observation,
@@ -161,9 +159,9 @@ def summarize(trials: Iterable[AnalyzedTrial]) -> dict[str, object]:
     cells: dict[str, object] = {}
     for key, items in sorted(grouped.items()):
         label = "/".join(key)
-        legitimate_completions = sum(
-            item.oracle_effect_count == 1 and not item.observation.unresolved for item in items
-        )
+        # LEGITIMATE_COMPLETION is external: exactly one authorized business effect occurred.
+        # Whether the SUT learned that result is reported separately by unresolved_rate.
+        legitimate_completions = sum(item.oracle_effect_count == 1 for item in items)
         cells[label] = {
             "n": len(items),
             "primary_violations": sum(item.primary_violation for item in items),
