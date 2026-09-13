@@ -25,11 +25,7 @@ class SlotSnapshot:
 
 
 class AuthorizationInstanceLedger:
-    """Research-only token-independent authorization ledger.
-
-    The ledger deliberately uses ordinary SQLite transactions. A1 composes it with the real
-    AgentGuard protected path; B4 uses the same conservation mechanism as a conventional baseline.
-    """
+    """Research-only token-independent authorization ledger using ordinary SQLite transactions."""
 
     _SCHEMA = """
     PRAGMA foreign_keys = ON;
@@ -123,12 +119,6 @@ class AuthorizationInstanceLedger:
         return self.snapshot(alpha)
 
     def claim_root(self, alpha: str, claim_token: str) -> bool:
-        """Claim the sole root-issuance opportunity for A1.
-
-        A crash after the claim is conservative: the claim remains occupied until explicit DEV
-        recovery rather than silently permitting another independent root.
-        """
-
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
@@ -209,12 +199,7 @@ class AuthorizationInstanceLedger:
         idempotency_key: str | None = None,
         allow_same_slot_retry: bool = False,
     ) -> str:
-        """Atomically claim the sole slot for a new dispatch attempt.
-
-        A P1 same-idempotency retry is the only path allowed to replace the active UNKNOWN attempt
-        without prior no-effect release. The slot transition is committed in the same transaction as
-        attempt creation, preventing S4 from creating two independent admissions.
-        """
+        """Atomically claim the sole slot while preserving a pre-dispatch RESERVED state."""
 
         attempt_id = "attempt_" + uuid4().hex
         now = self._now()
@@ -285,9 +270,9 @@ class AuthorizationInstanceLedger:
                 UPDATE authorization_instances
                 SET slot_state=?,active_attempt_id=?,updated_at=? WHERE alpha=?
                 """,
-                (SlotState.DISPATCHING.value, attempt_id, now, alpha),
+                (SlotState.RESERVED.value, attempt_id, now, alpha),
             )
-            self._event(connection, alpha, "attempt.admitted", attempt_id)
+            self._event(connection, alpha, "attempt.reserved", attempt_id)
             connection.execute("COMMIT")
         return attempt_id
 
@@ -301,10 +286,10 @@ class AuthorizationInstanceLedger:
             if (
                 active is None
                 or str(active["active_attempt_id"]) != attempt_id
-                or SlotState(str(active["slot_state"])) != SlotState.DISPATCHING
+                or SlotState(str(active["slot_state"])) != SlotState.RESERVED
             ):
                 connection.execute("ROLLBACK")
-                raise LineageLedgerError("lineage.attempt_not_active")
+                raise LineageLedgerError("lineage.attempt_not_active_reserved")
             updated = connection.execute(
                 """
                 UPDATE attempts SET state=?,potentially_effectful=1,updated_at=?
@@ -321,6 +306,10 @@ class AuthorizationInstanceLedger:
             if updated.rowcount != 1:
                 connection.execute("ROLLBACK")
                 raise LineageLedgerError("lineage.attempt_not_reserved")
+            connection.execute(
+                "UPDATE authorization_instances SET slot_state=?,updated_at=? WHERE alpha=?",
+                (SlotState.DISPATCHING.value, self._now(), alpha),
+            )
             self._event(connection, alpha, "attempt.dispatching", attempt_id)
             connection.execute("COMMIT")
 
@@ -331,7 +320,6 @@ class AuthorizationInstanceLedger:
             AttemptState.UNKNOWN,
             SlotState.UNKNOWN,
             "attempt.unknown",
-            clear_active=False,
         )
 
     def mark_effect(self, alpha: str, attempt_id: str) -> None:
@@ -341,7 +329,6 @@ class AuthorizationInstanceLedger:
             AttemptState.CONFIRMED_EFFECT,
             SlotState.CONFIRMED_EFFECT,
             "attempt.confirmed_effect",
-            clear_active=False,
         )
 
     def apply_no_effect_evidence(
@@ -398,8 +385,6 @@ class AuthorizationInstanceLedger:
         attempt_state: AttemptState,
         slot_state: SlotState,
         event_type: str,
-        *,
-        clear_active: bool,
     ) -> None:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -421,12 +406,7 @@ class AuthorizationInstanceLedger:
                 UPDATE authorization_instances
                 SET slot_state=?,active_attempt_id=?,updated_at=? WHERE alpha=?
                 """,
-                (
-                    slot_state.value,
-                    None if clear_active else attempt_id,
-                    self._now(),
-                    alpha,
-                ),
+                (slot_state.value, attempt_id, self._now(), alpha),
             )
             self._event(connection, alpha, event_type, attempt_id)
             connection.execute("COMMIT")
@@ -454,12 +434,10 @@ class AuthorizationInstanceLedger:
         )
 
     def independent_effect_opportunities(self, alpha: str) -> int:
-        """Count currently unresolved/realized independent effect opportunities for P-M1 support."""
-
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT provider_stratum,idempotency_key,potentially_effectful,state
+                SELECT provider_stratum,idempotency_key,potentially_effectful
                 FROM attempts WHERE alpha=?
                 """,
                 (alpha,),
@@ -470,12 +448,8 @@ class AuthorizationInstanceLedger:
             if int(row["potentially_effectful"]) != 1:
                 continue
             provider = ProviderStratum(str(row["provider_stratum"]))
-            if provider == ProviderStratum.P1:
-                key = row["idempotency_key"]
-                if key is None:
-                    independent += 1
-                else:
-                    p1_keys.add(str(key))
+            if provider == ProviderStratum.P1 and row["idempotency_key"] is not None:
+                p1_keys.add(str(row["idempotency_key"]))
             else:
                 independent += 1
         return independent + len(p1_keys)
