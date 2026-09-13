@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 from dataclasses import replace
 
 import pytest
 
+from agentguard.research.authorization_lineage import preflight
 from agentguard.research.authorization_lineage.analysis import (
     ConfirmatoryCorpusError,
     manifest_sha256,
@@ -25,7 +27,6 @@ from agentguard.research.authorization_lineage.preflight import (
     ConfirmatoryPreflightError,
     run_confirmatory_preflight,
 )
-from agentguard.research.authorization_lineage import preflight
 from agentguard.research.authorization_lineage.trace import HarnessInvalidReason
 
 
@@ -34,10 +35,13 @@ def _synthetic_manifest() -> tuple[TrialSpec, ...]:
     for schedule in Schedule:
         for provider in APPLICABLE_STRATA[schedule]:
             for replicate in range(100):
-                block = f"DEV-BLOCK-{provider.value}-{schedule.value}-{replicate:03d}"
+                material = f"DEV-BLOCK|{provider.value}|{schedule.value}|{replicate:03d}"
+                block = hashlib.sha256(material.encode()).hexdigest()
                 alpha = f"DEV-ALPHA-{provider.value}-{schedule.value}-{replicate:03d}"
                 effect_key = f"DEV-EFFECT-{provider.value}-{schedule.value}-{replicate:03d}"
-                for execution_order, arm in enumerate(Arm):
+                arms = list(Arm)
+                random.Random(int(block, 16)).shuffle(arms)
+                for execution_order, arm in enumerate(arms):
                     trials.append(
                         TrialSpec(
                             trial_id=(
@@ -94,8 +98,18 @@ def _analyzed(spec: TrialSpec) -> AnalyzedTrial:
 
 def test_confirmatory_manifest_requires_unique_execution_order_per_block():
     manifest = list(_synthetic_manifest())
-    manifest[1] = replace(manifest[1], execution_order=0)
+    manifest[1] = replace(manifest[1], execution_order=manifest[0].execution_order)
     with pytest.raises(ConfirmatoryCorpusError, match="execution ordering"):
+        validate_confirmatory_manifest(manifest)
+
+
+def test_confirmatory_manifest_order_must_match_block_seed():
+    manifest = list(_synthetic_manifest())
+    first = manifest[0]
+    second = manifest[1]
+    manifest[0] = replace(first, arm=second.arm)
+    manifest[1] = replace(second, arm=first.arm)
+    with pytest.raises(ConfirmatoryCorpusError, match="does not match block_seed"):
         validate_confirmatory_manifest(manifest)
 
 
