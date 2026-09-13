@@ -4,10 +4,21 @@ This package is research-only and bound to AG-LINEAGE-PREREG-v1.0. Importing it 
 AgentGuard production enforcement paths.
 """
 
-from .analysis import analyze_trial, build_confirmatory_manifest, master_seed, summarize
+from .analysis import (
+    ConfirmatoryCorpusError,
+    analyze_confirmatory_study,
+    analyze_trial,
+    build_confirmatory_manifest,
+    manifest_sha256,
+    master_seed,
+    summarize,
+    validate_confirmatory_corpus,
+    validate_confirmatory_manifest,
+)
 from .arms import A0Arm, A1Arm, B4Arm
 from .harness import DevTrialHarness
 from .models import A0_SHA, PREREG_SHA256, PROTOCOL_ID, Arm, ProviderStratum, Schedule, TrialSpec
+from .preflight import ConfirmatoryPreflightError, run_confirmatory_preflight
 from .provider import IndependentEffectOracleReader, SimulatedProvider
 from .statistics import (
     analyze_study,
@@ -29,6 +40,8 @@ __all__ = [
     "A1Arm",
     "Arm",
     "B4Arm",
+    "ConfirmatoryCorpusError",
+    "ConfirmatoryPreflightError",
     "DevTrialHarness",
     "HarnessInvalidReason",
     "IndependentEffectOracleReader",
@@ -38,6 +51,7 @@ __all__ = [
     "Schedule",
     "SimulatedProvider",
     "TrialSpec",
+    "analyze_confirmatory_study",
     "analyze_study",
     "analyze_trial",
     "build_confirmatory_manifest",
@@ -45,9 +59,13 @@ __all__ = [
     "exact_binomial_interval",
     "exact_mcnemar_pvalue",
     "holm_adjust",
+    "manifest_sha256",
     "master_seed",
+    "run_confirmatory_preflight",
     "safety_cell_reports",
     "summarize",
+    "validate_confirmatory_corpus",
+    "validate_confirmatory_manifest",
     "validate_trace",
     "write_forensic_bundle",
 ]
