@@ -305,10 +305,10 @@ class A1Arm(A0Arm):
             handle = self._issue_fresh_bound_authority(alpha, effect_key)
             encoded = handle.root_grant_id + "|" + handle.lease_id
             self.lineage.bind_root(alpha, claim, encoded)
-        encoded = self.lineage.root_handle(alpha)
-        if encoded is None:
+        stored = self.lineage.root_handle(alpha)
+        if stored is None:
             raise LineageLedgerError("lineage.root_claim_incomplete")
-        root_id, lease_id = encoded.split("|", 1)
+        root_id, lease_id = stored.split("|", 1)
         reference = self.service.authority_reference(root_id, lease_id)
         return AuthorityHandle(alpha, effect_key, root_id, lease_id, reference)
 
