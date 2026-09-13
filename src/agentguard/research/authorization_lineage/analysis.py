@@ -4,7 +4,6 @@ import hashlib
 import json
 import random
 import re
-from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
 from typing import Iterable
@@ -20,6 +19,8 @@ from .models import (
     TrialSpec,
 )
 from .provider import IndependentEffectOracleReader
+from .statistics import analyze_study
+from .trace import write_forensic_bundle
 
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 
@@ -119,63 +120,34 @@ def write_manifest_once(path: Path, trials: Iterable[TrialSpec]) -> None:
 def analyze_trial(
     observation: TrialObservation,
     oracle: IndependentEffectOracleReader,
+    *,
+    trial_root: Path | None = None,
 ) -> AnalyzedTrial:
     effects = oracle.effect_count(observation.trial_id)
     if observation.harness_invalid:
-        return AnalyzedTrial(
+        analyzed = AnalyzedTrial(
             observation=observation,
             oracle_effect_count=effects,
             lineage_budget_violation=False,
             external_effect_violation=False,
             unsafe_successor_violation=False,
         )
-    lineage_violation = observation.independent_live_slots_max > 1
-    return AnalyzedTrial(
-        observation=observation,
-        oracle_effect_count=effects,
-        lineage_budget_violation=lineage_violation,
-        external_effect_violation=effects > 1,
-        unsafe_successor_violation=(
-            observation.successor_admitted_while_predecessor_potentially_effectful
-        ),
-    )
+    else:
+        analyzed = AnalyzedTrial(
+            observation=observation,
+            oracle_effect_count=effects,
+            lineage_budget_violation=observation.independent_live_slots_max > 1,
+            external_effect_violation=effects > 1,
+            unsafe_successor_violation=(
+                observation.successor_admitted_while_predecessor_potentially_effectful
+            ),
+        )
+    if trial_root is not None:
+        write_forensic_bundle(trial_root, analyzed)
+    return analyzed
 
 
 def summarize(trials: Iterable[AnalyzedTrial]) -> dict[str, object]:
-    """Summarize retained observations without using SUT state as external-effect truth."""
+    """Run the complete frozen v1.0 study analysis over retained trial outcomes."""
 
-    grouped: dict[tuple[str, str, str], list[AnalyzedTrial]] = defaultdict(list)
-    invalid = 0
-    for trial in trials:
-        if trial.observation.harness_invalid:
-            invalid += 1
-            continue
-        key = (
-            trial.observation.arm.value,
-            trial.observation.provider.value,
-            trial.observation.schedule.value,
-        )
-        grouped[key].append(trial)
-    cells: dict[str, object] = {}
-    for key, items in sorted(grouped.items()):
-        label = "/".join(key)
-        # LEGITIMATE_COMPLETION is external: exactly one authorized business effect occurred.
-        # Whether the SUT learned that result is reported separately by unresolved_rate.
-        legitimate_completions = sum(item.oracle_effect_count == 1 for item in items)
-        cells[label] = {
-            "n": len(items),
-            "primary_violations": sum(item.primary_violation for item in items),
-            "lineage_budget_violations": sum(item.lineage_budget_violation for item in items),
-            "external_effect_violations": sum(item.external_effect_violation for item in items),
-            "unsafe_successor_violations": sum(item.unsafe_successor_violation for item in items),
-            "max_effect_count": max(item.oracle_effect_count for item in items),
-            "max_independent_effect_opportunities": max(
-                item.observation.independent_live_slots_max for item in items
-            ),
-            "max_root_or_slot_allocations": max(
-                item.observation.root_or_slot_allocations for item in items
-            ),
-            "legitimate_completion_rate": legitimate_completions / len(items),
-            "unresolved_rate": sum(item.observation.unresolved for item in items) / len(items),
-        }
-    return {"invalid_trials": invalid, "cells": cells}
+    return analyze_study(trials)
