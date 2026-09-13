@@ -298,6 +298,12 @@ def _comparison_report(
     b4_only_violation = sum(
         _primary_violation(b4) and not _primary_violation(a1) for a1, b4 in pairs
     )
+    a1_only_completion = sum(
+        _completion(a1) > _completion(b4) for a1, b4 in pairs
+    )
+    b4_only_completion = sum(
+        _completion(b4) > _completion(a1) for a1, b4 in pairs
+    )
     return {
         "n_pairs": len(pairs),
         "primary_violation_exact_mcnemar_p": exact_mcnemar_pvalue(
@@ -306,6 +312,13 @@ def _comparison_report(
         "primary_violation_discordance": {
             "A1_only": a1_only_violation,
             "B4_only": b4_only_violation,
+        },
+        "completion_exact_mcnemar_p": exact_mcnemar_pvalue(
+            a1_only_completion, b4_only_completion
+        ),
+        "completion_discordance": {
+            "A1_only": a1_only_completion,
+            "B4_only": b4_only_completion,
         },
         "completion_A1_minus_B4": {
             "point": completion_a1_minus_b4[0],
@@ -363,17 +376,17 @@ def analyze_study(trials: Iterable[AnalyzedTrial]) -> dict[str, object]:
     pairs = _paired_arms(retained, Arm.A1, Arm.B4)
     overall = _comparison_report(pairs, material="A1-v-B4|overall")
     by_provider: dict[str, dict[str, object]] = {}
-    mcnemar_family: dict[str, float] = {}
+    completion_mcnemar_family: dict[str, float] = {}
     for provider in ProviderStratum:
         provider_pairs = [pair for pair in pairs if pair[0].observation.provider == provider]
         report = _comparison_report(provider_pairs, material=f"A1-v-B4|{provider.value}")
         by_provider[provider.value] = report
-        pvalue = report.get("primary_violation_exact_mcnemar_p")
+        pvalue = report.get("completion_exact_mcnemar_p")
         if isinstance(pvalue, float):
-            mcnemar_family[provider.value] = pvalue
-    holm = holm_adjust(mcnemar_family)
+            completion_mcnemar_family[provider.value] = pvalue
+    holm = holm_adjust(completion_mcnemar_family)
     for provider_name, adjusted in holm.items():
-        by_provider[provider_name]["primary_violation_mcnemar_holm_p"] = adjusted
+        by_provider[provider_name]["completion_mcnemar_holm_p"] = adjusted
 
     a1_trials = [trial for trial in retained if trial.observation.arm == Arm.A1]
     b4_trials = [trial for trial in retained if trial.observation.arm == Arm.B4]
@@ -435,7 +448,8 @@ def analyze_study(trials: Iterable[AnalyzedTrial]) -> dict[str, object]:
         "paired_A1_B4": {
             "overall": overall,
             "by_provider": by_provider,
-            "holm_family": "primary-violation exact McNemar across provider strata",
+            "holm_family": "legitimate-completion exact McNemar across provider strata",
+            "primary_invariant_falsifiers_adjusted": False,
         },
         "hypotheses": {
             "H1_A1_lineage_safety_pass": h1_pass,
