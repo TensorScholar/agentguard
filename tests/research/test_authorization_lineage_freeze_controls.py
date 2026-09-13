@@ -292,7 +292,9 @@ def _patch_preflight_environment(
     monkeypatch.setattr(preflight, "_git", fake_git)
     monkeypatch.setattr(preflight, "_command", fake_command)
     monkeypatch.setattr(preflight, "_agentguard_source", lambda: expected_source.resolve())
-    monkeypatch.setattr(preflight, "_runtime_sys_path", lambda: tuple(path.resolve() for path in expected_paths))
+    monkeypatch.setattr(
+        preflight, "_runtime_sys_path", lambda: tuple(path.resolve() for path in expected_paths)
+    )
     monkeypatch.setattr(preflight.platform, "python_implementation", lambda: "CPython")
     monkeypatch.setattr(preflight.platform, "python_version", lambda: "3.12.10")
     monkeypatch.setattr(preflight.platform, "system", lambda: "Darwin")
@@ -339,9 +341,7 @@ def test_confirmatory_preflight_fails_closed_on_dependency_drift(tmp_path, monke
 
 
 @pytest.mark.parametrize("status", [" M tracked.py", "?? rogue.txt", "?? roguepkg/__init__.py"])
-def test_confirmatory_preflight_rejects_tracked_and_untracked_drift(
-    tmp_path, monkeypatch, status
-):
+def test_confirmatory_preflight_rejects_tracked_and_untracked_drift(tmp_path, monkeypatch, status):
     expected = "a" * 40
     identity_path = _write_preflight_identity(tmp_path)
     _patch_preflight_environment(

@@ -160,7 +160,9 @@ def run_confirmatory_preflight(
         )
     working_tree = _git(repo_root, "status", "--porcelain", "--untracked-files=all")
     if working_tree:
-        raise ConfirmatoryPreflightError("repository working tree contains tracked or untracked drift")
+        raise ConfirmatoryPreflightError(
+            "repository working tree contains tracked or untracked drift"
+        )
 
     import_provenance = _verify_import_provenance(repo_root)
 

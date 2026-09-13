@@ -136,7 +136,10 @@ def test_mechanically_evidenced_dirty_namespace_invalidation_is_accepted(tmp_pat
     authoritative = derive_authoritative_trial(execution, trial_root=trial_root)
     assert authoritative.observation.harness_invalid
     assert authoritative.observation.harness_invalid_reason is not None
-    assert HarnessInvalidReason.DIRTY_NAMESPACE.value in authoritative.observation.harness_invalid_reason
+    assert (
+        HarnessInvalidReason.DIRTY_NAMESPACE.value
+        in authoritative.observation.harness_invalid_reason
+    )
     assert not authoritative.primary_violation
 
 
@@ -212,9 +215,30 @@ class _FakeRunner:
 def _block() -> tuple[TrialSpec, TrialSpec, TrialSpec]:
     block_seed = hashlib.sha256(b"DEV-ORDER-BLOCK").hexdigest()
     return (
-        _spec(Arm.A0, ProviderStratum.P2, Schedule.S3, "order", execution_order=0, block_seed=block_seed),
-        _spec(Arm.A1, ProviderStratum.P2, Schedule.S3, "order", execution_order=1, block_seed=block_seed),
-        _spec(Arm.B4, ProviderStratum.P2, Schedule.S3, "order", execution_order=2, block_seed=block_seed),
+        _spec(
+            Arm.A0,
+            ProviderStratum.P2,
+            Schedule.S3,
+            "order",
+            execution_order=0,
+            block_seed=block_seed,
+        ),
+        _spec(
+            Arm.A1,
+            ProviderStratum.P2,
+            Schedule.S3,
+            "order",
+            execution_order=1,
+            block_seed=block_seed,
+        ),
+        _spec(
+            Arm.B4,
+            ProviderStratum.P2,
+            Schedule.S3,
+            "order",
+            execution_order=2,
+            block_seed=block_seed,
+        ),
     )
 
 

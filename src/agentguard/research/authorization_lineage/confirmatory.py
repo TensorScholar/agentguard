@@ -225,7 +225,9 @@ def _validated_block(block: Sequence[TrialSpec]) -> tuple[TrialSpec, TrialSpec, 
     if [spec.execution_order for spec in ordered] != [0, 1, 2]:
         raise ConfirmatoryEvidenceError("confirmatory block execution order must be exactly 0,1,2")
     if {spec.arm for spec in ordered} != set(Arm):
-        raise ConfirmatoryEvidenceError("confirmatory block must contain A0, A1, and B4 exactly once")
+        raise ConfirmatoryEvidenceError(
+            "confirmatory block must contain A0, A1, and B4 exactly once"
+        )
     return ordered[0], ordered[1], ordered[2]
 
 
@@ -355,7 +357,10 @@ def _read_sequence(path: Path) -> list[dict[str, object]]:
         record = _object_dict(decoded, "execution sequence record")
         if _integer(record.get("sequence"), "execution sequence.sequence") != expected_sequence:
             raise ConfirmatoryEvidenceError("execution sequence number mismatch")
-        if _string(record.get("previous_hash"), "execution sequence.previous_hash") != previous_hash:
+        if (
+            _string(record.get("previous_hash"), "execution sequence.previous_hash")
+            != previous_hash
+        ):
             raise ConfirmatoryEvidenceError("execution sequence hash-chain predecessor mismatch")
         recorded_hash = _string(record.get("record_hash"), "execution sequence.record_hash")
         unsigned = dict(record)
@@ -380,7 +385,9 @@ def validate_block_records(
     ordered = _validated_block(block)
     expected_block_id = _block_id(ordered[0])
     if len(records) != 8:
-        raise ConfirmatoryEvidenceError("confirmatory block sequence must contain exactly 8 records")
+        raise ConfirmatoryEvidenceError(
+            "confirmatory block sequence must contain exactly 8 records"
+        )
     if _string(records[0].get("event"), "block.start.event") != "block.start":
         raise ConfirmatoryEvidenceError("confirmatory block sequence is missing block.start")
     if _string(records[-1].get("event"), "block.finish.event") != "block.finish":
@@ -388,7 +395,10 @@ def validate_block_records(
     for boundary in (records[0], records[-1]):
         if _string(boundary.get("block_id"), "block.block_id") != expected_block_id:
             raise ConfirmatoryEvidenceError("execution sequence block identity mismatch")
-        if _string(boundary.get("manifest_sha256"), "block.manifest_sha256") != expected_manifest_sha256:
+        if (
+            _string(boundary.get("manifest_sha256"), "block.manifest_sha256")
+            != expected_manifest_sha256
+        ):
             raise ConfirmatoryEvidenceError("execution sequence manifest identity mismatch")
         if _string(boundary.get("block_seed"), "block.block_seed") != ordered[0].block_seed:
             raise ConfirmatoryEvidenceError("execution sequence block seed mismatch")
@@ -398,19 +408,33 @@ def validate_block_records(
         start = records[1 + index * 2]
         finish = records[2 + index * 2]
         if _string(start.get("event"), "trial.start.event") != "trial.start":
-            raise ConfirmatoryEvidenceError("execution sequence skipped or duplicated a trial.start")
+            raise ConfirmatoryEvidenceError(
+                "execution sequence skipped or duplicated a trial.start"
+            )
         if _string(finish.get("event"), "trial.finish.event") != "trial.finish":
-            raise ConfirmatoryEvidenceError("execution sequence skipped or duplicated a trial.finish")
+            raise ConfirmatoryEvidenceError(
+                "execution sequence skipped or duplicated a trial.finish"
+            )
         for record in (start, finish):
             if _string(record.get("block_id"), "trial.block_id") != expected_block_id:
                 raise ConfirmatoryEvidenceError("runtime trial block identity mismatch")
             if _string(record.get("trial_id"), "trial.trial_id") != spec.trial_id:
-                raise ConfirmatoryEvidenceError("runtime trial order does not match frozen execution_order")
-            if _integer(record.get("execution_order"), "trial.execution_order") != spec.execution_order:
-                raise ConfirmatoryEvidenceError("runtime execution_order does not match frozen manifest")
+                raise ConfirmatoryEvidenceError(
+                    "runtime trial order does not match frozen execution_order"
+                )
+            if (
+                _integer(record.get("execution_order"), "trial.execution_order")
+                != spec.execution_order
+            ):
+                raise ConfirmatoryEvidenceError(
+                    "runtime execution_order does not match frozen manifest"
+                )
             if _string(record.get("block_seed"), "trial.block_seed") != spec.block_seed:
                 raise ConfirmatoryEvidenceError("runtime trial block_seed mismatch")
-            if _string(record.get("manifest_sha256"), "trial.manifest_sha256") != expected_manifest_sha256:
+            if (
+                _string(record.get("manifest_sha256"), "trial.manifest_sha256")
+                != expected_manifest_sha256
+            ):
                 raise ConfirmatoryEvidenceError("runtime trial manifest identity mismatch")
         preexisting_raw = start.get("preexisting_entries")
         if not isinstance(preexisting_raw, list) or not all(
@@ -428,7 +452,9 @@ def validate_block_records(
             or observation.alpha != spec.alpha
             or observation.effect_key != spec.effect_key
         ):
-            raise ConfirmatoryEvidenceError("retained observation does not match frozen trial identity")
+            raise ConfirmatoryEvidenceError(
+                "retained observation does not match frozen trial identity"
+            )
         hashes_raw = _object_dict(finish.get("evidence_sha256"), "trial.evidence_sha256")
         hashes: dict[str, str] = {}
         for name, digest in hashes_raw.items():
@@ -698,10 +724,7 @@ def derive_authoritative_trial(
         raise ConfirmatoryEvidenceError(
             f"retained P-M1 observation disagrees with lineage evidence: {observation.trial_id}"
         )
-    if (
-        observation.successor_admitted_while_predecessor_potentially_effectful
-        != unsafe_successor
-    ):
+    if observation.successor_admitted_while_predecessor_potentially_effectful != unsafe_successor:
         raise ConfirmatoryEvidenceError(
             f"retained P-M3 observation disagrees with execution evidence: {observation.trial_id}"
         )
@@ -765,10 +788,14 @@ def authoritative_confirmatory_corpus(
     supplied = tuple(supplied_trials)
     supplied_by_id = {trial.observation.trial_id: trial for trial in supplied}
     if len(supplied_by_id) != len(supplied):
-        raise ConfirmatoryEvidenceError("caller-supplied confirmatory corpus contains duplicate IDs")
+        raise ConfirmatoryEvidenceError(
+            "caller-supplied confirmatory corpus contains duplicate IDs"
+        )
     expected_ids = {spec.trial_id for spec in manifest}
     if set(supplied_by_id) != expected_ids:
-        raise ConfirmatoryEvidenceError("caller-supplied confirmatory corpus does not match manifest IDs")
+        raise ConfirmatoryEvidenceError(
+            "caller-supplied confirmatory corpus does not match manifest IDs"
+        )
     authoritative: list[AnalyzedTrial] = []
     for spec in manifest:
         execution_evidence = execution.get(spec.trial_id)
