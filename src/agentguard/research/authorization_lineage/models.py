@@ -106,6 +106,8 @@ class TrialObservation:
     arm: Arm
     provider: ProviderStratum
     schedule: Schedule
+    replicate: int
+    block_seed: str
     alpha: str
     effect_key: str
     root_or_slot_allocations: int
