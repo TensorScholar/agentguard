@@ -88,7 +88,7 @@ def exact_mcnemar_pvalue(a_wins: int, b_wins: int) -> float:
         return 1.0
     smaller = min(a_wins, b_wins)
     tail = sum(math.comb(discordant, i) for i in range(smaller + 1)) / (2**discordant)
-    return min(1.0, 2.0 * tail)
+    return float(min(1.0, 2.0 * tail))
 
 
 def holm_adjust(pvalues: dict[str, float]) -> dict[str, float]:
