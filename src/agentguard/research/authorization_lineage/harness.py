@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier, BrokenBarrierError
 from typing import Callable, TypeAlias, cast
 from uuid import uuid4
 
@@ -30,7 +32,8 @@ from .arms import (
 )
 from .fence import ConventionalReconciliationFence
 from .models import Arm, ProviderEvidence, ProviderStratum, Schedule, TrialObservation, TrialSpec
-from .provider import IndependentEffectOracleProcess, SimulatedProvider
+from .provider import IndependentEffectOracleProcess, OracleIsolationError, SimulatedProvider
+from .trace import HarnessInvalidReason, TrialTraceRecorder, invalid_observation, validate_trace
 
 ResearchArm: TypeAlias = A0Arm | A1Arm | B4Arm
 ResearchTicket: TypeAlias = AgentGuardTicket | B4Ticket
@@ -38,6 +41,10 @@ AuthorityToken: TypeAlias = AuthorityHandle | str
 
 
 class HarnessProtocolError(RuntimeError):
+    pass
+
+
+class HarnessScheduleError(HarnessProtocolError):
     pass
 
 
@@ -154,12 +161,46 @@ class DevTrialHarness:
             )
         )
 
+    @staticmethod
+    def _await_barrier(barrier: Barrier, trace: TrialTraceRecorder, participant: str) -> None:
+        trace.event("barrier.ready", participant=participant)
+        try:
+            barrier.wait(timeout=5.0)
+        except BrokenBarrierError as exc:
+            trace.event("barrier.failed", participant=participant)
+            raise HarnessScheduleError("required schedule barrier failed") from exc
+        trace.event("barrier.released", participant=participant)
+
+    @staticmethod
+    def _close_oracle(oracle_process: IndependentEffectOracleProcess) -> str | None:
+        try:
+            oracle_process.close()
+        except OracleIsolationError as exc:
+            return str(exc)
+        return None
+
     def run(self, spec: TrialSpec) -> TrialObservation:
         trial_root = self.root / spec.trial_id
         if trial_root.exists() and any(trial_root.iterdir()):
-            raise HarnessProtocolError("DEV trial namespace must be clean")
+            return invalid_observation(spec, HarnessInvalidReason.DIRTY_NAMESPACE)
         trial_root.mkdir(parents=True, exist_ok=True)
-        oracle_process = IndependentEffectOracleProcess(trial_root / "oracle.sqlite")
+        trace_path = trial_root / "trace.jsonl"
+        try:
+            trace = TrialTraceRecorder(trace_path, spec)
+        except OSError as exc:
+            return invalid_observation(
+                spec, HarnessInvalidReason.TRACE_CORRUPT, detail=type(exc).__name__
+            )
+
+        try:
+            oracle_process = IndependentEffectOracleProcess(trial_root / "oracle.sqlite")
+        except Exception as exc:
+            trace.event("harness.invalid", reason=HarnessInvalidReason.ORACLE_UNAVAILABLE.value)
+            trace.close()
+            return invalid_observation(
+                spec, HarnessInvalidReason.ORACLE_UNAVAILABLE, detail=type(exc).__name__
+            )
+
         provider = SimulatedProvider(trial_root / "provider.sqlite", oracle_process.sink)
         arm = self._arm(spec, trial_root)
         arm.register_alpha(spec.alpha, spec.effect_key)
@@ -169,6 +210,8 @@ class DevTrialHarness:
         operator_interventions = 0
         reconciliation_calls = 0
         unresolved = False
+        harness_invalid_reason: str | None = None
+        trace.event("schedule.enter", schedule=spec.schedule.value)
 
         try:
             if spec.schedule == Schedule.S0:
@@ -206,23 +249,31 @@ class DevTrialHarness:
                 try:
                     _, second = self._new_ticket(arm, spec)
                     self._dispatch(arm, second, spec=spec, provider=provider, behavior="normal")
-                except Exception:
-                    pass
+                except Exception as exc:
+                    trace.event("sut.rejection", phase="fresh-root-pressure", error=type(exc).__name__)
 
             elif spec.schedule == Schedule.S4:
-                def acquire_and_dispatch() -> bool:
+                barrier = Barrier(2)
+
+                def acquire_and_dispatch(worker: int) -> bool:
+                    self._await_barrier(barrier, trace, f"duplicate-{worker}")
                     try:
                         _, ticket = self._new_ticket(arm, spec)
-                        return self._try(
+                        admitted = self._try(
                             lambda: self._dispatch(
                                 arm, ticket, spec=spec, provider=provider, behavior="normal"
                             )
                         )
-                    except Exception:
+                        trace.event("s4.worker.result", worker=worker, admitted=admitted)
+                        return admitted
+                    except Exception as exc:
+                        trace.event("s4.worker.result", worker=worker, admitted=False, error=type(exc).__name__)
                         return False
 
                 with ThreadPoolExecutor(max_workers=2) as pool:
-                    list(pool.map(lambda _: acquire_and_dispatch(), range(2)))
+                    futures = [pool.submit(acquire_and_dispatch, worker) for worker in range(2)]
+                    for future in futures:
+                        future.result()
 
             elif spec.schedule == Schedule.S5:
                 authority, _ = self._new_ticket(arm, spec)
@@ -244,6 +295,7 @@ class DevTrialHarness:
                 if isinstance(arm, B4Arm):
                     b4_ticket = cast(B4Ticket, ticket)
                     attempt_id = arm.lineage.begin_attempt(spec.alpha, spec.provider)
+                    trace.event("s6.reserved", attempt_id=attempt_id, arm="B4")
                     try:
                         _, replacement = self._new_ticket(arm, spec)
                         self._try(
@@ -255,8 +307,8 @@ class DevTrialHarness:
                                 behavior="normal",
                             )
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        trace.event("sut.rejection", phase="s6-replacement", error=type(exc).__name__)
                     arm.lineage.mark_dispatching(spec.alpha, attempt_id)
                     provider.accept(
                         trial_id=spec.trial_id,
@@ -283,7 +335,8 @@ class DevTrialHarness:
                     )
                     error = arm.state.reserve_execution(verified, datetime.now(UTC))
                     if error is not None:
-                        raise HarnessProtocolError(error)
+                        raise RuntimeError(error)
+                    trace.event("s6.reserved", attempt_id=execution_id, arm=spec.arm.value)
                     lineage_attempt_id: str | None = None
                     if isinstance(arm, A1Arm):
                         arm.lineage.reserve_slot(spec.alpha)
@@ -299,8 +352,8 @@ class DevTrialHarness:
                                 behavior="normal",
                             )
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        trace.event("sut.rejection", phase="s6-replacement", error=type(exc).__name__)
                     protected_executor = _ResearchProviderExecutor(
                         provider_simulator=provider,
                         trial_id=spec.trial_id,
@@ -336,6 +389,7 @@ class DevTrialHarness:
                 unresolved = first_result.status == ExecutionStatus.UNKNOWN
                 roots_before = arm.root_allocations if isinstance(arm, A0Arm) else 1
                 admitted = self._safe_successor(arm, spec, provider, first_result)
+                trace.event("successor.pressure", admitted=admitted, predecessor=first_result.attempt_id)
                 if admitted:
                     unresolved = False
                     if spec.provider != ProviderStratum.P1:
@@ -344,8 +398,6 @@ class DevTrialHarness:
                         else:
                             unsafe_successor = True
                 if spec.schedule == Schedule.S10:
-                    # A cancellation acknowledgement is not provider no-effect proof. Releasing the
-                    # predecessor after replacement pressure exercises late execution; P1 dedups it.
                     provider.commit(first_result.attempt_id)
 
             elif spec.schedule == Schedule.S9:
@@ -358,6 +410,13 @@ class DevTrialHarness:
                 evidence = provider.status(first_result.attempt_id)
                 if spec.provider == ProviderStratum.P3:
                     evidence = provider.certify_no_effect_and_fence(first_result.attempt_id)
+                trace.event(
+                    "reconciliation.evidence",
+                    status=evidence.status,
+                    authoritative=evidence.authoritative,
+                    no_effect_certified=evidence.no_effect_certified,
+                    predecessor_fenced=evidence.predecessor_fenced,
+                )
                 roots_before = arm.root_allocations if isinstance(arm, A0Arm) else 1
                 admitted = False
                 if spec.provider in {ProviderStratum.P1, ProviderStratum.P3}:
@@ -391,6 +450,7 @@ class DevTrialHarness:
                 unresolved = True
                 reconciliation_calls += 2
                 t0 = datetime.now(UTC)
+                current_resolution: Callable[[], bool]
                 if isinstance(arm, B4Arm):
                     fence = ConventionalReconciliationFence(trial_root / "b4-fence.sqlite")
                     old = fence.claim(spec.alpha, "worker-old", now=t0, lease_seconds=1)
@@ -401,12 +461,14 @@ class DevTrialHarness:
                         lease_seconds=5,
                     )
                     if old is None or new is None:
-                        raise HarnessProtocolError("B4 fence setup failed")
+                        raise HarnessScheduleError("B4 reconciliation takeover could not be established")
                     stale_commit_accepted = fence.commit_is_current(
                         old, now=t0 + timedelta(seconds=2)
                     )
-                    if not fence.commit_is_current(new, now=t0 + timedelta(seconds=2)):
-                        raise HarnessProtocolError("B4 current fence rejected")
+
+                    def current_resolution() -> bool:
+                        return fence.commit_is_current(new, now=t0 + timedelta(seconds=2))
+
                 else:
                     old = arm.state.claim_reconciliation_lease(
                         first_result.attempt_id,
@@ -421,7 +483,9 @@ class DevTrialHarness:
                         lease_seconds=5,
                     )
                     if old is None or new is None:
-                        raise HarnessProtocolError("AgentGuard fence setup failed")
+                        raise HarnessScheduleError(
+                            "AgentGuard reconciliation takeover could not be established"
+                        )
                     recon_evidence = ReconciliationEvidence(
                         status=ReconciliationStatus.STILL_UNKNOWN,
                         source="research-provider",
@@ -439,31 +503,61 @@ class DevTrialHarness:
                         stale_commit_accepted = True
                     except ReconciliationLeaseError:
                         stale_commit_accepted = False
-                    with arm.state.resolution_lease(new):
-                        arm.state.record_execution_resolution(
-                            first_result.attempt_id,
-                            recon_evidence,
-                            t0 + timedelta(seconds=2),
-                        )
+
+                    def current_resolution() -> bool:
+                        with arm.state.resolution_lease(new):
+                            arm.state.record_execution_resolution(
+                                first_result.attempt_id,
+                                recon_evidence,
+                                t0 + timedelta(seconds=2),
+                            )
+                        return True
+
+                race_barrier = Barrier(2)
                 roots_before = arm.root_allocations if isinstance(arm, A0Arm) else 1
-                admitted = False
-                if spec.provider == ProviderStratum.P1:
-                    admitted = self._safe_successor(arm, spec, provider, first_result)
-                elif isinstance(arm, A0Arm) and not isinstance(arm, A1Arm):
-                    admitted = self._safe_successor(arm, spec, provider, first_result)
+
+                def resolve_current() -> bool:
+                    self._await_barrier(race_barrier, trace, "current-reconciler")
+                    accepted = current_resolution()
+                    trace.event("s11.current-resolution", accepted=accepted)
+                    return accepted
+
+                def pressure_successor() -> bool:
+                    self._await_barrier(race_barrier, trace, "successor")
+                    if spec.provider == ProviderStratum.P1:
+                        admitted_local = self._safe_successor(arm, spec, provider, first_result)
+                    elif isinstance(arm, A0Arm) and not isinstance(arm, A1Arm):
+                        admitted_local = self._safe_successor(arm, spec, provider, first_result)
+                    else:
+                        admitted_local = False
+                    trace.event("s11.successor", admitted=admitted_local)
+                    return admitted_local
+
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    resolution_future = pool.submit(resolve_current)
+                    successor_future = pool.submit(pressure_successor)
+                    if not resolution_future.result():
+                        raise HarnessScheduleError("current reconciler lost current fencing authority")
+                    admitted = successor_future.result()
                 if admitted:
                     unresolved = False
                     if spec.provider != ProviderStratum.P1:
                         unsafe_successor = arm.root_allocations > roots_before
 
             else:
-                raise HarnessProtocolError(f"unimplemented schedule: {spec.schedule.value}")
+                raise HarnessScheduleError(f"unimplemented schedule: {spec.schedule.value}")
 
-        except HarnessProtocolError:
-            oracle_process.close()
-            raise
-        except Exception:
+        except HarnessScheduleError as exc:
+            harness_invalid_reason = (
+                f"{HarnessInvalidReason.SCHEDULE_BARRIER_FAILURE.value}:{type(exc).__name__}"
+            )
+            trace.event("harness.invalid", reason=harness_invalid_reason)
+        except OracleIsolationError as exc:
+            harness_invalid_reason = f"{HarnessInvalidReason.ORACLE_UNAVAILABLE.value}:{type(exc).__name__}"
+            trace.event("harness.invalid", reason=harness_invalid_reason)
+        except Exception as exc:
             unresolved = True
+            trace.event("sut.exception", error=type(exc).__name__)
 
         duration = max(0.0, time.monotonic() - started)
         if isinstance(arm, A1Arm):
@@ -485,13 +579,15 @@ class DevTrialHarness:
             attempts = provider.sends(spec.trial_id)
             receipts = arm.receipts
             credentials = arm.credentials
-            independent_opportunities = 1 if spec.provider == ProviderStratum.P1 else allocations
+            independent_opportunities = allocations
 
         observation = TrialObservation(
             trial_id=spec.trial_id,
             arm=spec.arm,
             provider=spec.provider,
             schedule=spec.schedule,
+            replicate=spec.replicate,
+            block_seed=spec.block_seed,
             alpha=spec.alpha,
             effect_key=spec.effect_key,
             root_or_slot_allocations=allocations,
@@ -508,6 +604,35 @@ class DevTrialHarness:
             reconciliation_calls=reconciliation_calls,
             slot_hold_seconds=duration,
             duration_seconds=duration,
+            harness_invalid=harness_invalid_reason is not None,
+            harness_invalid_reason=harness_invalid_reason,
         )
-        oracle_process.close()
+        trace.event(
+            "trial.observation",
+            harness_invalid=observation.harness_invalid,
+            unresolved=observation.unresolved,
+            independent_slots=observation.independent_live_slots_max,
+            provider_sends=observation.provider_sends,
+        )
+        oracle_error = self._close_oracle(oracle_process)
+        if oracle_error is not None:
+            observation = replace(
+                observation,
+                harness_invalid=True,
+                harness_invalid_reason=(
+                    f"{HarnessInvalidReason.ORACLE_UNAVAILABLE.value}:{oracle_error}"
+                ),
+            )
+            trace.event("harness.invalid", reason=observation.harness_invalid_reason)
+        trace.event("trial.end", harness_invalid=observation.harness_invalid)
+        trace.close()
+        trace_valid, trace_error = validate_trace(trace_path, spec.trial_id)
+        if not trace_valid:
+            observation = replace(
+                observation,
+                harness_invalid=True,
+                harness_invalid_reason=(
+                    f"{HarnessInvalidReason.TRACE_CORRUPT.value}:{trace_error or 'unknown'}"
+                ),
+            )
         return observation
