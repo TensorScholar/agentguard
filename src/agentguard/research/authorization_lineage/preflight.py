@@ -4,11 +4,15 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import os
 import platform
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import cast
+
+import agentguard
 
 from .models import PROTOCOL_ID
 
@@ -79,6 +83,59 @@ def _lock_versions(path: Path) -> dict[str, str]:
     return versions
 
 
+def _agentguard_source() -> Path:
+    source = getattr(agentguard, "__file__", None)
+    if not isinstance(source, str) or not source:
+        raise ConfirmatoryPreflightError("AgentGuard package source provenance is unavailable")
+    return Path(source).resolve()
+
+
+def _runtime_sys_path() -> tuple[Path, ...]:
+    resolved: list[Path] = []
+    for entry in sys.path:
+        if not entry:
+            continue
+        resolved.append(Path(entry).resolve())
+    return tuple(resolved)
+
+
+def _verify_import_provenance(repo_root: Path) -> dict[str, object]:
+    pythonpath = os.environ.get("PYTHONPATH", "")
+    if pythonpath.strip():
+        raise ConfirmatoryPreflightError("unexpected PYTHONPATH import-path injection")
+
+    expected_source = (repo_root / "src" / "agentguard" / "__init__.py").resolve()
+    actual_source = _agentguard_source()
+    if actual_source != expected_source:
+        raise ConfirmatoryPreflightError(
+            f"AgentGuard package provenance drift: expected={expected_source}, actual={actual_source}"
+        )
+
+    repo_root_resolved = repo_root.resolve()
+    source_root = (repo_root / "src").resolve()
+    prefix = Path(sys.prefix).resolve()
+    base_prefix = Path(sys.base_prefix).resolve()
+    observed_paths = _runtime_sys_path()
+    unexpected: list[str] = []
+    for path in observed_paths:
+        if path in {repo_root_resolved, source_root}:
+            continue
+        if path.is_relative_to(prefix) or path.is_relative_to(base_prefix):
+            continue
+        unexpected.append(str(path))
+    if unexpected:
+        raise ConfirmatoryPreflightError(
+            "unexpected import-path provenance: " + ", ".join(sorted(unexpected))
+        )
+
+    return {
+        "agentguard_source": str(actual_source),
+        "repo_source_root": str(source_root),
+        "pythonpath": "",
+        "sys_path": [str(path) for path in observed_paths],
+    }
+
+
 def run_confirmatory_preflight(
     *,
     repo_root: Path,
@@ -101,8 +158,11 @@ def run_confirmatory_preflight(
         raise ConfirmatoryPreflightError(
             f"Git commit drift: expected={expected_git_commit}, actual={head}"
         )
-    if _git(repo_root, "status", "--porcelain", "--untracked-files=no"):
-        raise ConfirmatoryPreflightError("tracked repository state is dirty")
+    working_tree = _git(repo_root, "status", "--porcelain", "--untracked-files=all")
+    if working_tree:
+        raise ConfirmatoryPreflightError("repository working tree contains tracked or untracked drift")
+
+    import_provenance = _verify_import_provenance(repo_root)
 
     runtime = _object_dict(identity.get("runtime"), "runtime")
     observed_runtime = {
@@ -174,6 +234,7 @@ def run_confirmatory_preflight(
         "runtime_lock_sha256": actual_lock_sha,
         "runtime_dependencies": installed_versions,
         "git_objects": verified_objects,
+        "import_provenance": import_provenance,
     }
 
 
