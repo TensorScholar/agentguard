@@ -128,6 +128,17 @@ def validate_confirmatory_manifest(trials: Iterable[TrialSpec]) -> tuple[TrialSp
             raise ConfirmatoryCorpusError(f"confirmatory block {key} has invalid execution ordering")
         if len({trial.block_seed for trial in block}) != 1:
             raise ConfirmatoryCorpusError(f"confirmatory block {key} has inconsistent block_seed")
+        block_seed = block[0].block_seed
+        if _SHA256.fullmatch(block_seed) is None:
+            raise ConfirmatoryCorpusError(f"confirmatory block {key} has invalid block_seed")
+        expected_arms = list(Arm)
+        random.Random(int(block_seed, 16)).shuffle(expected_arms)
+        expected_order = dict(enumerate(expected_arms))
+        actual_order = {trial.execution_order: trial.arm for trial in block}
+        if actual_order != expected_order:
+            raise ConfirmatoryCorpusError(
+                f"confirmatory block {key} execution order does not match block_seed"
+            )
         if len({trial.alpha for trial in block}) != 1:
             raise ConfirmatoryCorpusError(f"confirmatory block {key} has inconsistent alpha")
         if len({trial.effect_key for trial in block}) != 1:
