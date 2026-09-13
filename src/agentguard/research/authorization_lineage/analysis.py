@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
@@ -20,9 +21,16 @@ from .models import (
 )
 from .provider import IndependentEffectOracleReader
 
+_SHA40 = re.compile(r"^[0-9a-f]{40}$")
+
 
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _require_commit_sha(value: str, name: str) -> None:
+    if _SHA40.fullmatch(value) is None:
+        raise ValueError(f"{name} must be an exact lowercase 40-hex commit SHA")
 
 
 def master_seed(
@@ -33,10 +41,16 @@ def master_seed(
     provider_oracle_sha: str,
     analysis_sha: str,
 ) -> str:
-    values = (a1_sha, b4_sha, harness_sha, provider_oracle_sha, analysis_sha)
-    if any(len(value) != 40 for value in values):
-        raise ValueError("all frozen implementation identifiers must be 40-hex commit SHAs")
-    material = PROTOCOL_ID + A0_SHA + "".join(values)
+    frozen = {
+        "A1_SHA": a1_sha,
+        "B4_SHA": b4_sha,
+        "HARNESS_SHA": harness_sha,
+        "PROVIDER_ORACLE_SHA": provider_oracle_sha,
+        "ANALYSIS_SHA": analysis_sha,
+    }
+    for name, value in frozen.items():
+        _require_commit_sha(value, name)
+    material = PROTOCOL_ID + A0_SHA + "".join(frozen.values())
     return _sha256_text(material)
 
 
@@ -94,26 +108,27 @@ def build_confirmatory_manifest(
 
 
 def write_manifest_once(path: Path, trials: Iterable[TrialSpec]) -> None:
-    if path.exists():
-        raise FileExistsError("confirmatory manifest is write-once")
+    """Atomically create the v1.0 manifest; an existing path is never overwritten."""
+
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = [asdict(trial) for trial in trials]
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n")
+    with path.open("x", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n")
 
 
 def analyze_trial(
     observation: TrialObservation,
     oracle: IndependentEffectOracleReader,
 ) -> AnalyzedTrial:
+    effects = oracle.effect_count(observation.trial_id)
     if observation.harness_invalid:
         return AnalyzedTrial(
             observation=observation,
-            oracle_effect_count=oracle.effect_count(observation.trial_id),
+            oracle_effect_count=effects,
             lineage_budget_violation=False,
             external_effect_violation=False,
             unsafe_successor_violation=False,
         )
-    effects = oracle.effect_count(observation.trial_id)
     lineage_violation = (
         observation.root_or_slot_allocations > 1 or observation.independent_live_slots_max > 1
     )
@@ -129,6 +144,8 @@ def analyze_trial(
 
 
 def summarize(trials: Iterable[AnalyzedTrial]) -> dict[str, object]:
+    """Summarize retained observations without using SUT state as external-effect truth."""
+
     grouped: dict[tuple[str, str, str], list[AnalyzedTrial]] = defaultdict(list)
     invalid = 0
     for trial in trials:
@@ -144,6 +161,9 @@ def summarize(trials: Iterable[AnalyzedTrial]) -> dict[str, object]:
     cells: dict[str, object] = {}
     for key, items in sorted(grouped.items()):
         label = "/".join(key)
+        legitimate_completions = sum(
+            item.oracle_effect_count == 1 and not item.observation.unresolved for item in items
+        )
         cells[label] = {
             "n": len(items),
             "primary_violations": sum(item.primary_violation for item in items),
@@ -151,9 +171,7 @@ def summarize(trials: Iterable[AnalyzedTrial]) -> dict[str, object]:
             "external_effect_violations": sum(item.external_effect_violation for item in items),
             "unsafe_successor_violations": sum(item.unsafe_successor_violation for item in items),
             "max_effect_count": max(item.oracle_effect_count for item in items),
-            "legitimate_completion_rate": (
-                sum(item.observation.legitimate_completion for item in items) / len(items)
-            ),
+            "legitimate_completion_rate": legitimate_completions / len(items),
             "unresolved_rate": sum(item.observation.unresolved for item in items) / len(items),
         }
     return {"invalid_trials": invalid, "cells": cells}
