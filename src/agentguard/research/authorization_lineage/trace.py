@@ -120,6 +120,10 @@ def invalid_observation(
 def _jsonable(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
+    if isinstance(value, bytes):
+        return {"encoding": "hex", "value": value.hex()}
+    if isinstance(value, Path):
+        return str(value)
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set, frozenset)):
@@ -141,13 +145,13 @@ def _sqlite_snapshot(path: Path) -> dict[str, object]:
                 continue
             safe_table = table.replace('"', '""')
             rows = connection.execute(f'SELECT * FROM "{safe_table}"').fetchall()
-            tables[table] = [dict(row) for row in rows]
+            tables[table] = [_jsonable(dict(row)) for row in rows]
         snapshot["tables"] = tables
     return snapshot
 
 
 def build_forensic_bundle(trial_root: Path, analyzed: AnalyzedTrial) -> dict[str, object]:
-    """Collect the retained harness/SUT/provider/oracle evidence for a primary violation."""
+    """Collect retained harness/SUT/provider/oracle evidence for a primary violation."""
 
     trace_path = trial_root / "trace.jsonl"
     trace_records: list[object] = []
