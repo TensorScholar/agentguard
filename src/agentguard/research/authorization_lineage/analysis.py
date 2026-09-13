@@ -270,13 +270,13 @@ def _validate_observation_matches_spec(trial: AnalyzedTrial, spec: TrialSpec) ->
             )
 
 
-def analyze_confirmatory_study(
+def validate_confirmatory_corpus(
     trials: Iterable[AnalyzedTrial],
     manifest: Iterable[TrialSpec],
     *,
     expected_manifest_sha256: str,
-) -> dict[str, object]:
-    """Analyze only an exact corpus bound to the separately frozen confirmatory manifest."""
+) -> tuple[AnalyzedTrial, ...]:
+    """Prove that no generated confirmatory trial is missing, duplicated, extra, or mismatched."""
 
     if _SHA256.fullmatch(expected_manifest_sha256) is None:
         raise ConfirmatoryCorpusError("expected_manifest_sha256 must be exact lowercase SHA-256")
@@ -306,7 +306,24 @@ def analyze_confirmatory_study(
 
     for trial in corpus:
         _validate_observation_matches_spec(trial, manifest_by_id[trial.observation.trial_id])
+    return corpus
 
+
+def analyze_confirmatory_study(
+    trials: Iterable[AnalyzedTrial],
+    manifest: Iterable[TrialSpec],
+    *,
+    expected_manifest_sha256: str,
+) -> dict[str, object]:
+    """Analyze only an exact corpus bound to the separately frozen confirmatory manifest."""
+
+    frozen_manifest = validate_confirmatory_manifest(manifest)
+    corpus = validate_confirmatory_corpus(
+        trials,
+        frozen_manifest,
+        expected_manifest_sha256=expected_manifest_sha256,
+    )
+    actual_manifest_sha256 = manifest_sha256(frozen_manifest)
     report = analyze_study(corpus)
     report["confirmatory_corpus"] = {
         "exact_manifest_match": True,
