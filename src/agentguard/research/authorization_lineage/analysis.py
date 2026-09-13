@@ -8,6 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from .confirmatory import ConfirmatoryEvidenceError, authoritative_confirmatory_corpus
 from .models import (
     A0_SHA,
     APPLICABLE_STRATA,
@@ -291,7 +292,7 @@ def validate_confirmatory_corpus(
     *,
     expected_manifest_sha256: str,
 ) -> tuple[AnalyzedTrial, ...]:
-    """Prove that no generated confirmatory trial is missing, duplicated, extra, or mismatched."""
+    """Validate complete corpus identity only; strict scoring is evidence-derived separately."""
 
     if _SHA256.fullmatch(expected_manifest_sha256) is None:
         raise ConfirmatoryCorpusError("expected_manifest_sha256 must be exact lowercase SHA-256")
@@ -329,15 +330,27 @@ def analyze_confirmatory_study(
     manifest: Iterable[TrialSpec],
     *,
     expected_manifest_sha256: str,
+    evidence_root: Path,
+    sequence_root: Path,
 ) -> dict[str, object]:
-    """Analyze only an exact corpus bound to the separately frozen confirmatory manifest."""
+    """Analyze only an exact corpus whose scoring is re-derived from retained evidence."""
 
     frozen_manifest = validate_confirmatory_manifest(manifest)
-    corpus = validate_confirmatory_corpus(
+    structural_corpus = validate_confirmatory_corpus(
         trials,
         frozen_manifest,
         expected_manifest_sha256=expected_manifest_sha256,
     )
+    try:
+        corpus = authoritative_confirmatory_corpus(
+            structural_corpus,
+            frozen_manifest,
+            evidence_root=evidence_root,
+            expected_manifest_sha256=expected_manifest_sha256,
+            sequence_root=sequence_root,
+        )
+    except ConfirmatoryEvidenceError as exc:
+        raise ConfirmatoryCorpusError(str(exc)) from exc
     actual_manifest_sha256 = manifest_sha256(frozen_manifest)
     report = analyze_study(corpus)
     report["confirmatory_corpus"] = {
@@ -346,6 +359,8 @@ def analyze_confirmatory_study(
         "generated_trials": len(frozen_manifest),
         "corpus_trials": len(corpus),
         "silent_omissions": 0,
+        "authoritative_scoring": "retained-evidence-recomputed",
+        "execution_order_evidence": "hash-chained-block-sequences",
     }
     return report
 
