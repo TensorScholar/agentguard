@@ -172,13 +172,16 @@ def test_confirmatory_corpus_rejects_flag_only_invalidation():
         harness_invalid_reason=HarnessInvalidReason.TRACE_CORRUPT.value,
     )
     mechanical = (replace(corpus[0], observation=mechanical_observation),) + corpus[1:]
-    assert len(
-        validate_confirmatory_corpus(
-            mechanical,
-            manifest,
-            expected_manifest_sha256=digest,
+    assert (
+        len(
+            validate_confirmatory_corpus(
+                mechanical,
+                manifest,
+                expected_manifest_sha256=digest,
+            )
         )
-    ) == 10_800
+        == 10_800
+    )
 
 
 def test_confirmatory_corpus_rejects_manifest_digest_drift():

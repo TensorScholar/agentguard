@@ -121,11 +121,15 @@ def validate_confirmatory_manifest(trials: Iterable[TrialSpec]) -> tuple[TrialSp
 
     for key, block in blocks.items():
         if len(block) != len(Arm):
-            raise ConfirmatoryCorpusError(f"confirmatory block {key} must contain exactly three arms")
+            raise ConfirmatoryCorpusError(
+                f"confirmatory block {key} must contain exactly three arms"
+            )
         if {trial.arm for trial in block} != set(Arm):
             raise ConfirmatoryCorpusError(f"confirmatory block {key} has invalid arm membership")
         if {trial.execution_order for trial in block} != {0, 1, 2}:
-            raise ConfirmatoryCorpusError(f"confirmatory block {key} has invalid execution ordering")
+            raise ConfirmatoryCorpusError(
+                f"confirmatory block {key} has invalid execution ordering"
+            )
         if len({trial.block_seed for trial in block}) != 1:
             raise ConfirmatoryCorpusError(f"confirmatory block {key} has inconsistent block_seed")
         block_seed = block[0].block_seed

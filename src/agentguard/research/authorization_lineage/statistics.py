@@ -298,12 +298,8 @@ def _comparison_report(
     b4_only_violation = sum(
         _primary_violation(b4) and not _primary_violation(a1) for a1, b4 in pairs
     )
-    a1_only_completion = sum(
-        _completion(a1) > _completion(b4) for a1, b4 in pairs
-    )
-    b4_only_completion = sum(
-        _completion(b4) > _completion(a1) for a1, b4 in pairs
-    )
+    a1_only_completion = sum(_completion(a1) > _completion(b4) for a1, b4 in pairs)
+    b4_only_completion = sum(_completion(b4) > _completion(a1) for a1, b4 in pairs)
     return {
         "n_pairs": len(pairs),
         "primary_violation_exact_mcnemar_p": exact_mcnemar_pvalue(
@@ -313,9 +309,7 @@ def _comparison_report(
             "A1_only": a1_only_violation,
             "B4_only": b4_only_violation,
         },
-        "completion_exact_mcnemar_p": exact_mcnemar_pvalue(
-            a1_only_completion, b4_only_completion
-        ),
+        "completion_exact_mcnemar_p": exact_mcnemar_pvalue(a1_only_completion, b4_only_completion),
         "completion_discordance": {
             "A1_only": a1_only_completion,
             "B4_only": b4_only_completion,

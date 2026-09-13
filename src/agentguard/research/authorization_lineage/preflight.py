@@ -194,7 +194,9 @@ def main() -> int:
         parser.error(str(exc))
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        args.output.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     else:
         print(json.dumps(report, indent=2, sort_keys=True))
     return 0
