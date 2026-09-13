@@ -129,9 +129,9 @@ def analyze_trial(
             external_effect_violation=False,
             unsafe_successor_violation=False,
         )
-    lineage_violation = (
-        observation.root_or_slot_allocations > 1 or observation.independent_live_slots_max > 1
-    )
+    # Raw root/grant count is a secondary endpoint. A second root can be a safe continuation of the
+    # same slot under P1 or a P3 fenced transfer; P-M1 concerns independent effect opportunities.
+    lineage_violation = observation.independent_live_slots_max > 1
     return AnalyzedTrial(
         observation=observation,
         oracle_effect_count=effects,
@@ -171,6 +171,12 @@ def summarize(trials: Iterable[AnalyzedTrial]) -> dict[str, object]:
             "external_effect_violations": sum(item.external_effect_violation for item in items),
             "unsafe_successor_violations": sum(item.unsafe_successor_violation for item in items),
             "max_effect_count": max(item.oracle_effect_count for item in items),
+            "max_independent_effect_opportunities": max(
+                item.observation.independent_live_slots_max for item in items
+            ),
+            "max_root_or_slot_allocations": max(
+                item.observation.root_or_slot_allocations for item in items
+            ),
             "legitimate_completion_rate": legitimate_completions / len(items),
             "unresolved_rate": sum(item.observation.unresolved for item in items) / len(items),
         }
