@@ -16,7 +16,12 @@ from .statistics import (
     holm_adjust,
     safety_cell_reports,
 )
-from .trace import HarnessInvalidReason, build_forensic_bundle, validate_trace, write_forensic_bundle
+from .trace import (
+    HarnessInvalidReason,
+    build_forensic_bundle,
+    validate_trace,
+    write_forensic_bundle,
+)
 
 __all__ = [
     "A0Arm",

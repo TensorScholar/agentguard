@@ -208,9 +208,9 @@ def safety_cell_reports(trials: Iterable[AnalyzedTrial]) -> dict[str, dict[str, 
     grouped: dict[tuple[str, str, str], list[AnalyzedTrial]] = defaultdict(list)
     for trial in retained:
         observation = trial.observation
-        grouped[(observation.arm.value, observation.provider.value, observation.schedule.value)].append(
-            trial
-        )
+        grouped[
+            (observation.arm.value, observation.provider.value, observation.schedule.value)
+        ].append(trial)
     reports: dict[str, dict[str, object]] = {}
     for key, items in sorted(grouped.items()):
         violations = sum(_primary_violation(item) for item in items)
@@ -292,8 +292,12 @@ def _comparison_report(
         statistic=mean,
         material=material + "|operator-mean-ratio",
     )
-    a1_only_violation = sum(_primary_violation(a1) and not _primary_violation(b4) for a1, b4 in pairs)
-    b4_only_violation = sum(_primary_violation(b4) and not _primary_violation(a1) for a1, b4 in pairs)
+    a1_only_violation = sum(
+        _primary_violation(a1) and not _primary_violation(b4) for a1, b4 in pairs
+    )
+    b4_only_violation = sum(
+        _primary_violation(b4) and not _primary_violation(a1) for a1, b4 in pairs
+    )
     return {
         "n_pairs": len(pairs),
         "primary_violation_exact_mcnemar_p": exact_mcnemar_pvalue(

@@ -217,7 +217,11 @@ class AuthorizationInstanceLedger:
                 raise LineageLedgerError("lineage.authorization_instance_missing")
             state = SlotState(str(row["slot_state"]))
             normal_admission = state == SlotState.RESERVED and row["active_attempt_id"] is None
-            p1_retry = allow_same_slot_retry and provider == ProviderStratum.P1 and state == SlotState.UNKNOWN
+            p1_retry = (
+                allow_same_slot_retry
+                and provider == ProviderStratum.P1
+                and state == SlotState.UNKNOWN
+            )
             if p1_retry:
                 if idempotency_key is None:
                     connection.execute("ROLLBACK")

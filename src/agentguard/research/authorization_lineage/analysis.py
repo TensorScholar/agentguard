@@ -80,12 +80,15 @@ def build_confirmatory_manifest(
                 block_seed = _sha256_text(f"{seed}{provider.value}{schedule.value}{replicate}")
                 arms = list(Arm)
                 random.Random(int(block_seed, 16)).shuffle(arms)
-                alpha = "alpha_" + _sha256_text(
-                    f"{provider.value}|{schedule.value}|{replicate}"
-                )[:24]
-                effect_key = "effect_" + _sha256_text(
-                    f"logical-effect|{provider.value}|{schedule.value}|{replicate}"
-                )[:24]
+                alpha = (
+                    "alpha_" + _sha256_text(f"{provider.value}|{schedule.value}|{replicate}")[:24]
+                )
+                effect_key = (
+                    "effect_"
+                    + _sha256_text(f"logical-effect|{provider.value}|{schedule.value}|{replicate}")[
+                        :24
+                    ]
+                )
                 for order, arm in enumerate(arms):
                     trial_id = (
                         f"confirm-{provider.value}-{schedule.value}-{replicate:03d}-"
@@ -104,7 +107,9 @@ def build_confirmatory_manifest(
                         )
                     )
     if len(trials) != 10_800:
-        raise AssertionError(f"preregistered manifest must contain 10,800 trials, got {len(trials)}")
+        raise AssertionError(
+            f"preregistered manifest must contain 10,800 trials, got {len(trials)}"
+        )
     return tuple(trials)
 
 

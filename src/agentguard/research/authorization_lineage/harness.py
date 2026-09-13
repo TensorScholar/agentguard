@@ -216,7 +216,9 @@ class DevTrialHarness:
         try:
             if spec.schedule == Schedule.S0:
                 _, ticket = self._new_ticket(arm, spec)
-                result = self._dispatch(arm, ticket, spec=spec, provider=provider, behavior="normal")
+                result = self._dispatch(
+                    arm, ticket, spec=spec, provider=provider, behavior="normal"
+                )
                 unresolved = result.status == ExecutionStatus.UNKNOWN
 
             elif spec.schedule == Schedule.S1:
@@ -250,7 +252,9 @@ class DevTrialHarness:
                     _, second = self._new_ticket(arm, spec)
                     self._dispatch(arm, second, spec=spec, provider=provider, behavior="normal")
                 except Exception as exc:
-                    trace.event("sut.rejection", phase="fresh-root-pressure", error=type(exc).__name__)
+                    trace.event(
+                        "sut.rejection", phase="fresh-root-pressure", error=type(exc).__name__
+                    )
 
             elif spec.schedule == Schedule.S4:
                 barrier = Barrier(2)
@@ -267,7 +271,12 @@ class DevTrialHarness:
                         trace.event("s4.worker.result", worker=worker, admitted=admitted)
                         return admitted
                     except Exception as exc:
-                        trace.event("s4.worker.result", worker=worker, admitted=False, error=type(exc).__name__)
+                        trace.event(
+                            "s4.worker.result",
+                            worker=worker,
+                            admitted=False,
+                            error=type(exc).__name__,
+                        )
                         return False
 
                 with ThreadPoolExecutor(max_workers=2) as pool:
@@ -308,7 +317,9 @@ class DevTrialHarness:
                             )
                         )
                     except Exception as exc:
-                        trace.event("sut.rejection", phase="s6-replacement", error=type(exc).__name__)
+                        trace.event(
+                            "sut.rejection", phase="s6-replacement", error=type(exc).__name__
+                        )
                     arm.lineage.mark_dispatching(spec.alpha, attempt_id)
                     provider.accept(
                         trial_id=spec.trial_id,
@@ -353,7 +364,9 @@ class DevTrialHarness:
                             )
                         )
                     except Exception as exc:
-                        trace.event("sut.rejection", phase="s6-replacement", error=type(exc).__name__)
+                        trace.event(
+                            "sut.rejection", phase="s6-replacement", error=type(exc).__name__
+                        )
                     protected_executor = _ResearchProviderExecutor(
                         provider_simulator=provider,
                         trial_id=spec.trial_id,
@@ -389,7 +402,9 @@ class DevTrialHarness:
                 unresolved = first_result.status == ExecutionStatus.UNKNOWN
                 roots_before = arm.root_allocations if isinstance(arm, A0Arm) else 1
                 admitted = self._safe_successor(arm, spec, provider, first_result)
-                trace.event("successor.pressure", admitted=admitted, predecessor=first_result.attempt_id)
+                trace.event(
+                    "successor.pressure", admitted=admitted, predecessor=first_result.attempt_id
+                )
                 if admitted:
                     unresolved = False
                     if spec.provider != ProviderStratum.P1:
@@ -461,7 +476,9 @@ class DevTrialHarness:
                         lease_seconds=5,
                     )
                     if old is None or new is None:
-                        raise HarnessScheduleError("B4 reconciliation takeover could not be established")
+                        raise HarnessScheduleError(
+                            "B4 reconciliation takeover could not be established"
+                        )
                     stale_commit_accepted = fence.commit_is_current(
                         old, now=t0 + timedelta(seconds=2)
                     )
@@ -537,7 +554,9 @@ class DevTrialHarness:
                     resolution_future = pool.submit(resolve_current)
                     successor_future = pool.submit(pressure_successor)
                     if not resolution_future.result():
-                        raise HarnessScheduleError("current reconciler lost current fencing authority")
+                        raise HarnessScheduleError(
+                            "current reconciler lost current fencing authority"
+                        )
                     admitted = successor_future.result()
                 if admitted:
                     unresolved = False
@@ -553,7 +572,9 @@ class DevTrialHarness:
             )
             trace.event("harness.invalid", reason=harness_invalid_reason)
         except OracleIsolationError as exc:
-            harness_invalid_reason = f"{HarnessInvalidReason.ORACLE_UNAVAILABLE.value}:{type(exc).__name__}"
+            harness_invalid_reason = (
+                f"{HarnessInvalidReason.ORACLE_UNAVAILABLE.value}:{type(exc).__name__}"
+            )
             trace.event("harness.invalid", reason=harness_invalid_reason)
         except Exception as exc:
             unresolved = True
