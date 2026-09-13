@@ -78,12 +78,15 @@ class TrialSpec:
     schedule: Schedule
     replicate: int
     block_seed: str
+    execution_order: int
     alpha: str
     effect_key: str
 
     def __post_init__(self) -> None:
         if self.replicate < 0:
             raise ValueError("replicate must be non-negative")
+        if not 0 <= self.execution_order <= 2:
+            raise ValueError("execution_order must lie in [0, 2]")
         if self.provider not in APPLICABLE_STRATA[self.schedule]:
             raise ValueError("schedule/provider pair is outside preregistered matrix")
         if not self.trial_id or not self.alpha or not self.effect_key:
@@ -107,6 +110,7 @@ class TrialObservation:
     schedule: Schedule
     replicate: int
     block_seed: str
+    execution_order: int
     alpha: str
     effect_key: str
     root_or_slot_allocations: int
