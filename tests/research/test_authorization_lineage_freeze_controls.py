@@ -4,6 +4,7 @@ import hashlib
 import json
 import random
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -219,7 +220,7 @@ def test_holm_family_is_secondary_completion_and_primary_falsifiers_are_unadjust
     assert "primary_violation_mcnemar_holm_p" not in provider_report
 
 
-def _write_preflight_identity(tmp_path):
+def _write_preflight_identity(tmp_path: Path) -> Path:
     lock = tmp_path / "runtime-lock.txt"
     lock.write_text("demo-runtime==1.0\n", encoding="utf-8")
     fixture = tmp_path / "fixture.txt"
@@ -253,11 +254,20 @@ def _write_preflight_identity(tmp_path):
     return identity_path
 
 
-def _patch_preflight_environment(monkeypatch, *, head: str, demo_version: str = "1.0"):
+def _patch_preflight_environment(
+    monkeypatch,
+    *,
+    repo_root: Path,
+    head: str,
+    demo_version: str = "1.0",
+    status_output: str = "",
+    agentguard_source: Path | None = None,
+    sys_paths: tuple[Path, ...] | None = None,
+) -> None:
     def fake_git(_root, *args):
         values = {
             ("rev-parse", "HEAD"): head,
-            ("status", "--porcelain", "--untracked-files=no"): "",
+            ("status", "--porcelain", "--untracked-files=all"): status_output,
             ("--version",): "git version 2.44.0",
             ("hash-object", "fixture.txt"): "fixture-blob",
         }
@@ -277,19 +287,24 @@ def _patch_preflight_environment(monkeypatch, *, head: str, demo_version: str = 
             return demo_version
         raise AssertionError(name)
 
+    expected_source = agentguard_source or repo_root / "src" / "agentguard" / "__init__.py"
+    expected_paths = sys_paths or (repo_root, repo_root / "src", Path(preflight.sys.prefix))
     monkeypatch.setattr(preflight, "_git", fake_git)
     monkeypatch.setattr(preflight, "_command", fake_command)
+    monkeypatch.setattr(preflight, "_agentguard_source", lambda: expected_source.resolve())
+    monkeypatch.setattr(preflight, "_runtime_sys_path", lambda: tuple(path.resolve() for path in expected_paths))
     monkeypatch.setattr(preflight.platform, "python_implementation", lambda: "CPython")
     monkeypatch.setattr(preflight.platform, "python_version", lambda: "3.12.10")
     monkeypatch.setattr(preflight.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(preflight.platform, "machine", lambda: "arm64")
     monkeypatch.setattr(preflight.importlib.metadata, "version", fake_version)
+    monkeypatch.delenv("PYTHONPATH", raising=False)
 
 
 def test_confirmatory_preflight_fails_closed_on_commit_drift(tmp_path, monkeypatch):
     expected = "a" * 40
     identity_path = _write_preflight_identity(tmp_path)
-    _patch_preflight_environment(monkeypatch, head=expected)
+    _patch_preflight_environment(monkeypatch, repo_root=tmp_path, head=expected)
     report = run_confirmatory_preflight(
         repo_root=tmp_path,
         expected_git_commit=expected,
@@ -297,7 +312,7 @@ def test_confirmatory_preflight_fails_closed_on_commit_drift(tmp_path, monkeypat
     )
     assert report["status"] == "PASS"
 
-    _patch_preflight_environment(monkeypatch, head="b" * 40)
+    _patch_preflight_environment(monkeypatch, repo_root=tmp_path, head="b" * 40)
     with pytest.raises(ConfirmatoryPreflightError, match="Git commit drift"):
         run_confirmatory_preflight(
             repo_root=tmp_path,
@@ -309,8 +324,80 @@ def test_confirmatory_preflight_fails_closed_on_commit_drift(tmp_path, monkeypat
 def test_confirmatory_preflight_fails_closed_on_dependency_drift(tmp_path, monkeypatch):
     expected = "a" * 40
     identity_path = _write_preflight_identity(tmp_path)
-    _patch_preflight_environment(monkeypatch, head=expected, demo_version="2.0")
+    _patch_preflight_environment(
+        monkeypatch,
+        repo_root=tmp_path,
+        head=expected,
+        demo_version="2.0",
+    )
     with pytest.raises(ConfirmatoryPreflightError, match="runtime dependency drift"):
+        run_confirmatory_preflight(
+            repo_root=tmp_path,
+            expected_git_commit=expected,
+            identity_path=identity_path,
+        )
+
+
+@pytest.mark.parametrize("status", [" M tracked.py", "?? rogue.txt", "?? roguepkg/__init__.py"])
+def test_confirmatory_preflight_rejects_tracked_and_untracked_drift(
+    tmp_path, monkeypatch, status
+):
+    expected = "a" * 40
+    identity_path = _write_preflight_identity(tmp_path)
+    _patch_preflight_environment(
+        monkeypatch,
+        repo_root=tmp_path,
+        head=expected,
+        status_output=status,
+    )
+    with pytest.raises(ConfirmatoryPreflightError, match="tracked or untracked drift"):
+        run_confirmatory_preflight(
+            repo_root=tmp_path,
+            expected_git_commit=expected,
+            identity_path=identity_path,
+        )
+
+
+def test_confirmatory_preflight_rejects_pythonpath_injection(tmp_path, monkeypatch):
+    expected = "a" * 40
+    identity_path = _write_preflight_identity(tmp_path)
+    _patch_preflight_environment(monkeypatch, repo_root=tmp_path, head=expected)
+    monkeypatch.setenv("PYTHONPATH", "/tmp/confirmatory-injection")
+    with pytest.raises(ConfirmatoryPreflightError, match="PYTHONPATH"):
+        run_confirmatory_preflight(
+            repo_root=tmp_path,
+            expected_git_commit=expected,
+            identity_path=identity_path,
+        )
+
+
+def test_confirmatory_preflight_rejects_package_provenance_drift(tmp_path, monkeypatch):
+    expected = "a" * 40
+    identity_path = _write_preflight_identity(tmp_path)
+    _patch_preflight_environment(
+        monkeypatch,
+        repo_root=tmp_path,
+        head=expected,
+        agentguard_source=tmp_path / "elsewhere" / "agentguard" / "__init__.py",
+    )
+    with pytest.raises(ConfirmatoryPreflightError, match="package provenance drift"):
+        run_confirmatory_preflight(
+            repo_root=tmp_path,
+            expected_git_commit=expected,
+            identity_path=identity_path,
+        )
+
+
+def test_confirmatory_preflight_rejects_unexpected_sys_path(tmp_path, monkeypatch):
+    expected = "a" * 40
+    identity_path = _write_preflight_identity(tmp_path)
+    _patch_preflight_environment(
+        monkeypatch,
+        repo_root=tmp_path,
+        head=expected,
+        sys_paths=(tmp_path, tmp_path / "src", Path("/tmp/confirmatory-injection")),
+    )
+    with pytest.raises(ConfirmatoryPreflightError, match="import-path provenance"):
         run_confirmatory_preflight(
             repo_root=tmp_path,
             expected_git_commit=expected,
