@@ -1,7 +1,7 @@
 """Authorization-lineage comparative experiment implementation.
 
-This package is research-only and bound to AG-LINEAGE-PREREG-v1.0. Importing it does not alter
-AgentGuard production enforcement paths.
+Research-only code bound to AG-LINEAGE-PREREG-v1.0. DEV helpers remain available, but only the
+canonical study/session path can emit a ConfirmatoryReport.
 """
 
 from .analysis import (
@@ -9,6 +9,7 @@ from .analysis import (
     analyze_confirmatory_study,
     analyze_trial,
     build_confirmatory_manifest,
+    create_confirmatory_session,
     manifest_sha256,
     master_seed,
     summarize,
@@ -16,19 +17,19 @@ from .analysis import (
     validate_confirmatory_manifest,
 )
 from .arms import A0Arm, A1Arm, B4Arm
-from .confirmatory import (
-    ConfirmatoryEvidenceError,
-    TrialExecutionEvidence,
-    authoritative_confirmatory_corpus,
-    block_sequence_filename,
-    derive_authoritative_trial,
-    run_confirmatory_block,
-    validate_block_execution,
-    validate_execution_sequences,
-    verify_supplied_analysis,
+from .canonical import (
+    CanonicalStudySession,
+    ConfirmatoryReport,
+    ConfirmatorySessionError,
+    ConfirmatoryStudyInvalidError,
+    ReplacementExhaustedError,
+    ReplacementRequiredError,
+    canonical_trial_identity,
+    trial_identity_sha256,
 )
 from .harness import DevTrialHarness
 from .models import A0_SHA, PREREG_SHA256, PROTOCOL_ID, Arm, ProviderStratum, Schedule, TrialSpec
+from .preflight import preflight_digest, run_confirmatory_preflight
 from .provider import IndependentEffectOracleReader, SimulatedProvider
 from .statistics import (
     analyze_study,
@@ -50,39 +51,41 @@ __all__ = [
     "A1Arm",
     "Arm",
     "B4Arm",
+    "CanonicalStudySession",
     "ConfirmatoryCorpusError",
-    "ConfirmatoryEvidenceError",
+    "ConfirmatoryReport",
+    "ConfirmatorySessionError",
+    "ConfirmatoryStudyInvalidError",
     "DevTrialHarness",
     "HarnessInvalidReason",
     "IndependentEffectOracleReader",
     "PREREG_SHA256",
     "PROTOCOL_ID",
     "ProviderStratum",
+    "ReplacementExhaustedError",
+    "ReplacementRequiredError",
     "Schedule",
     "SimulatedProvider",
-    "TrialExecutionEvidence",
     "TrialSpec",
     "analyze_confirmatory_study",
     "analyze_study",
     "analyze_trial",
-    "authoritative_confirmatory_corpus",
-    "block_sequence_filename",
     "build_confirmatory_manifest",
     "build_forensic_bundle",
-    "derive_authoritative_trial",
+    "canonical_trial_identity",
+    "create_confirmatory_session",
     "exact_binomial_interval",
     "exact_mcnemar_pvalue",
     "holm_adjust",
     "manifest_sha256",
     "master_seed",
-    "run_confirmatory_block",
+    "preflight_digest",
+    "run_confirmatory_preflight",
     "safety_cell_reports",
     "summarize",
-    "validate_block_execution",
+    "trial_identity_sha256",
     "validate_confirmatory_corpus",
     "validate_confirmatory_manifest",
-    "validate_execution_sequences",
     "validate_trace",
-    "verify_supplied_analysis",
     "write_forensic_bundle",
 ]

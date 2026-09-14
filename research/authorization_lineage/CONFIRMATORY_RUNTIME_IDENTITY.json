@@ -15,6 +15,10 @@
     "path": "requirements/confirmatory-runtime-lock.txt",
     "sha256": "0215fa3eb39d8f3ce38ae6463aaeafaaec5bb742d3745386cf5f030fe2ede6e6"
   },
+  "clarification": {
+    "path": "research/authorization_lineage/PROTOCOL_CLARIFICATION_v1.0.json",
+    "sha256": "7f5f22694412643624c8074ed2a2676c3cafa0e6b272b70988a589b656a95779"
+  },
   "git_objects": {
     "schemas": {
       "kind": "tree",
@@ -40,6 +44,11 @@
       "kind": "blob",
       "path": "pyproject.toml",
       "sha": "75e4afcfdc863f62a9c1672eef883b4fd9ef175f"
+    },
+    "protocol_clarification": {
+      "kind": "blob",
+      "path": "research/authorization_lineage/PROTOCOL_CLARIFICATION_v1.0.json",
+      "sha": "2f444ccf26c5299908b06a8c5ab9a8878ec9ea20"
     }
   },
   "capture_evidence": {

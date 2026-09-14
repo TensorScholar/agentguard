@@ -8,7 +8,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from .confirmatory import ConfirmatoryEvidenceError, authoritative_confirmatory_corpus
+from .canonical import (
+    CanonicalStudySession,
+    ConfirmatoryReport,
+    ConfirmatorySessionError,
+)
 from .models import (
     A0_SHA,
     APPLICABLE_STRATA,
@@ -292,7 +296,7 @@ def validate_confirmatory_corpus(
     *,
     expected_manifest_sha256: str,
 ) -> tuple[AnalyzedTrial, ...]:
-    """Validate complete corpus identity only; strict scoring is evidence-derived separately."""
+    """DEV structural helper; canonical confirmatory reporting derives attempts internally."""
 
     if _SHA256.fullmatch(expected_manifest_sha256) is None:
         raise ConfirmatoryCorpusError("expected_manifest_sha256 must be exact lowercase SHA-256")
@@ -325,47 +329,62 @@ def validate_confirmatory_corpus(
     return corpus
 
 
-def analyze_confirmatory_study(
-    trials: Iterable[AnalyzedTrial],
-    manifest: Iterable[TrialSpec],
+def create_confirmatory_session(
     *,
+    repo_root: Path,
+    study_parent: Path,
+    manifest: Iterable[TrialSpec],
     expected_manifest_sha256: str,
-    evidence_root: Path,
-    sequence_root: Path,
-) -> dict[str, object]:
-    """Analyze only an exact corpus whose scoring is re-derived from retained evidence."""
+    expected_git_commit: str,
+) -> CanonicalStudySession:
+    """Register the only admissible confirmatory execution namespace for a frozen manifest."""
 
     frozen_manifest = validate_confirmatory_manifest(manifest)
-    structural_corpus = validate_confirmatory_corpus(
-        trials,
-        frozen_manifest,
-        expected_manifest_sha256=expected_manifest_sha256,
-    )
+    actual_manifest_sha = manifest_sha256(frozen_manifest)
+    if actual_manifest_sha != expected_manifest_sha256:
+        raise ConfirmatoryCorpusError("confirmatory manifest SHA-256 mismatch")
     try:
-        corpus = authoritative_confirmatory_corpus(
-            structural_corpus,
-            frozen_manifest,
-            evidence_root=evidence_root,
+        return CanonicalStudySession.create_confirmatory(
+            repo_root=repo_root,
+            study_parent=study_parent,
+            manifest=frozen_manifest,
             expected_manifest_sha256=expected_manifest_sha256,
-            sequence_root=sequence_root,
+            expected_git_commit=expected_git_commit,
         )
-    except ConfirmatoryEvidenceError as exc:
+    except ConfirmatorySessionError as exc:
         raise ConfirmatoryCorpusError(str(exc)) from exc
-    actual_manifest_sha256 = manifest_sha256(frozen_manifest)
-    report = analyze_study(corpus)
-    report["confirmatory_corpus"] = {
-        "exact_manifest_match": True,
-        "manifest_sha256": actual_manifest_sha256,
-        "generated_trials": len(frozen_manifest),
-        "corpus_trials": len(corpus),
-        "silent_omissions": 0,
-        "authoritative_scoring": "retained-evidence-recomputed",
-        "execution_order_evidence": "hash-chained-block-sequences",
-    }
-    return report
+
+
+def analyze_confirmatory_study(
+    manifest: Iterable[TrialSpec],
+    *,
+    repo_root: Path,
+    study_root: Path,
+    expected_manifest_sha256: str,
+) -> ConfirmatoryReport:
+    """Emit the canonical report only from the registered study + durable attempt lineage."""
+
+    frozen_manifest = validate_confirmatory_manifest(manifest)
+    actual_manifest_sha = manifest_sha256(frozen_manifest)
+    if actual_manifest_sha != expected_manifest_sha256:
+        raise ConfirmatoryCorpusError("confirmatory manifest SHA-256 mismatch")
+    try:
+        session = CanonicalStudySession.load_confirmatory(
+            repo_root=repo_root,
+            study_root=study_root,
+        )
+        if session.manifest != frozen_manifest:
+            raise ConfirmatorySessionError(
+                "canonical study manifest does not exactly match supplied frozen manifest"
+            )
+        if session.record.manifest_sha256 != expected_manifest_sha256:
+            raise ConfirmatorySessionError("canonical study manifest identity mismatch")
+        return session.emit_report()
+    except ConfirmatorySessionError as exc:
+        raise ConfirmatoryCorpusError(str(exc)) from exc
 
 
 def summarize(trials: Iterable[AnalyzedTrial]) -> dict[str, object]:
-    """DEV-only helper for synthetic/unit fixtures; not a confirmatory analysis entry point."""
+    """DEV-only helper for synthetic/unit fixtures; never emits ConfirmatoryReport."""
 
     return analyze_study(trials)

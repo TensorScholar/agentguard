@@ -136,13 +136,18 @@ def _verify_import_provenance(repo_root: Path) -> dict[str, object]:
     }
 
 
+def preflight_digest(report: dict[str, object]) -> str:
+    canonical = json.dumps(report, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 def run_confirmatory_preflight(
     *,
     repo_root: Path,
     expected_git_commit: str,
     identity_path: Path | None = None,
 ) -> dict[str, object]:
-    """Fail closed on any drift from the separately frozen confirmatory runtime identity."""
+    """Fail closed on drift from the frozen confirmatory runtime + clarification identity."""
 
     repo_root = repo_root.resolve()
     if _SHA40.fullmatch(expected_git_commit) is None:
@@ -158,6 +163,7 @@ def run_confirmatory_preflight(
         raise ConfirmatoryPreflightError(
             f"Git commit drift: expected={expected_git_commit}, actual={head}"
         )
+    tree = _git(repo_root, "rev-parse", "HEAD^{tree}")
     working_tree = _git(repo_root, "status", "--porcelain", "--untracked-files=all")
     if working_tree:
         raise ConfirmatoryPreflightError(
@@ -227,15 +233,32 @@ def run_confirmatory_preflight(
             )
         verified_objects[label] = actual_sha
 
+    clarification = _object_dict(identity.get("clarification"), "clarification")
+    clarification_path = repo_root / _string(clarification.get("path"), "clarification.path")
+    expected_clarification_sha = _string(clarification.get("sha256"), "clarification.sha256")
+    actual_clarification_sha = hashlib.sha256(clarification_path.read_bytes()).hexdigest()
+    if actual_clarification_sha != expected_clarification_sha:
+        raise ConfirmatoryPreflightError("protocol clarification SHA-256 mismatch")
+    clarification_blob = verified_objects.get("protocol_clarification")
+    if clarification_blob is None:
+        raise ConfirmatoryPreflightError(
+            "protocol clarification must be bound as git_objects.protocol_clarification"
+        )
+
+    identity_sha = hashlib.sha256(identity_file.read_bytes()).hexdigest()
     return {
         "protocol": PROTOCOL_ID,
         "status": "PASS",
         "expected_git_commit": expected_git_commit,
         "actual_git_commit": head,
+        "actual_git_tree": tree,
+        "runtime_identity_sha256": identity_sha,
         "runtime": observed_runtime,
         "runtime_lock_sha256": actual_lock_sha,
         "runtime_dependencies": installed_versions,
         "git_objects": verified_objects,
+        "clarification_sha256": actual_clarification_sha,
+        "clarification_git_blob": clarification_blob,
         "import_provenance": import_provenance,
     }
 

@@ -26,6 +26,7 @@ from agentguard.research.authorization_lineage.models import (
 )
 from agentguard.research.authorization_lineage.preflight import (
     ConfirmatoryPreflightError,
+    preflight_digest,
     run_confirmatory_preflight,
 )
 from agentguard.research.authorization_lineage.trace import HarnessInvalidReason
@@ -118,36 +119,20 @@ def test_confirmatory_corpus_rejects_missing_duplicate_and_mismatched_trials():
     manifest = _synthetic_manifest()
     digest = manifest_sha256(manifest)
     corpus = tuple(_analyzed(spec) for spec in manifest)
-    validated = validate_confirmatory_corpus(
-        corpus,
-        manifest,
-        expected_manifest_sha256=digest,
-    )
+    validated = validate_confirmatory_corpus(corpus, manifest, expected_manifest_sha256=digest)
     assert len(validated) == 10_800
 
     with pytest.raises(ConfirmatoryCorpusError, match="corpus size mismatch"):
-        validate_confirmatory_corpus(
-            corpus[:-1],
-            manifest,
-            expected_manifest_sha256=digest,
-        )
+        validate_confirmatory_corpus(corpus[:-1], manifest, expected_manifest_sha256=digest)
 
     duplicated = corpus[:-1] + (corpus[0],)
     with pytest.raises(ConfirmatoryCorpusError, match="duplicate trial_id"):
-        validate_confirmatory_corpus(
-            duplicated,
-            manifest,
-            expected_manifest_sha256=digest,
-        )
+        validate_confirmatory_corpus(duplicated, manifest, expected_manifest_sha256=digest)
 
     mismatched_observation = replace(corpus[0].observation, effect_key="DEV-MISMATCH")
     mismatched = (replace(corpus[0], observation=mismatched_observation),) + corpus[1:]
     with pytest.raises(ConfirmatoryCorpusError, match="does not match manifest"):
-        validate_confirmatory_corpus(
-            mismatched,
-            manifest,
-            expected_manifest_sha256=digest,
-        )
+        validate_confirmatory_corpus(mismatched, manifest, expected_manifest_sha256=digest)
 
 
 def test_confirmatory_corpus_rejects_flag_only_invalidation():
@@ -161,11 +146,7 @@ def test_confirmatory_corpus_rejects_flag_only_invalidation():
     )
     flag_only = (replace(corpus[0], observation=flag_only_observation),) + corpus[1:]
     with pytest.raises(ConfirmatoryCorpusError, match="lacks mechanical invalidation reason"):
-        validate_confirmatory_corpus(
-            flag_only,
-            manifest,
-            expected_manifest_sha256=digest,
-        )
+        validate_confirmatory_corpus(flag_only, manifest, expected_manifest_sha256=digest)
 
     mechanical_observation = replace(
         corpus[0].observation,
@@ -174,13 +155,7 @@ def test_confirmatory_corpus_rejects_flag_only_invalidation():
     )
     mechanical = (replace(corpus[0], observation=mechanical_observation),) + corpus[1:]
     assert (
-        len(
-            validate_confirmatory_corpus(
-                mechanical,
-                manifest,
-                expected_manifest_sha256=digest,
-            )
-        )
+        len(validate_confirmatory_corpus(mechanical, manifest, expected_manifest_sha256=digest))
         == 10_800
     )
 
@@ -189,11 +164,7 @@ def test_confirmatory_corpus_rejects_manifest_digest_drift():
     manifest = _synthetic_manifest()
     corpus = tuple(_analyzed(spec) for spec in manifest)
     with pytest.raises(ConfirmatoryCorpusError, match="manifest SHA-256 mismatch"):
-        validate_confirmatory_corpus(
-            corpus,
-            manifest,
-            expected_manifest_sha256="0" * 64,
-        )
+        validate_confirmatory_corpus(corpus, manifest, expected_manifest_sha256="0" * 64)
 
 
 def test_holm_family_is_secondary_completion_and_primary_falsifiers_are_unadjusted():
@@ -220,11 +191,18 @@ def test_holm_family_is_secondary_completion_and_primary_falsifiers_are_unadjust
     assert "primary_violation_mcnemar_holm_p" not in provider_report
 
 
+def _git_blob_sha(path: Path) -> str:
+    data = path.read_bytes()
+    return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
+
+
 def _write_preflight_identity(tmp_path: Path) -> Path:
     lock = tmp_path / "runtime-lock.txt"
     lock.write_text("demo-runtime==1.0\n", encoding="utf-8")
     fixture = tmp_path / "fixture.txt"
     fixture.write_text("fixture\n", encoding="utf-8")
+    clarification = tmp_path / "clarification.json"
+    clarification.write_text('{"maximum_replacements":1}\n', encoding="utf-8")
     identity = {
         "protocol": "AG-LINEAGE-PREREG-v1.0",
         "runtime": {
@@ -241,12 +219,17 @@ def _write_preflight_identity(tmp_path: Path) -> Path:
             "path": "runtime-lock.txt",
             "sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
         },
+        "clarification": {
+            "path": "clarification.json",
+            "sha256": hashlib.sha256(clarification.read_bytes()).hexdigest(),
+        },
         "git_objects": {
-            "fixture": {
+            "fixture": {"kind": "blob", "path": "fixture.txt", "sha": "fixture-blob"},
+            "protocol_clarification": {
                 "kind": "blob",
-                "path": "fixture.txt",
-                "sha": "fixture-blob",
-            }
+                "path": "clarification.json",
+                "sha": _git_blob_sha(clarification),
+            },
         },
     }
     identity_path = tmp_path / "identity.json"
@@ -264,12 +247,17 @@ def _patch_preflight_environment(
     agentguard_source: Path | None = None,
     sys_paths: tuple[Path, ...] | None = None,
 ) -> None:
+    clarification = repo_root / "clarification.json"
+    clarification_blob = _git_blob_sha(clarification)
+
     def fake_git(_root, *args):
         values = {
             ("rev-parse", "HEAD"): head,
+            ("rev-parse", "HEAD^{tree}"): "tree-dev",
             ("status", "--porcelain", "--untracked-files=all"): status_output,
             ("--version",): "git version 2.44.0",
             ("hash-object", "fixture.txt"): "fixture-blob",
+            ("hash-object", "clarification.json"): clarification_blob,
         }
         return values[args]
 
@@ -313,6 +301,9 @@ def test_confirmatory_preflight_fails_closed_on_commit_drift(tmp_path, monkeypat
         identity_path=identity_path,
     )
     assert report["status"] == "PASS"
+    assert report["actual_git_tree"] == "tree-dev"
+    assert report["clarification_sha256"]
+    assert len(preflight_digest(report)) == 64
 
     _patch_preflight_environment(monkeypatch, repo_root=tmp_path, head="b" * 40)
     with pytest.raises(ConfirmatoryPreflightError, match="Git commit drift"):
@@ -326,12 +317,7 @@ def test_confirmatory_preflight_fails_closed_on_commit_drift(tmp_path, monkeypat
 def test_confirmatory_preflight_fails_closed_on_dependency_drift(tmp_path, monkeypatch):
     expected = "a" * 40
     identity_path = _write_preflight_identity(tmp_path)
-    _patch_preflight_environment(
-        monkeypatch,
-        repo_root=tmp_path,
-        head=expected,
-        demo_version="2.0",
-    )
+    _patch_preflight_environment(monkeypatch, repo_root=tmp_path, head=expected, demo_version="2.0")
     with pytest.raises(ConfirmatoryPreflightError, match="runtime dependency drift"):
         run_confirmatory_preflight(
             repo_root=tmp_path,
@@ -345,10 +331,7 @@ def test_confirmatory_preflight_rejects_tracked_and_untracked_drift(tmp_path, mo
     expected = "a" * 40
     identity_path = _write_preflight_identity(tmp_path)
     _patch_preflight_environment(
-        monkeypatch,
-        repo_root=tmp_path,
-        head=expected,
-        status_output=status,
+        monkeypatch, repo_root=tmp_path, head=expected, status_output=status
     )
     with pytest.raises(ConfirmatoryPreflightError, match="tracked or untracked drift"):
         run_confirmatory_preflight(
@@ -398,6 +381,32 @@ def test_confirmatory_preflight_rejects_unexpected_sys_path(tmp_path, monkeypatc
         sys_paths=(tmp_path, tmp_path / "src", Path("/tmp/confirmatory-injection")),
     )
     with pytest.raises(ConfirmatoryPreflightError, match="import-path provenance"):
+        run_confirmatory_preflight(
+            repo_root=tmp_path,
+            expected_git_commit=expected,
+            identity_path=identity_path,
+        )
+
+
+def test_confirmatory_preflight_rejects_clarification_drift(tmp_path, monkeypatch):
+    expected = "a" * 40
+    identity_path = _write_preflight_identity(tmp_path)
+    _patch_preflight_environment(monkeypatch, repo_root=tmp_path, head=expected)
+    (tmp_path / "clarification.json").write_text('{"maximum_replacements":2}\n', encoding="utf-8")
+    with pytest.raises(ConfirmatoryPreflightError, match="clarification SHA-256 mismatch"):
+        run_confirmatory_preflight(
+            repo_root=tmp_path,
+            expected_git_commit=expected,
+            identity_path=identity_path,
+        )
+
+
+def test_confirmatory_preflight_rejects_runtime_lock_file_drift(tmp_path, monkeypatch):
+    expected = "a" * 40
+    identity_path = _write_preflight_identity(tmp_path)
+    _patch_preflight_environment(monkeypatch, repo_root=tmp_path, head=expected)
+    (tmp_path / "runtime-lock.txt").write_text("demo-runtime==2.0\n", encoding="utf-8")
+    with pytest.raises(ConfirmatoryPreflightError, match="runtime lock SHA-256 mismatch"):
         run_confirmatory_preflight(
             repo_root=tmp_path,
             expected_git_commit=expected,
