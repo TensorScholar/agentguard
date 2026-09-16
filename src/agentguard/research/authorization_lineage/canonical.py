@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -907,7 +908,7 @@ class CanonicalStudySession:
             _session_token=_SESSION_TOKEN,
         )
 
-    def _append_lifecycle(self, event: str, payload: dict[str, object]) -> str:
+    def _append_lifecycle(self, event: str, payload: Mapping[str, object]) -> str:
         local = {
             "event": event,
             "study_execution_id": self.record.study_execution_id,
@@ -918,7 +919,7 @@ class CanonicalStudySession:
         durable_payload["local_ledger_record_sha256"] = local_sha
         return self.commitments.append(event, durable_payload)
 
-    def _append_sequence(self, event: str, payload: dict[str, object]) -> str:
+    def _append_sequence(self, event: str, payload: Mapping[str, object]) -> str:
         existing = _read_jsonl(self.sequence_ledger) if self.sequence_ledger.exists() else ()
         previous_hash = str(existing[-1].get("record_sha256")) if existing else "0" * 64
         unsigned = {
