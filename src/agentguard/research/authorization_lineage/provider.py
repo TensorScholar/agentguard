@@ -252,8 +252,8 @@ class SimulatedProvider:
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.state_path, timeout=30.0)
-        connection.row_factory = sqlite3.Row
         try:
+            connection.row_factory = sqlite3.Row
             with connection:
                 yield connection
         finally:

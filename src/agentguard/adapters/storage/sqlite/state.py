@@ -259,13 +259,13 @@ class SQLiteState:
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         c = sqlite3.connect(self.path, timeout=10, isolation_level=None)
-        c.row_factory = sqlite3.Row
-        c.execute("PRAGMA busy_timeout=10000")
-        c.execute("PRAGMA foreign_keys=ON")
-        c.execute("PRAGMA trusted_schema=OFF")
-        c.execute("PRAGMA synchronous=FULL")
-        c.execute("PRAGMA secure_delete=ON")
         try:
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA busy_timeout=10000")
+            c.execute("PRAGMA foreign_keys=ON")
+            c.execute("PRAGMA trusted_schema=OFF")
+            c.execute("PRAGMA synchronous=FULL")
+            c.execute("PRAGMA secure_delete=ON")
             with c:
                 yield c
         finally:
