@@ -5,9 +5,9 @@ import json
 import os
 import re
 import sqlite3
-from contextlib import closing
 import subprocess
 from collections.abc import Mapping
+from contextlib import closing
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
