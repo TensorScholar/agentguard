@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sqlite3
+from contextlib import closing
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -393,11 +394,26 @@ def _hash_tree(root: Path) -> tuple[str, dict[str, str]]:
     return _sha256_json(hashes), hashes
 
 
+def _assert_sqlite_settled(root: Path) -> None:
+    if not root.exists():
+        return
+    unsettled = sorted(
+        str(path.relative_to(root))
+        for path in root.rglob("*")
+        if path.is_file() and path.name.endswith(("-wal", "-shm", "-journal"))
+    )
+    if unsettled:
+        raise ConfirmatorySessionError(
+            "SQLite evidence is not settled before durable evidence commitment: "
+            + ", ".join(unsettled)
+        )
+
+
 def _sqlite_row_count(path: Path, table: str) -> int:
     if not path.exists():
         return 0
     try:
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection:
             row = connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()
     except sqlite3.Error:
         return 0
@@ -408,7 +424,7 @@ def _sqlite_has_user_rows(path: Path) -> bool:
     if not path.exists():
         return False
     try:
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection:
             tables = connection.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             ).fetchall()
@@ -1369,17 +1385,20 @@ class CanonicalStudySession:
                 trial_root=trial_root,
                 external_machine_failure=external_failure,
             )
+            _assert_sqlite_settled(attempt_root)
             evidence_tree_sha, evidence_files = _hash_tree(attempt_root)
         except OSError as exc:
             phase = phase_evidence(trial_root, spec.trial_id)
             if phase.interpretable_state_reached:
                 disposition = AttemptDisposition.STUDY_INVALID
                 invalidation_reason = "late_external_machine_failure"
-                evidence_tree_sha, evidence_files = _hash_tree(attempt_root)
+                _assert_sqlite_settled(attempt_root)
+            evidence_tree_sha, evidence_files = _hash_tree(attempt_root)
             else:
                 disposition = AttemptDisposition.INVALID_NON_INTERPRETABLE
                 invalidation_reason = HarnessInvalidReason.EXTERNAL_MACHINE_FAILURE.value
-                evidence_tree_sha, evidence_files = _hash_tree(attempt_root)
+                _assert_sqlite_settled(attempt_root)
+            evidence_tree_sha, evidence_files = _hash_tree(attempt_root)
             external_failure = type(exc).__name__
         evidence_commitment = _sha256_json(
             {

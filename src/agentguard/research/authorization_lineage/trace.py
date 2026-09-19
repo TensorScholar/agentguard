@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 import threading
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -134,7 +135,7 @@ def _jsonable(value: Any) -> Any:
 
 def _sqlite_snapshot(path: Path) -> dict[str, object]:
     snapshot: dict[str, object] = {"path": str(path.name), "tables": {}}
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         connection.row_factory = sqlite3.Row
         table_rows = connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, Protocol, Sequence, cast
@@ -625,7 +626,7 @@ def _mechanically_proven_invalidation(
 def _a0_independent_opportunities(path: Path) -> int:
     if not path.exists():
         raise ConfirmatoryEvidenceError("A0 authority ledger evidence is missing")
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         row = connection.execute(
             "SELECT COUNT(*) FROM authority_grants WHERE parent_grant_id IS NULL"
         ).fetchone()
@@ -637,7 +638,7 @@ def _a0_independent_opportunities(path: Path) -> int:
 def _lineage_independent_opportunities(path: Path, alpha: str) -> int:
     if not path.exists():
         raise ConfirmatoryEvidenceError("lineage ledger evidence is missing")
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         rows = connection.execute(
             """
             SELECT provider_stratum,idempotency_key,potentially_effectful
@@ -661,7 +662,7 @@ def _lineage_independent_opportunities(path: Path, alpha: str) -> int:
 def _provider_operations(path: Path) -> tuple[tuple[int, int], ...]:
     if not path.exists():
         raise ConfirmatoryEvidenceError("provider execution evidence is missing")
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         rows = connection.execute(
             "SELECT effect_committed,fenced FROM operations ORDER BY rowid"
         ).fetchall()

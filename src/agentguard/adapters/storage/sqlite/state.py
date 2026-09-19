@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from typing import Iterator
 
 from agentguard.domain import (
     ApprovalReceipt,
@@ -254,7 +256,8 @@ class SQLiteState:
                 c.execute("ROLLBACK")
                 raise
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         c = sqlite3.connect(self.path, timeout=10, isolation_level=None)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA busy_timeout=10000")
@@ -262,7 +265,11 @@ class SQLiteState:
         c.execute("PRAGMA trusted_schema=OFF")
         c.execute("PRAGMA synchronous=FULL")
         c.execute("PRAGMA secure_delete=ON")
-        return c
+        try:
+            with c:
+                yield c
+        finally:
+            c.close()
 
     @staticmethod
     def _execution_record(row: sqlite3.Row | tuple[object, ...]) -> ExecutionRecord:

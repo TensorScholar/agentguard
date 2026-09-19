@@ -1,9 +1,21 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Iterator
+
+
+@contextmanager
+def _sqlite_connection(path: Path) -> Iterator[sqlite3.Connection]:
+    connection = sqlite3.connect(path)
+    try:
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 @dataclass(frozen=True)
@@ -31,7 +43,7 @@ class ConventionalReconciliationFence:
     def __init__(self, path: Path) -> None:
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(path) as connection:
+        with _sqlite_connection(path) as connection:
             connection.executescript(self._SCHEMA)
 
     def claim(
@@ -41,7 +53,7 @@ class ConventionalReconciliationFence:
             raise ValueError("now must be timezone-aware")
         now = now.astimezone(UTC)
         expires_at = now + timedelta(seconds=lease_seconds)
-        with sqlite3.connect(self.path) as connection:
+        with _sqlite_connection(self.path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT owner,token,expires_at FROM leases WHERE alpha=?", (alpha,)
@@ -74,7 +86,7 @@ class ConventionalReconciliationFence:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("now must be timezone-aware")
         now = now.astimezone(UTC)
-        with sqlite3.connect(self.path) as connection:
+        with _sqlite_connection(self.path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT owner,token,expires_at FROM leases WHERE alpha=?", (lease.alpha,)
