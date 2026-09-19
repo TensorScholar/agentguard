@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from contextlib import closing
 import threading
+from contextlib import closing
 from dataclasses import asdict
 from datetime import UTC, datetime
 from enum import Enum
