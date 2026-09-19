@@ -4,7 +4,6 @@ import gc
 import hashlib
 import sqlite3
 from contextlib import closing
-from dataclasses import replace
 from pathlib import Path
 from typing import Iterator
 
