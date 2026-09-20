@@ -1393,12 +1393,12 @@ class CanonicalStudySession:
                 disposition = AttemptDisposition.STUDY_INVALID
                 invalidation_reason = "late_external_machine_failure"
                 _assert_sqlite_settled(attempt_root)
-            evidence_tree_sha, evidence_files = _hash_tree(attempt_root)
+                evidence_tree_sha, evidence_files = _hash_tree(attempt_root)
             else:
                 disposition = AttemptDisposition.INVALID_NON_INTERPRETABLE
                 invalidation_reason = HarnessInvalidReason.EXTERNAL_MACHINE_FAILURE.value
                 _assert_sqlite_settled(attempt_root)
-            evidence_tree_sha, evidence_files = _hash_tree(attempt_root)
+                evidence_tree_sha, evidence_files = _hash_tree(attempt_root)
             external_failure = type(exc).__name__
         evidence_commitment = _sha256_json(
             {
