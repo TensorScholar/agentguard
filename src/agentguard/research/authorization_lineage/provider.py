@@ -23,9 +23,7 @@ class OracleIsolationError(RuntimeError):
 
 
 @contextmanager
-def _sqlite_connection(
-    path: Path, *, timeout: float = 5.0
-) -> Iterator[sqlite3.Connection]:
+def _sqlite_connection(path: Path, *, timeout: float = 5.0) -> Iterator[sqlite3.Connection]:
     connection = sqlite3.connect(path, timeout=timeout)
     try:
         with connection:

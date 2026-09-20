@@ -269,8 +269,7 @@ def test_real_wal_trial_is_settled_and_authoritative_rehash_is_stable(
         for path in study_root.rglob("lineage.sqlite")
     )
     oracle_rows = sum(
-        _row_count(original_connect, path, "effects")
-        for path in study_root.rglob("oracle.sqlite")
+        _row_count(original_connect, path, "effects") for path in study_root.rglob("oracle.sqlite")
     )
 
     assert agentguard_rows > 0
