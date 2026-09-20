@@ -54,13 +54,21 @@ def master_seed(
     harness_sha: str,
     provider_oracle_sha: str,
     analysis_sha: str,
+    canonical_sha: str,
+    confirmatory_sha: str,
+    trace_sha: str,
+    evidence_store_sha: str,
 ) -> str:
     frozen = {
         "A1_SHA": a1_sha,
+        "ANALYSIS_SHA": analysis_sha,
         "B4_SHA": b4_sha,
+        "CANONICAL_SHA": canonical_sha,
+        "CONFIRMATORY_SHA": confirmatory_sha,
+        "EVIDENCE_STORE_SHA": evidence_store_sha,
         "HARNESS_SHA": harness_sha,
         "PROVIDER_ORACLE_SHA": provider_oracle_sha,
-        "ANALYSIS_SHA": analysis_sha,
+        "TRACE_SHA": trace_sha,
     }
     for name, value in frozen.items():
         _require_commit_sha(value, name)
@@ -163,6 +171,10 @@ def build_confirmatory_manifest(
     harness_sha: str,
     provider_oracle_sha: str,
     analysis_sha: str,
+    canonical_sha: str,
+    confirmatory_sha: str,
+    trace_sha: str,
+    evidence_store_sha: str,
     replicates: int = _CONFIRMATORY_REPLICATES,
 ) -> tuple[TrialSpec, ...]:
     if replicates != _CONFIRMATORY_REPLICATES:
@@ -173,6 +185,10 @@ def build_confirmatory_manifest(
         harness_sha=harness_sha,
         provider_oracle_sha=provider_oracle_sha,
         analysis_sha=analysis_sha,
+        canonical_sha=canonical_sha,
+        confirmatory_sha=confirmatory_sha,
+        trace_sha=trace_sha,
+        evidence_store_sha=evidence_store_sha,
     )
     trials: list[TrialSpec] = []
     for schedule in Schedule:
