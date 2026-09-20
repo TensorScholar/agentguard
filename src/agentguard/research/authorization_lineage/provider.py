@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import multiprocessing
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from multiprocessing.connection import Connection
 from pathlib import Path
+from typing import Iterator
 from uuid import uuid4
 
 from .models import ProviderEvidence, ProviderStratum
@@ -18,6 +20,16 @@ def _sha256(value: str) -> str:
 
 class OracleIsolationError(RuntimeError):
     pass
+
+
+@contextmanager
+def _sqlite_connection(path: Path, *, timeout: float = 5.0) -> Iterator[sqlite3.Connection]:
+    connection = sqlite3.connect(path, timeout=timeout)
+    try:
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 _ORACLE_SCHEMA = """
@@ -41,7 +53,7 @@ def _oracle_worker(path_text: str, receiver: Connection, ready_sender: Connectio
     path = Path(path_text)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(path) as connection:
+        with _sqlite_connection(path) as connection:
             connection.executescript(_ORACLE_SCHEMA)
         ready_sender.send("READY")
     except Exception as exc:
@@ -59,7 +71,7 @@ def _oracle_worker(path_text: str, receiver: Connection, ready_sender: Connectio
                 return
             if not isinstance(message, tuple) or len(message) != 8:
                 raise OracleIsolationError("oracle.invalid_append_message")
-            with sqlite3.connect(path) as connection:
+            with _sqlite_connection(path) as connection:
                 connection.execute(
                     """
                     INSERT INTO effects(
@@ -182,14 +194,14 @@ class IndependentEffectOracleReader:
         self.path = path
 
     def effect_count(self, trial_id: str) -> int:
-        with sqlite3.connect(self.path) as connection:
+        with _sqlite_connection(self.path) as connection:
             row = connection.execute(
                 "SELECT COUNT(*) FROM effects WHERE trial_id=?", (trial_id,)
             ).fetchone()
         return int(row[0]) if row is not None else 0
 
     def rows(self, trial_id: str) -> tuple[tuple[object, ...], ...]:
-        with sqlite3.connect(self.path) as connection:
+        with _sqlite_connection(self.path) as connection:
             rows = connection.execute(
                 """
                 SELECT sequence,effect_id,provider_stratum,attempt_id,
@@ -231,14 +243,19 @@ class SimulatedProvider:
     def __init__(self, state_path: Path, oracle_sink: OracleAppendSink) -> None:
         self.state_path = state_path
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(state_path) as connection:
+        with _sqlite_connection(state_path) as connection:
             connection.executescript(self._SCHEMA)
         self._oracle_sink = oracle_sink
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.state_path, timeout=30.0)
-        connection.row_factory = sqlite3.Row
-        return connection
+        try:
+            connection.row_factory = sqlite3.Row
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     @staticmethod
     def _now() -> str:
