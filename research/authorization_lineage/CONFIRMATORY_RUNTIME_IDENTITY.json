@@ -1,0 +1,60 @@
+{
+  "protocol": "AG-LINEAGE-PREREG-v1.0",
+  "expected_git_commit_source": "required_external_frozen_implementation_record",
+  "runtime": {
+    "python_implementation": "CPython",
+    "python_version": "3.12.10",
+    "system": "Darwin",
+    "machine": "arm64",
+    "macos_version": "26.5.2",
+    "macos_build": "25F84",
+    "pip_version": "26.2.1",
+    "git_version": "2.44.0"
+  },
+  "lock": {
+    "path": "requirements/confirmatory-runtime-lock.txt",
+    "sha256": "0215fa3eb39d8f3ce38ae6463aaeafaaec5bb742d3745386cf5f030fe2ede6e6"
+  },
+  "clarification": {
+    "path": "research/authorization_lineage/PROTOCOL_CLARIFICATION_v1.0.json",
+    "sha256": "7f5f22694412643624c8074ed2a2676c3cafa0e6b272b70988a589b656a95779"
+  },
+  "git_objects": {
+    "schemas": {
+      "kind": "tree",
+      "path": "schemas",
+      "sha": "70e09c55b8c642bf8a2ad592b328c1378bd3787a"
+    },
+    "policy_fixture": {
+      "kind": "blob",
+      "path": "src/agentguard/resources/default_policy_v2.yaml",
+      "sha": "bfd10bfe45a1dff09d13f771cb03b94943b49cc8"
+    },
+    "intent_fixture": {
+      "kind": "blob",
+      "path": "src/agentguard/resources/demo-intent.json",
+      "sha": "02edcba8586f1e01a5df1b7dad604e2408005a7d"
+    },
+    "python_selector": {
+      "kind": "blob",
+      "path": ".python-version",
+      "sha": "e4fba2183587225f216eeada4c78dfab6b2e65f5"
+    },
+    "project_metadata": {
+      "kind": "blob",
+      "path": "pyproject.toml",
+      "sha": "75e4afcfdc863f62a9c1672eef883b4fd9ef175f"
+    },
+    "protocol_clarification": {
+      "kind": "blob",
+      "path": "research/authorization_lineage/PROTOCOL_CLARIFICATION_v1.0.json",
+      "sha": "2f444ccf26c5299908b06a8c5ab9a8878ec9ea20"
+    }
+  },
+  "capture_evidence": {
+    "source_dev_head": "20fa3f454ef7c2608bbab8e75eb2cddf044f3948",
+    "self_hosted_run_id": 34759661143,
+    "runner_os": "macOS",
+    "runner_arch": "ARM64"
+  }
+}

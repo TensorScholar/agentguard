@@ -1,0 +1,2 @@
+CONFIRMATORY_EXECUTION_BLOCKED=true
+Reason: implementation SHAs are not frozen and AG-LINEAGE-PREREG-v1.0 implementation-freeze gate is incomplete.

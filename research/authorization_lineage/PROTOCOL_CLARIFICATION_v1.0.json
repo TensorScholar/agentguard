@@ -1,0 +1,24 @@
+{
+  "approved_before_confirmatory_state": {
+    "confirmatory_manifest": "NOT_GENERATED",
+    "confirmatory_trials": 0,
+    "master_seed": "NOT_GENERATED",
+    "research_claim": "NOT_VALIDATED"
+  },
+  "approved_rule_text": "At most one replacement attempt per logical manifest trial; no second replacement under this protocol.",
+  "clarification_id": "AG-LINEAGE-PREREG-v1.0-RERUN-CARDINALITY-2026-09-14",
+  "original_prereg_sha256": "5d217f2d531e05c74fe99236e19c509370ebda31e2130998dca7b0ca9473fe9e",
+  "protocol": "AG-LINEAGE-PREREG-v1.0",
+  "rule": {
+    "maximum_attempts_per_logical_trial": 2,
+    "maximum_replacements": 1,
+    "original_attempt_retained": true,
+    "replacement_increases_scientific_sample_size": false,
+    "replacement_requires_mechanical_invalidity": true,
+    "replacement_requires_no_interpretable_sut_outcome": true,
+    "replacement_uses_same_block_seed": true,
+    "replacement_uses_same_logical_manifest_trial": true,
+    "second_replacement_allowed": false
+  },
+  "status": "APPROVED_PRE_EXECUTION_CLARIFICATION"
+}
