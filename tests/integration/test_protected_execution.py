@@ -8,12 +8,13 @@ from threading import Event
 import pytest
 
 from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.crypto import Ed25519Signer
+from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
 from agentguard.adapters.executor import DeterministicFakeExecutor
 from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService, ExecutionPersistenceError
 from agentguard.domain import (
     AuditEventType,
+    CapabilityScope,
     CredentialGrant,
     CredentialRequest,
     ExecutionState,
@@ -83,6 +84,110 @@ def test_exact_action_binding_and_raw_input_separation(intent, policy, signer, v
     assert trusted.intent.arguments == intent.arguments
     assert trusted.intent.action.tool != mutated.action.tool
     assert trusted.intent.arguments != mutated.arguments
+
+
+def _refund_scope() -> CapabilityScope:
+    return CapabilityScope(
+        capabilities=frozenset({"financial_mutation"}),
+        protocols=frozenset({"mcp"}),
+        servers=frozenset({"customer-operations"}),
+        tools=frozenset({"refund.create"}),
+        operations=frozenset({"call"}),
+        resource_types=frozenset({"order"}),
+        resource_ids=frozenset({"order-1042"}),
+        maximum_calls=1,
+        delegable=False,
+        maximum_delegation_depth=0,
+    )
+
+
+def _consumed_nonce_count(state: SQLiteState, nonce: str, decision_id: str) -> int:
+    with sqlite3.connect(state.path) as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) FROM consumed_nonces WHERE nonce = ? OR decision_id = ?",
+            (nonce, decision_id),
+        ).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+def test_policy_digest_mismatch_does_not_consume_protected_execution(
+    intent, policy, signer, verifier, state
+):
+    """A changed policy digest fails before reservation, leaving the receipt usable."""
+
+    authority_signer = Ed25519Signer.generate("authority-ed25519")
+    authority_verifier = Ed25519Verifier({authority_signer.key_id: authority_signer.public_key()})
+    broker = MockCredentialBroker()
+    service = AgentGuardService(
+        signer,
+        verifier,
+        state,
+        broker.verifier,
+        authority_verifier=authority_verifier,
+    )
+    root = service.issue_root_authority(intent.principal, _refund_scope(), authority_signer)
+    lease = service.issue_capability_lease(root.grant_id, intent.principal, maximum_uses=1)
+    authorized_intent = intent.model_copy(
+        update={"authority": service.authority_reference(root.grant_id, lease.lease_id)}
+    )
+    receipt = service.authorize(authorized_intent, policy)
+    ceiling = receipt.credential_ceiling
+    assert ceiling is not None
+    grant = service.request_credential(
+        authorized_intent,
+        receipt,
+        CredentialRequest(
+            request_id="policy-digest-consuming-path",
+            trace_id=receipt.trace_id,
+            decision_id=receipt.decision_id,
+            audience=ceiling.audience,
+            scopes=ceiling.scopes,
+            requested_ttl_seconds=30,
+            tenant_id=ceiling.tenant_id,
+        ),
+        broker,
+    )
+    changed_policy = policy.model_copy(
+        update={"metadata": policy.metadata.model_copy(update={"revision": 2})}
+    )
+    assert digest(changed_policy) != receipt.policy_digest
+
+    executor = DeterministicFakeExecutor()
+    assert state.list_executions() == ()
+    assert state.get_capability_lease(lease.lease_id).remaining_uses == 1
+    assert _consumed_nonce_count(state, receipt.nonce, receipt.decision_id) == 0
+
+    with pytest.raises(ExecutionGuardError, match="execution.policy_changed"):
+        service.execute_protected(
+            authorized_intent,
+            receipt,
+            grant,
+            executor,
+            current_policy=changed_policy,
+        )
+
+    assert executor.calls == []
+    assert state.list_executions() == ()
+    assert state.get_capability_lease(lease.lease_id).remaining_uses == 1
+    assert _consumed_nonce_count(state, receipt.nonce, receipt.decision_id) == 0
+    assert not any(
+        event.event_type == AuditEventType.RECEIPT_CONSUMED for event in state.list_events()
+    )
+
+    outcome = service.execute_protected(
+        authorized_intent,
+        receipt,
+        grant,
+        executor,
+        current_policy=policy,
+    )
+    assert outcome.status == ExecutionStatus.SUCCESS
+    assert len(executor.calls) == 1
+    assert len(state.list_executions()) == 1
+    assert state.list_executions()[0].state == ExecutionState.SUCCEEDED
+    assert state.get_capability_lease(lease.lease_id).remaining_uses == 0
+    assert _consumed_nonce_count(state, receipt.nonce, receipt.decision_id) == 1
 
 
 def test_post_validation_in_place_mutation_cannot_reach_executor(
