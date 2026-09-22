@@ -2,22 +2,20 @@
 
 ## Current Phase
 
-**Q04 / P0 — Execution Admission Correctness**
+Current product status is [Project Status](project-status.md). Freeze v2 governance is recorded in [Freeze v2 result adjudication](research/FREEZE_V2_RESULT_ADJUDICATION.md). Q04-06 is not the active engineering task. The Q01–Q05 entries below stay as historical records.
 
-Current engineering task: **Q04-06 — Claims alignment**.
-
-Feature expansion remains frozen until the execution-admission correctness queue is closed or explicitly re-scoped.
+This tracker does not change the Freeze v2 research claim. Production certification is not claimed.
 
 ## Repository Baseline
 
-- Remote `main`: `f7338a9a0ef6e07b39f371cc4c17f93a72f4ec37`.
+- Remote `main`: `5275e94f28a7c4282908d2fc88f5a44f2c3a7583`.
+- Declared release version: `0.2.0rc3`.
+- Current status document: `docs/project-status.md`.
+- Freeze v2 adjudication: `docs/research/FREEZE_V2_RESULT_ADJUDICATION.md`.
 - Preserved Q01 commit: `7effe3e203d2123f5e6d4733706f78613b1f7bb8`.
 - Preserved Q02 commit / audited preflight head: `d8c4bccdbdf41cea349cf81acbba63e15611f1d7`.
-- Active working branch: `docs/q04-06-core-claims-alignment`.
-- Reference repository: `TensorScholar/agentguard-reference`.
-- Reference repository Q04-06 baseline: `30b018239d56d600015e6ca2d2baeb0dde193ce6`.
-- Validated reference implementation head: `8ed4632105c4067e7d0c68a0f3e469f4f5a5bca8`.
-- Declared release version: `0.2.0rc3`.
+- Historical reference-repository Q04-06 pins, not the current reference release: baseline `30b018239d56d600015e6ca2d2baeb0dde193ce6`, head `8ed4632105c4067e7d0c68a0f3e469f4f5a5bca8`.
+- Reference repository: `TensorScholar/agentguard-reference`, package `1.0.1`. That package is a separate public artifact, not a newer core release.
 - Source divergence: reconciled. The two previously local-only Q01/Q02 commits are now preserved in GitHub history through PR #14.
 
 ## Completed
@@ -103,7 +101,7 @@ Provider-result hashing was separated from signed-authorization canonicalization
 3. Q04-03 exclude already-resolved reconciliation work (closed).
 4. Q04-04 reconciliation progress/fairness (closed).
 5. Q04-05 separate provider-response hashing from authorization canonicalization (closed).
-6. Q04-06 claims alignment (active).
+6. Q04-06 claims alignment (historical; superseded by Freeze v2 adjudication).
 7. Q04-07 integrated evaluation candidate.
 
 These tasks must remain separate unless a correctness dependency proves otherwise.

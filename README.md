@@ -10,6 +10,12 @@
 
 > **Release Status:** `v0.2.0rc3` is an engineering-validated release candidate. It implements protected MCP stdio and bounded Streamable HTTP profiles, production credential authority, durable external-effect reconciliation, and single-host multi-process coordination. Full production certification requires independent security review, long-duration operational validation, and a controlled production pilot. See [Project Status](docs/project-status.md) and [Known Limitations](docs/limitations.md).
 
+## AgentGuard Core and AgentGuard Reference
+
+This repository is AgentGuard Core, the canonical runtime, at `v0.2.0rc3`. Production certification is not claimed.
+
+`agentguard-reference` `v1.0.1` is a different artifact. It is a public standard-library example of one guarded callback. It is not a newer version of this core, and it does not carry the MCP, credential, reconciliation, or research record maintained here.
+
 ---
 
 ## The Problem: Boundary Failures in Agent Execution

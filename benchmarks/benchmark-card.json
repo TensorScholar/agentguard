@@ -2,6 +2,8 @@
   "schema_version": "1",
   "project": "agentguard",
   "version": "0.2.0rc2",
+  "benchmark_target_version": "0.2.0rc2",
+  "measurement_scope": "historical synthetic measurement recorded for 0.2.0rc2; not a 0.2.0rc3 result",
   "benchmark_type": "synthetic-local",
   "measures": [
     "deterministic Policy v2 evaluation",
