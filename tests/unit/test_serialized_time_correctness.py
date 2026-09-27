@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from threading import Event
 from typing import Iterator
@@ -43,7 +43,11 @@ from agentguard.domain import (
     ReversibilityMode,
     VerifiedExecution,
 )
-from agentguard.engine.authority import AuthorityError
+from agentguard.engine.authority import (
+    AuthorityError,
+    issue_root_authority,
+    verify_authority_grant_signature,
+)
 from agentguard.engine.canonical import digest
 from agentguard.engine.execution import ExecutionGuardError, prepared_execution_binding_digest
 
@@ -610,6 +614,183 @@ class SerializedTimeTests(unittest.TestCase):
                 connection.execute("SELECT count(*) FROM credential_issuance_claims").fetchone()[0],
                 0,
             )
+
+
+class OffsetAuthorityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "state.sqlite"
+        self.clock = _TransactionTime(START)
+        self.state = _State(self.path, self.clock)
+        self.intent = _intent()
+
+    @staticmethod
+    def offset(instant: datetime, hours: int) -> datetime:
+        return instant.astimezone(timezone(timedelta(hours=hours)))
+
+    def grant(self, expires_at: datetime) -> AuthorityGrant:
+        return AuthorityGrant.model_validate(
+            {**_grant(self.intent).model_dump(mode="python"), "expires_at": expires_at}
+        )
+
+    def lease(self, expires_at: datetime) -> CapabilityLease:
+        return CapabilityLease.model_validate(
+            {**_lease().model_dump(mode="python"), "expires_at": expires_at}
+        )
+
+    def test_expired_positive_offset_grant_cannot_authorize_reservation(self) -> None:
+        signer = Ed25519Signer.generate("positive-offset-signer")
+        grant = issue_root_authority(
+            self.intent.principal, CapabilityScope(maximum_calls=2), signer,
+            now=self.offset(START, 5), ttl_seconds=5,
+        )
+        self.state.store_authority_grant(grant)
+        self.state.store_capability_lease(
+            CapabilityLease.model_validate(
+                {
+                    **self.lease(grant.expires_at).model_dump(mode="python"),
+                    "grant_id": grant.grant_id,
+                }
+            )
+        )
+        # Represent a historical database the old lifetime check could produce:
+        # it allowed a UTC lease to outlive a grant with a positive offset.
+        with sqlite3.connect(self.path) as connection:
+            connection.execute(
+                "UPDATE capability_leases SET expires_at = ? WHERE lease_id = ?",
+                ((START + timedelta(seconds=10)).isoformat(), "lease_test"),
+            )
+        self.clock.value = START + timedelta(seconds=6)
+        verified = _verified(self.intent).model_copy(
+            update={"authority_grant_id": grant.grant_id}
+        )
+        self.assertEqual(
+            self.state.reserve_execution(verified, START),
+            "execution.reservation_conflict",
+        )
+        self.assertEqual(self.state.get_capability_lease("lease_test").remaining_uses, 1)
+        self.assertEqual(self.state.list_executions(), ())
+
+    def test_existing_offset_lease_cannot_be_consumed_after_real_expiry(self) -> None:
+        self.state.store_authority_grant(
+            self.grant(self.offset(START + timedelta(seconds=20), 5))
+        )
+        lease = self.lease(self.offset(START + timedelta(seconds=5), 5))
+        self.state.store_capability_lease(lease)
+        # Reopening must remain safe even when the auxiliary column was written by
+        # an earlier version of the code with a non-UTC offset.
+        reopened = _State(self.path, self.clock)
+        self.clock.value = START + timedelta(seconds=6)
+        self.assertEqual(
+            reopened.reserve_execution(_verified(self.intent), START),
+            "authority.lease_unavailable",
+        )
+        self.assertEqual(reopened.get_capability_lease("lease_test").remaining_uses, 1)
+        with sqlite3.connect(self.path) as connection:
+            self.assertEqual(
+                connection.execute("SELECT count(*) FROM consumed_nonces").fetchone()[0], 0
+            )
+
+    def test_prepared_reservation_uses_same_offset_safe_authority_claim(self) -> None:
+        self.state.store_authority_grant(
+            self.grant(self.offset(START + timedelta(seconds=20), 5))
+        )
+        self.state.store_capability_lease(
+            self.lease(self.offset(START + timedelta(seconds=5), 5))
+        )
+        verified = _verified(self.intent, prepared=True)
+        self.state.store_prepared_execution(
+            PreparedExecution(
+                prepared_id="prep_test", execution_id=verified.execution_id,
+                decision_id=verified.decision_id, request_id=verified.request_id,
+                trace_id=verified.trace_id, intent_digest=verified.intent_digest,
+                prepared_binding_digest=prepared_execution_binding_digest(verified),
+                reversibility=ReversibilityMode.IRREVERSIBLE,
+                prepared_at=START, commit_not_before=START,
+                expires_at=START + timedelta(seconds=30),
+            )
+        )
+        self.clock.value = START + timedelta(seconds=6)
+        self.assertEqual(
+            self.state.reserve_prepared_execution("prep_test", verified, START),
+            "authority.lease_unavailable",
+        )
+        self.assertIsNone(self.state.get_execution(verified.execution_id))
+        self.assertEqual(self.state.get_capability_lease("lease_test").remaining_uses, 1)
+
+    def test_live_negative_offset_lease_remains_usable(self) -> None:
+        self.state.store_authority_grant(self.grant(START + timedelta(seconds=20)))
+        self.state.store_capability_lease(
+            self.lease(self.offset(START + timedelta(seconds=10), -5))
+        )
+        self.clock.value = START + timedelta(seconds=6)
+        self.assertIsNone(self.state.reserve_execution(_verified(self.intent), START))
+        self.assertEqual(self.state.get_capability_lease("lease_test").remaining_uses, 0)
+
+    def test_parent_grant_expired_at_real_instant_cannot_allocate_child(self) -> None:
+        self.state.store_authority_grant(
+            self.grant(self.offset(START + timedelta(seconds=5), 5))
+        )
+        child = AuthorityGrant.model_validate(
+            {
+                **_grant(self.intent, parent="grant_root").model_dump(mode="python"),
+                "expires_at": START + timedelta(seconds=15),
+            }
+        )
+        self.clock.value = START + timedelta(seconds=6)
+        with self.assertRaisesRegex(RuntimeError, "authority.call_budget_exhausted"):
+            self.state.store_authority_grant(child)
+        self.assertIsNone(self.state.get_authority_grant("grant_child"))
+        self.assertEqual(self.state.get_authority_grant("grant_root").remaining_calls, 2)
+
+    def test_lease_cannot_outlive_grant_across_offsets(self) -> None:
+        self.state.store_authority_grant(
+            self.grant(self.offset(START + timedelta(seconds=5, microseconds=123456), 5))
+        )
+        with self.assertRaisesRegex(RuntimeError, "authority.call_budget_exhausted"):
+            self.state.store_capability_lease(
+                self.lease(START + timedelta(seconds=5, microseconds=123457))
+            )
+        self.assertIsNone(self.state.get_capability_lease("lease_test"))
+        self.assertEqual(self.state.get_authority_grant("grant_root").remaining_calls, 2)
+
+    def test_equal_instant_lease_and_signed_grant_keep_original_offsets(self) -> None:
+        signer = Ed25519Signer.generate("offset-signer")
+        verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
+        signed = issue_root_authority(
+            self.intent.principal, CapabilityScope(maximum_calls=2), signer,
+            now=self.offset(START, -5), ttl_seconds=10,
+        )
+        original_json = signed.model_dump_json()
+        self.state.store_authority_grant(signed)
+        stored = self.state.get_authority_grant(signed.grant_id).grant
+        self.assertEqual(stored.model_dump_json(), original_json)
+        verify_authority_grant_signature(stored, verifier)
+        with sqlite3.connect(self.path) as connection:
+            row = connection.execute(
+                "SELECT grant_json,expires_at FROM authority_grants WHERE grant_id = ?",
+                (signed.grant_id,),
+            ).fetchone()
+        self.assertEqual(row, (original_json, signed.expires_at.isoformat()))
+        lease = CapabilityLease.model_validate(
+            {
+                **_lease().model_dump(mode="python"),
+                "grant_id": signed.grant_id,
+                "expires_at": START + timedelta(seconds=10),
+            }
+        )
+        self.state.store_capability_lease(lease)
+        self.clock.value = START + timedelta(seconds=1)
+        verified = _verified(self.intent).model_copy(
+            update={"authority_grant_id": signed.grant_id}
+        )
+        self.assertIsNone(self.state.reserve_execution(verified, START))
+
+    def test_utc_grant_and_lease_still_reserve(self) -> None:
+        self.state.store_authority_grant(_grant(self.intent))
+        self.state.store_capability_lease(_lease())
+        self.assertIsNone(self.state.reserve_execution(_verified(self.intent), START))
 
 
 if __name__ == "__main__":
