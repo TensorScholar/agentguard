@@ -219,6 +219,24 @@ class SerializedTimeTests(unittest.TestCase):
         self.assertIsNotNone(lease)
         self.assertEqual(lease.remaining_uses, 1)
 
+    def test_receipt_expiring_behind_lock_cannot_claim_nonce(self) -> None:
+        state = _State(self.path, self.clock)
+        verified = _verified(_intent()).model_copy(
+            update={
+                "authority_grant_id": None,
+                "authority_lease_id": None,
+                "authorization_expires_at": START + timedelta(seconds=5),
+            }
+        )
+        error = self._blocked(
+            state, lambda: state.reserve_execution(verified, START),
+            after=START + timedelta(seconds=6),
+        )
+        self.assertEqual(error, "execution.authorization_expired")
+        self.assertIsNone(state.get_execution(verified.execution_id))
+        with sqlite3.connect(state.path) as connection:
+            self.assertEqual(connection.execute("SELECT count(*) FROM consumed_nonces").fetchone()[0], 0)
+
     def test_concurrent_last_use_still_has_one_reservation_winner(self) -> None:
         state = _State(self.path, self.clock)
         intent = _intent()
@@ -347,6 +365,33 @@ class SerializedTimeTests(unittest.TestCase):
             after=START + timedelta(seconds=3),
         )
         self.assertEqual(error, "execution.prepared_expired")
+        self.assertIsNone(state.get_execution(verified.execution_id))
+
+    def test_prepared_reservation_rechecks_receipt_expiry_under_lock(self) -> None:
+        state = _State(self.path, self.clock)
+        verified = _verified(_intent(), prepared=True).model_copy(
+            update={
+                "authority_grant_id": None,
+                "authority_lease_id": None,
+                "authorization_expires_at": START + timedelta(seconds=5),
+            }
+        )
+        state.store_prepared_execution(
+            PreparedExecution(
+                prepared_id="prep_test", execution_id=verified.execution_id,
+                decision_id=verified.decision_id, request_id=verified.request_id,
+                trace_id=verified.trace_id, intent_digest=verified.intent_digest,
+                prepared_binding_digest=prepared_execution_binding_digest(verified),
+                reversibility=ReversibilityMode.IRREVERSIBLE,
+                prepared_at=START, commit_not_before=START,
+                expires_at=START + timedelta(seconds=30),
+            )
+        )
+        error = self._blocked(
+            state, lambda: state.reserve_prepared_execution("prep_test", verified, START),
+            after=START + timedelta(seconds=6),
+        )
+        self.assertEqual(error, "execution.authorization_expired")
         self.assertIsNone(state.get_execution(verified.execution_id))
 
     def test_preparation_becoming_ready_behind_writer_lock_can_commit(self) -> None:

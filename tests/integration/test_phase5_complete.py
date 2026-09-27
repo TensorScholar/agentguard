@@ -305,7 +305,9 @@ def test_5e_expiry_is_rechecked_at_external_boundary(
     )
     assert verified.field_integrity_expires_at is not None
     reserve_at = verified.field_integrity_expires_at - timedelta(microseconds=1)
-    assert state.reserve_execution(verified, reserve_at) is None
+    with monkeypatch.context() as patched:
+        patched.setattr(state, "_transaction_now", lambda: reserve_at)
+        assert state.reserve_execution(verified, reserve_at) is None
 
     expires_at = verified.field_integrity_expires_at
 

@@ -527,6 +527,9 @@ class SQLiteState:
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             admission_at = self._transaction_now()
+            if verified_execution.authorization_expires_at <= admission_at:
+                c.execute("ROLLBACK")
+                return "execution.authorization_expired"
             try:
                 self._claim_execution_authority(c, verified_execution, reserved_at, admission_at)
                 self._insert_execution(c, verified_execution, reserved_at)
@@ -670,6 +673,9 @@ class SQLiteState:
                 ):
                     c.execute("ROLLBACK")
                     return "execution.prepared_binding_mismatch"
+                if verified_execution.authorization_expires_at <= admission_at:
+                    c.execute("ROLLBACK")
+                    return "execution.authorization_expired"
                 self._claim_execution_authority(c, verified_execution, reserved_at, admission_at)
                 self._insert_execution(c, verified_execution, reserved_at)
                 updated = c.execute(
