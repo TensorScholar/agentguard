@@ -104,11 +104,11 @@ class SQLiteFencedReconciliationState(SQLiteState):
         allow_terminal_recheck: bool = False,
     ) -> ReconciliationLease | None:
         self._validate_lease_request(owner_id, now, lease_seconds)
-        now = now.astimezone(UTC)
-        expires_at = now + timedelta(seconds=lease_seconds)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
+                now = self._transaction_now()
+                expires_at = now + timedelta(seconds=lease_seconds)
                 execution = connection.execute(
                     "SELECT state FROM executions WHERE execution_id = ?",
                     (execution_id,),
@@ -198,11 +198,11 @@ class SQLiteFencedReconciliationState(SQLiteState):
         lease_seconds: int,
     ) -> ReconciliationLease:
         self._validate_lease_request(lease.owner_id, now, lease_seconds)
-        now = now.astimezone(UTC)
-        expires_at = now + timedelta(seconds=lease_seconds)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
+                now = self._transaction_now()
+                expires_at = now + timedelta(seconds=lease_seconds)
                 row = connection.execute(
                     """
                     SELECT owner_id,fencing_token,expires_at
@@ -311,6 +311,7 @@ class SQLiteFencedReconciliationState(SQLiteState):
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
+                admission_at = self._transaction_now()
                 lease_row = connection.execute(
                     """
                     SELECT owner_id,fencing_token,expires_at
@@ -323,7 +324,7 @@ class SQLiteFencedReconciliationState(SQLiteState):
                     or str(lease_row["owner_id"]) != lease.owner_id
                     or int(lease_row["fencing_token"]) != lease.fencing_token
                     or datetime.fromisoformat(str(lease_row["expires_at"])).astimezone(UTC)
-                    <= reconciled_at
+                    <= admission_at
                 ):
                     raise ReconciliationLeaseError("reconciliation.lease_lost")
 

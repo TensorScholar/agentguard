@@ -3,9 +3,20 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
-from agentguard.adapters.storage.sqlite import SQLiteFencedReconciliationState
+from agentguard.adapters.storage.sqlite import (
+    SQLiteFencedReconciliationState as _SQLiteFencedReconciliationState,
+)
 
 NOW = datetime(2026, 9, 2, 20, 0, tzinfo=UTC)
+
+
+class SQLiteFencedReconciliationState(_SQLiteFencedReconciliationState):
+    def __init__(self, path) -> None:
+        self.serialized_now = NOW
+        super().__init__(path)
+
+    def _transaction_now(self) -> datetime:
+        return self.serialized_now
 
 
 def _insert_unknown(path) -> None:
@@ -52,6 +63,7 @@ def test_lease_times_are_canonicalized_to_utc_across_offsets(tmp_path) -> None:
     assert lease.expires_at == NOW + timedelta(seconds=30)
 
     minus_five = datetime.fromisoformat("2026-09-02T15:00:05-05:00")
+    state.serialized_now = NOW + timedelta(seconds=5)
     renewed = state.renew_reconciliation_lease(
         lease,
         now=minus_five,

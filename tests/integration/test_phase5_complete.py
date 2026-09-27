@@ -746,7 +746,9 @@ def test_5f_commit_rejects_mutated_intent(intent, policy, signer, verifier, stat
     assert executor.calls == []
 
 
-def test_5f_expired_preparation_cannot_reserve_execution(intent, policy, signer, verifier, state):
+def test_5f_expired_preparation_cannot_reserve_execution(
+    intent, policy, signer, verifier, state, monkeypatch
+):
     staging_policy = _staging_policy(policy)
     service = _service(signer, verifier, state)
     receipt = service.authorize(intent, staging_policy)
@@ -763,9 +765,10 @@ def test_5f_expired_preparation_cannot_reserve_execution(intent, policy, signer,
         execution_repository=state,
         prepared_id=prepared.prepared_id,
     )
-    result = state.reserve_prepared_execution(
-        prepared.prepared_id, verified, prepared.expires_at + timedelta(microseconds=1)
-    )
+    admission_at = prepared.expires_at + timedelta(microseconds=1)
+    with monkeypatch.context() as patched:
+        patched.setattr(state, "_transaction_now", lambda: admission_at)
+        result = state.reserve_prepared_execution(prepared.prepared_id, verified, admission_at)
     assert result == "execution.prepared_expired"
     assert state.get_execution(prepared.execution_id) is None
     stored = state.get_prepared_execution(prepared.prepared_id)
