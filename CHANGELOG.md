@@ -15,6 +15,22 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
 - State in the README that the core single-use-receipt / digest-revalidation pattern is not unique to
   this project and is specified in external work.
 
+### Breaking: v1 policy default is now deny
+
+- **Breaking change.** `agentguard.policy.load_policy` and the `Policy` dataclass now default
+  `default_action` to `deny` instead of `allow`. A v1 policy that relied on the implicit
+  allow-by-default must now declare `default_action: allow` explicitly, or (preferred) declare a
+  non-empty `allowed_tools` allowlist, which is checked first and denies every tool it does not
+  name.
+- Update `examples/policy.yaml` and `examples/policy_with_exception.yaml` to carry explicit
+  `allowed_tools` allowlists so no unmatched tool is authorized by omission.
+- Update the `coding-agent-local` and `ci-agent` policy packs to ship non-empty `allowed_tools`
+  allowlists. Unmatched tools are denied by the `tool.allowlist` rule.
+- Add `tests/test_example_policies_default_deny.py` asserting that every shipped v1 example policy
+  and policy pack denies an unmatched action, that the v1 loader denies when `default_action` is
+  absent, and that shipped v2 example policies declare `defaults.effect: deny`.
+- The v2 policy path is unchanged: `PolicyDefaults.effect` is `Literal[Effect.DENY]`.
+
 ## 0.2.0rc3
 
 ### Runtime-integrity and provider boundary

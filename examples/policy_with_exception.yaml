@@ -1,5 +1,23 @@
+# Example v1 policy demonstrating a scoped approval exception. Safe by default:
+# the allowed_tools allowlist is the load-bearing control and is checked first,
+# so any tool it does not name is denied. The approval_exception below is what
+# promotes run_* from "requires approval" to allow; it is a deliberate,
+# attributable exception rather than the default.
 default_action: allow
 redact_secret_outputs: true
+
+allowed_tools:
+  - read_file
+  - read_directory
+  - list_directory
+  - search
+  - grep
+  - glob
+  - write_file
+  - edit_file
+  - run_command
+  - run_status
+  - run_test
 
 blocked_path_patterns:
   - ".env"

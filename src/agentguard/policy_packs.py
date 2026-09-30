@@ -49,16 +49,48 @@ COMMON_BLOCKED_NETWORK_HOSTS = (
     "metadata.google.internal",
 )
 
+# Policy packs are safe-by-default: a tool that is not named in the pack's
+# explicit allowlist is denied, so an unrecognised or newly added tool cannot
+# be authorized by omission. In the v1 policy model `allowed_tools` is a
+# narrowing check that runs first and `default_action` is only the fallback
+# for tools that passed it, so an allow-default pack paired with a non-empty
+# allowlist still denies every unmatched action.
+COMMON_READ_TOOLS = (
+    "read_file",
+    "read_directory",
+    "list_directory",
+    "search",
+    "grep",
+    "glob",
+)
+
+LOCAL_REPO_WRITE_TOOLS = COMMON_READ_TOOLS + (
+    "write_file",
+    "edit_file",
+    "delete_file",
+    "run_command",
+)
+
+CI_AGENT_TOOLS = COMMON_READ_TOOLS + (
+    "write_file",
+    "edit_file",
+    "run_build",
+    "run_test",
+    "run_lint",
+    "publish_artifact",
+)
+
 POLICY_PACKS: dict[str, PolicyPack] = {
     "coding-agent-local": PolicyPack(
         name="coding-agent-local",
         description=(
-            "Local coding-agent guardrail: allow normal repo work, block secrets, gate execution."
+            "Local coding-agent guardrail: allow named repo work, deny everything else, "
+            "block secrets, gate execution."
         ),
         default_action=Decision.ALLOW,
         redact_secret_outputs=True,
         denied_tools=(),
-        allowed_tools=(),
+        allowed_tools=LOCAL_REPO_WRITE_TOOLS,
         blocked_path_patterns=COMMON_BLOCKED_PATHS,
         blocked_env_names=COMMON_BLOCKED_ENV_NAMES,
         blocked_network_hosts=COMMON_BLOCKED_NETWORK_HOSTS,
@@ -72,11 +104,14 @@ POLICY_PACKS: dict[str, PolicyPack] = {
     ),
     "ci-agent": PolicyPack(
         name="ci-agent",
-        description="CI-agent guardrail: block credentials and production changes, gate mutations.",
+        description=(
+            "CI-agent guardrail: allow named build work, deny everything else, "
+            "block credentials, gate mutations."
+        ),
         default_action=Decision.ALLOW,
         redact_secret_outputs=True,
         denied_tools=(),
-        allowed_tools=(),
+        allowed_tools=CI_AGENT_TOOLS,
         blocked_path_patterns=COMMON_BLOCKED_PATHS,
         blocked_env_names=COMMON_BLOCKED_ENV_NAMES,
         blocked_network_hosts=COMMON_BLOCKED_NETWORK_HOSTS,

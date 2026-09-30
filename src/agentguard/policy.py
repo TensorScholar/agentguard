@@ -30,7 +30,7 @@ class ApprovalException:
 
 @dataclass(frozen=True)
 class Policy:
-    default_action: Decision = Decision.ALLOW
+    default_action: Decision = Decision.DENY
     redact_secret_outputs: bool = True
     denied_tools: tuple[str, ...] = ()
     allowed_tools: tuple[str, ...] = ()
@@ -232,7 +232,7 @@ def load_policy(path: str | None) -> Policy:
     if unknown:
         raise ValueError(f"unknown policy field(s): {', '.join(sorted(unknown))}")
 
-    default_action = Decision(str(raw.get("default_action", "allow")))
+    default_action = Decision(str(raw.get("default_action", "deny")))
     if default_action not in {Decision.ALLOW, Decision.DENY}:
         raise ValueError("default_action must be 'allow' or 'deny'")
     redact_secret_outputs = raw.get("redact_secret_outputs", True)

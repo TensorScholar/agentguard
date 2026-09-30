@@ -24,6 +24,16 @@ from agentguard.mcp_stdio import (
 from agentguard.models import ApprovalGrant, Capability, Decision, RiskLevel, ToolInventoryItem
 from agentguard.policy import Policy
 
+_ALLOW_POLICY_PATH = Path(__file__).parent / "fixtures" / "allow_policy.yaml"
+
+
+def _permissive_policy() -> Policy:
+    """Default-deny is the product default; these tests exercise stdio
+    correlation, inventory and transport behaviour, not the default effect, so
+    they opt in explicitly rather than relying on a fail-open default."""
+
+    return Policy(default_action=Decision.ALLOW)
+
 
 def _loads(payload: bytes) -> dict:
     return json.loads(payload.decode("utf-8"))
@@ -33,7 +43,7 @@ def test_server_identity_is_stable_and_isolates_inventory(tmp_path: Path) -> Non
     command = ["python", "server.py", "--tenant", "alpha"]
     expected = derive_server_id(command)
     ledger = AuditLedger(tmp_path / "audit.sqlite")
-    proxy = MCPStdioProxy(command, Policy(), ledger)
+    proxy = MCPStdioProxy(command, _permissive_policy(), ledger)
 
     assert proxy.server_id == expected
     assert proxy.processor.source == mcp_source_id(command)
@@ -41,7 +51,7 @@ def test_server_identity_is_stable_and_isolates_inventory(tmp_path: Path) -> Non
 
 
 def test_tools_list_passes_through() -> None:
-    processor = MCPMessageProcessor(policy=Policy())
+    processor = MCPMessageProcessor(policy=_permissive_policy())
     line = b'{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}\n'
 
     action = processor.handle_client_line(line)
@@ -53,7 +63,7 @@ def test_tools_list_passes_through() -> None:
 def test_tools_list_response_records_inventory(tmp_path: Path) -> None:
     ledger = AuditLedger(tmp_path / "audit.sqlite")
     ledger.upsert_tool_inventory([ToolInventoryItem(source="mcp_stdio", name="old_tool")])
-    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    processor = MCPMessageProcessor(policy=_permissive_policy(), ledger=ledger)
 
     processor.handle_client_line(b'{"jsonrpc":"2.0","id":11,"method":"tools/list","params":{}}\n')
     action = processor.handle_server_line(
@@ -73,7 +83,7 @@ def test_tools_list_response_records_inventory(tmp_path: Path) -> None:
 
 def test_denied_tool_call_returns_error_and_does_not_forward(tmp_path: Path) -> None:
     ledger = AuditLedger(tmp_path / "audit.sqlite")
-    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    processor = MCPMessageProcessor(policy=_permissive_policy(), ledger=ledger)
     line = (
         b'{"jsonrpc":"2.0","id":2,"method":"tools/call",'
         b'"params":{"name":"read_file","arguments":{"path":".env"}}}\n'
@@ -89,7 +99,7 @@ def test_denied_tool_call_returns_error_and_does_not_forward(tmp_path: Path) -> 
 
 
 def test_approval_required_tool_call_returns_error() -> None:
-    processor = MCPMessageProcessor(policy=Policy())
+    processor = MCPMessageProcessor(policy=_permissive_policy())
     line = (
         b'{"jsonrpc":"2.0","id":"abc","method":"tools/call",'
         b'"params":{"name":"run_command","arguments":{"command":"git status"}}}\n'
@@ -118,7 +128,7 @@ def test_approval_grant_allows_matching_approval_required_call(tmp_path: Path) -
             expires_at=now + timedelta(minutes=5),
         )
     )
-    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    processor = MCPMessageProcessor(policy=_permissive_policy(), ledger=ledger)
     line = (
         b'{"jsonrpc":"2.0","id":17,"method":"tools/call",'
         b'"params":{"name":"run_command","arguments":{"command":"git status"}}}\n'
@@ -151,7 +161,7 @@ def test_approval_grant_does_not_override_deny(tmp_path: Path) -> None:
             expires_at=now + timedelta(minutes=5),
         )
     )
-    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    processor = MCPMessageProcessor(policy=_permissive_policy(), ledger=ledger)
     line = (
         b'{"jsonrpc":"2.0","id":18,"method":"tools/call",'
         b'"params":{"name":"read_file","arguments":{"path":".env"}}}\n'
@@ -178,7 +188,7 @@ def test_allowed_call_is_correlated_and_response_is_redacted(tmp_path: Path) -> 
             )
         ]
     )
-    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    processor = MCPMessageProcessor(policy=_permissive_policy(), ledger=ledger)
     call_line = (
         b'{"jsonrpc":"2.0","id":3,"method":"tools/call",'
         b'"params":{"name":"read_file","arguments":{"path":"README.md"}}}\n'
@@ -243,7 +253,7 @@ def test_stale_inventory_requires_approval_for_vague_tool_name(tmp_path: Path) -
         ]
     )
     processor = MCPMessageProcessor(
-        policy=Policy(),
+        policy=_permissive_policy(),
         ledger=ledger,
         inventory_ttl_seconds=1,
     )
@@ -277,7 +287,9 @@ def test_stale_inventory_preserves_fallback_hard_deny(tmp_path: Path) -> None:
             )
         ]
     )
-    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger, inventory_ttl_seconds=1)
+    processor = MCPMessageProcessor(
+        policy=_permissive_policy(), ledger=ledger, inventory_ttl_seconds=1
+    )
     line = (
         b'{"jsonrpc":"2.0","id":15,"method":"tools/call",'
         b'"params":{"name":"read_file","arguments":{"path":".env"}}}\n'
@@ -324,7 +336,7 @@ def test_inventory_ttl_zero_disables_expiry(tmp_path: Path) -> None:
 
 
 def test_unknown_inventory_falls_back_to_tool_name_classification() -> None:
-    processor = MCPMessageProcessor(policy=Policy())
+    processor = MCPMessageProcessor(policy=_permissive_policy())
     line = (
         b'{"jsonrpc":"2.0","id":13,"method":"tools/call",'
         b'"params":{"name":"run_command","arguments":{"command":"pwd"}}}\n'
@@ -338,7 +350,7 @@ def test_unknown_inventory_falls_back_to_tool_name_classification() -> None:
 
 
 def test_malformed_client_message_fails_closed() -> None:
-    processor = MCPMessageProcessor(policy=Policy())
+    processor = MCPMessageProcessor(policy=_permissive_policy())
 
     action = processor.handle_client_line(b"{bad json}\n")
     response = _loads(action.to_client or b"{}")
@@ -383,6 +395,9 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
     fake_server = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
     policy_path.write_text(
         (
+            # Explicit: the loader default is now deny, so a policy that relies on
+            # allow-by-default must say so.
+            "default_action: allow\n"
             "denied_capabilities:\n"
             "  - credential_access\n"
             "require_approval_capabilities:\n"
@@ -487,6 +502,8 @@ def test_mcp_proxy_drains_high_volume_server_output(
             "-m",
             "agentguard.cli",
             "mcp-proxy",
+            "--policy",
+            str(_ALLOW_POLICY_PATH),
             "--ledger",
             str(ledger_path),
             "--shutdown-timeout-seconds",
@@ -528,7 +545,7 @@ def test_wait_or_stop_server_allows_natural_exit_after_output_eof(
 ) -> None:
     proxy = MCPStdioProxy(
         [sys.executable, "server.py"],
-        Policy(),
+        _permissive_policy(),
         AuditLedger(tmp_path / "audit.sqlite"),
         shutdown_timeout_seconds=0.25,
     )
@@ -565,6 +582,8 @@ def test_mcp_proxy_terminates_server_that_ignores_stdin_eof(tmp_path: Path) -> N
             "-m",
             "agentguard.cli",
             "mcp-proxy",
+            "--policy",
+            str(_ALLOW_POLICY_PATH),
             "--ledger",
             str(ledger_path),
             "--shutdown-timeout-seconds",
@@ -585,7 +604,7 @@ def test_mcp_proxy_terminates_server_that_ignores_stdin_eof(tmp_path: Path) -> N
 
 
 def test_duplicate_outstanding_request_id_is_rejected() -> None:
-    processor = MCPMessageProcessor(policy=Policy())
+    processor = MCPMessageProcessor(policy=_permissive_policy())
     first = processor.handle_client_line(
         b'{"jsonrpc":"2.0","id":41,"method":"tools/list","params":{}}\n'
     )
@@ -609,7 +628,7 @@ def test_passthrough_request_id_cannot_collide_with_tool_call(tmp_path: Path) ->
             )
         ]
     )
-    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    processor = MCPMessageProcessor(policy=_permissive_policy(), ledger=ledger)
     passthrough = processor.handle_client_line(
         b'{"jsonrpc":"2.0","id":"same","method":"resources/list","params":{}}\n'
     )
@@ -636,7 +655,7 @@ def test_server_initiated_request_does_not_consume_client_request_correlation(
             )
         ]
     )
-    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    processor = MCPMessageProcessor(policy=_permissive_policy(), ledger=ledger)
     call = processor.handle_client_line(
         b'{"jsonrpc":"2.0","id":52,"method":"tools/call",'
         b'"params":{"name":"read_file","arguments":{"path":"README.md"}}}\n'
@@ -665,7 +684,7 @@ def test_tools_list_changed_notification_invalidates_cached_inventory(tmp_path: 
             )
         ]
     )
-    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    processor = MCPMessageProcessor(policy=_permissive_policy(), ledger=ledger)
 
     notification = processor.handle_server_line(
         b'{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}\n'
@@ -691,7 +710,7 @@ def test_failed_tools_list_refresh_invalidates_cached_inventory(tmp_path: Path) 
             )
         ]
     )
-    processor = MCPMessageProcessor(policy=Policy(), ledger=ledger)
+    processor = MCPMessageProcessor(policy=_permissive_policy(), ledger=ledger)
     processor.handle_client_line(b'{"jsonrpc":"2.0","id":62,"method":"tools/list","params":{}}\n')
     processor.handle_server_line(
         b'{"jsonrpc":"2.0","id":62,"error":{"code":-32603,"message":"failed"}}\n'
