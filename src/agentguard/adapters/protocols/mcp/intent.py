@@ -39,7 +39,19 @@ def intent_from_tools_call(
     resolved_request_id = request_id or str(message.get("id") or uuid4().hex)
     schema = tool_schema if tool_schema is not None else {}
     input_schema = schema.get("inputSchema", schema)
-    capabilities, _, _ = classify_tool_definition({"name": name, "inputSchema": input_schema})
+    # Pass the full provider-declared tool metadata to the classifier, not just the
+    # input schema. The classifier reads name, description and schemas; discarding
+    # the description here made every tool whose capability is only inferable from
+    # its description classify as `unknown`, which a default-deny
+    # `unknown_capability` then rejects.
+    tool_metadata: dict[str, Any] = {"name": name, "inputSchema": input_schema}
+    description = schema.get("description")
+    if isinstance(description, str) and description:
+        tool_metadata["description"] = description
+    output_schema = schema.get("outputSchema")
+    if isinstance(output_schema, dict):
+        tool_metadata["outputSchema"] = output_schema
+    capabilities, _, _ = classify_tool_definition(tool_metadata)
     projected_capabilities = frozenset(capability.value for capability in capabilities)
     return ActionIntent(
         request_id=resolved_request_id,

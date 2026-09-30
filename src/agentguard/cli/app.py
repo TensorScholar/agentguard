@@ -63,7 +63,7 @@ from agentguard.engine.policy_intelligence import (
 from agentguard.posture import EnforcementStatus, scan_enforcement_posture
 from agentguard.security.files import read_regular_file, secure_atomic_write
 
-from .io import load_json_model, load_policy, write_json
+from .io import load_json_model, load_policy, parse_provenance, write_json
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -75,6 +75,15 @@ app = typer.Typer(
     ),
 )
 console = Console()
+
+
+def _provenance_labels(values: list[str]) -> tuple[ProvenanceLabel, ...]:
+    """CLI wrapper that turns an invalid --provenance value into a usage error."""
+
+    try:
+        return parse_provenance(values)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 @app.callback()
@@ -113,6 +122,12 @@ def init(output: Path = Path(".agentguard"), force: bool = False) -> None:
     broker_signer = Ed25519Signer.generate("mock-broker-ed25519")
     broker_signer.save_private(output / "broker-private.pem")
     broker_signer.save_public(output / "broker-public.pem")
+    # The production credential authority in `agentguard-mcp-http` defaults to
+    # credential-broker-private.pem / credential-broker-ed25519. Without this the
+    # documented production credential path fails immediately after `init`.
+    credential_broker_signer = Ed25519Signer.generate("credential-broker-ed25519")
+    credential_broker_signer.save_private(output / "credential-broker-private.pem")
+    credential_broker_signer.save_public(output / "credential-broker-public.pem")
     console.print(f"Initialized AgentGuard workspace at {output}")
 
 
@@ -789,6 +804,21 @@ def mcp_proxy_v2(
     schema_ttl_seconds: float = typer.Option(300.0, "--schema-ttl-seconds", min=0.001),
     execution_timeout_seconds: float = typer.Option(30.0, "--execution-timeout-seconds", min=0.001),
     shutdown_timeout_seconds: float = typer.Option(2.0, "--shutdown-timeout-seconds", min=0.0),
+    provenance: list[str] = typer.Option(
+        [],
+        "--provenance",
+        help=(
+            "Provenance label the transport establishes for inbound calls "
+            "(repeatable). Omitted means UNVERIFIED, which is the safe default. "
+            "See docs/threat-model.md: the adapter is a TCB boundary and must "
+            "label provenance accurately."
+        ),
+    ),
+    provenance_verified: bool = typer.Option(
+        False,
+        "--provenance-verified",
+        help="Assert that the declared provenance has been cryptographically verified.",
+    ),
 ) -> None:
     """Run the explicit ENFORCE-only protected MCP 2025-03-26 stdio profile."""
     server_command = list(ctx.args)
@@ -817,6 +847,8 @@ def mcp_proxy_v2(
         schema_ttl_seconds=schema_ttl_seconds,
         execution_timeout_seconds=execution_timeout_seconds,
         shutdown_timeout_seconds=shutdown_timeout_seconds,
+        provenance=_provenance_labels(provenance),
+        provenance_verified=provenance_verified,
     )
     raise typer.Exit(proxy.run())
 

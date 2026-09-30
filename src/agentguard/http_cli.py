@@ -15,12 +15,26 @@ from agentguard.adapters.protocols.mcp.modern import MCPHTTPServerBinding
 from agentguard.adapters.reconciliation import SQLiteProviderEffectRepository
 from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService
-from agentguard.cli.io import load_policy
-from agentguard.domain import CredentialAuthorityProfile, Principal, ProviderIdentity
+from agentguard.cli.io import load_policy, parse_provenance
+from agentguard.domain import (
+    CredentialAuthorityProfile,
+    Principal,
+    ProvenanceLabel,
+    ProviderIdentity,
+)
 from agentguard.service_deployment import (
     ServiceDeploymentError,
     validate_http_service_deployment,
 )
+
+
+def _provenance_labels(values: list[str]) -> tuple[ProvenanceLabel, ...]:
+    """Entrypoint wrapper that turns an invalid --provenance value into a usage error."""
+
+    try:
+        return parse_provenance(values)
+    except ValueError as exc:
+        raise SystemExit(f"agentguard-mcp-http: error: {exc}") from exc
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,6 +66,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--max-message-bytes", type=int, default=1_000_000)
     parser.add_argument("--max-response-bytes", type=int, default=4_000_000)
+    parser.add_argument(
+        "--provenance",
+        action="append",
+        default=[],
+        help=(
+            "Provenance label the transport establishes for inbound calls (repeatable). "
+            "Omitted means unverified, which is the safe default. The gateway is a TCB "
+            "boundary and must label provenance accurately; see docs/threat-model.md."
+        ),
+    )
+    parser.add_argument(
+        "--provenance-verified",
+        action="store_true",
+        help="Assert that the declared provenance has been cryptographically verified.",
+    )
 
     credential = parser.add_argument_group("production credential authority")
     credential.add_argument("--credential-env")
@@ -89,7 +118,12 @@ def entrypoint() -> None:
         if not args.credential_scope:
             parser.error("at least one --credential-scope is required with --credential-env")
         if not args.credential_key.is_file():
-            parser.error("--credential-key must reference an existing broker private key")
+            parser.error(
+                f"--credential-key must reference an existing Ed25519 broker private key; "
+                f"{args.credential_key} does not exist. "
+                "Run `agentguard init` to generate one at that path, or pass --credential-key "
+                "with a key of your own."
+            )
 
     token = os.environ.get(args.access_token_env) or None
     try:
@@ -117,6 +151,7 @@ def entrypoint() -> None:
         parser.error("HTTP support is not installed; install AgentGuard with the 'http' extra")
         raise AssertionError("unreachable") from exc
 
+    provenance = _provenance_labels(args.provenance)
     binding = MCPHTTPServerBinding.for_url(args.server_id, args.upstream_url)
     signer = Ed25519Signer.load_private(args.key)
     verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
@@ -188,6 +223,8 @@ def entrypoint() -> None:
         provider_identity=provider_identity,
         provider_effect_repository=provider_effects,
         max_message_bytes=args.max_message_bytes,
+        provenance=provenance,
+        provenance_verified=args.provenance_verified,
     )
     default_hosts = {args.listen_host, "localhost", "127.0.0.1", "::1"}
     allowed_hosts = frozenset(args.allowed_host or default_hosts)

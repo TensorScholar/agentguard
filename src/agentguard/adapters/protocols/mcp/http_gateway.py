@@ -12,6 +12,7 @@ from agentguard.domain import (
     ExecutionStatus,
     PolicyDocument,
     Principal,
+    ProvenanceLabel,
     ProviderIdentity,
     Resource,
 )
@@ -91,6 +92,8 @@ class MCPProtectedHTTPGateway:
         max_message_bytes: int = 1_000_000,
         max_schema_pages: int = 32,
         max_schema_tools: int = 4096,
+        provenance: tuple[ProvenanceLabel, ...] = (ProvenanceLabel.UNVERIFIED,),
+        provenance_verified: bool = False,
     ) -> None:
         if max_message_bytes < 1:
             raise ValueError("max_message_bytes must be greater than zero")
@@ -114,6 +117,13 @@ class MCPProtectedHTTPGateway:
         self.max_message_bytes = max_message_bytes
         self.max_schema_pages = max_schema_pages
         self.max_schema_tools = max_schema_tools
+        # Provenance is a property of the deployment's transport, not something the
+        # gateway can infer from the wire. The adapter is a TCB boundary and is
+        # expected to label it accurately (see docs/threat-model.md). Default stays
+        # UNVERIFIED so an unconfigured gateway cannot assert trust it has not
+        # established.
+        self.provenance = provenance
+        self.provenance_verified = provenance_verified
 
     def handle(self, body: bytes, headers: Mapping[str, str]) -> GatewayResponse:
         try:
@@ -221,6 +231,8 @@ class MCPProtectedHTTPGateway:
                 request_id="mcphttpreq_" + uuid4().hex,
                 tool_schema=schema,
                 resource=resource,
+                provenance=self.provenance,
+                provenance_verified=self.provenance_verified,
             )
             receipt = self.service.authorize(intent, self.policy)
         except Exception as exc:
@@ -293,11 +305,21 @@ class MCPProtectedHTTPGateway:
                     self.credential_broker,
                 )
             except Exception as exc:
+                # Carry the stable credential reason code (for example
+                # credential.profile_unavailable) rather than only the exception
+                # class. Every code raised here is a fixed, secret-free identifier,
+                # and without it a credential misconfiguration -- most often a
+                # --tenant-id that does not match the policy ceiling, or a profile
+                # whose scopes do not match -- is indistinguishable.
                 return self._error(
                     request_id,
                     PROTECTED_EXECUTION_ERROR,
                     "credential issuance failed",
-                    data={"reason": type(exc).__name__, "decision_id": receipt.decision_id},
+                    data={
+                        "reason": type(exc).__name__,
+                        "reason_code": str(exc),
+                        "decision_id": receipt.decision_id,
+                    },
                 )
 
         executor = MCPHTTPProtectedExecutor(
@@ -402,6 +424,16 @@ class MCPProtectedHTTPGateway:
                 if name != tool_name:
                     continue
                 schema: dict[str, Any] = {"inputSchema": input_schema}
+                # Carry the provider-declared description into the bound schema. The
+                # capability classifier is documented to read tool metadata, and it
+                # cannot see provider semantics otherwise -- dropping the description
+                # here made every such tool classify as `unknown` and therefore
+                # denied under a default-deny `unknown_capability`. Binding it also
+                # means a provider cannot silently change a tool's declared meaning
+                # without changing the schema digest.
+                description = item.get("description")
+                if isinstance(description, str) and description:
+                    schema["description"] = description
                 output_schema = item.get("outputSchema")
                 if output_schema is not None:
                     if not isinstance(output_schema, dict):

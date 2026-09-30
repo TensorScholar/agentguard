@@ -3,10 +3,35 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 
+from agentguard.adapters.evidence.bundle import EvidenceVerificationError
+from agentguard.application.service import ExecutionPersistenceError
 from agentguard.changed import changed_config_paths
 from agentguard.compatibility import v1_cli as _v1_cli
+from agentguard.engine.causal import CausalIntegrityError
+from agentguard.engine.credentials import CredentialVerificationError
+from agentguard.engine.execution import ExecutionGuardError
+from agentguard.engine.field_integrity import FieldIntegrityError
+from agentguard.engine.receipts import ReceiptVerificationError
+from agentguard.security.files import UnsafeFilesystemTargetError
+from agentguard.service_deployment import ServiceDeploymentError
 
 from .app import app
+
+# Deterministic denial, integrity, and verification failures. Each carries a stable
+# reason code (for example execution.arguments_digest_mismatch or
+# evidence.digest_mismatch:grant.json) that operators match on and CI asserts on, so
+# the CLI prints the code instead of a Rich traceback.
+_DENIAL_ERRORS = (
+    ExecutionGuardError,
+    ReceiptVerificationError,
+    CredentialVerificationError,
+    FieldIntegrityError,
+    CausalIntegrityError,
+    ExecutionPersistenceError,
+    EvidenceVerificationError,
+    UnsafeFilesystemTargetError,
+    ServiceDeploymentError,
+)
 
 _V1_ONLY_COMMANDS = frozenset(
     {
@@ -43,6 +68,12 @@ def entrypoint(argv: Sequence[str] | None = None) -> int:
     except SystemExit as exc:
         code = int(exc.code or 0)
         return 0 if code < 0 else code
+    except _DENIAL_ERRORS as exc:
+        # These carry stable reason codes that operators are expected to match on.
+        # Rendering them as a Rich traceback hides the one line that matters, so
+        # print the code plainly on stderr and exit non-zero.
+        sys.stderr.write(f"{type(exc).__name__}: {exc}\n")
+        return 2
 
 
 __all__ = ["app", "changed_config_paths", "entrypoint", "main"]

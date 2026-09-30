@@ -20,6 +20,7 @@ from agentguard.domain import (
     PolicyDocument,
     Principal,
     ProtectedExecutionResult,
+    ProvenanceLabel,
     Resource,
     VerifiedExecution,
 )
@@ -147,6 +148,16 @@ class SessionToolSchemaCache:
                 self.invalidate()
                 return False
             schema: dict[str, Any] = {"inputSchema": input_schema}
+            # Carry the provider-declared description into the bound schema. The
+            # capability classifier is documented to read tool metadata, and it
+            # cannot see provider semantics otherwise -- dropping the description
+            # here made every such tool classify as `unknown` and therefore
+            # denied under a default-deny `unknown_capability`. Binding it also
+            # means a provider cannot silently change a tool's declared meaning
+            # without changing the schema digest.
+            description = tool.get("description")
+            if isinstance(description, str) and description:
+                schema["description"] = description
             output_schema = tool.get("outputSchema")
             if output_schema is not None:
                 if not isinstance(output_schema, dict):
@@ -216,12 +227,20 @@ class MCPProtectedSession:
         *,
         request_id_capacity: int = 4096,
         schema_ttl_seconds: float = 300.0,
+        provenance: tuple[ProvenanceLabel, ...] = (ProvenanceLabel.UNVERIFIED,),
+        provenance_verified: bool = False,
     ) -> None:
         if request_id_capacity < 1:
             raise ValueError("request_id_capacity must be at least one")
         self.binding = binding
         self.request_id_capacity = request_id_capacity
         self.schemas = SessionToolSchemaCache(binding, ttl_seconds=schema_ttl_seconds)
+        # Provenance is a property of the deployment's transport, not something this
+        # adapter can infer from the wire. It is a TCB boundary and is expected to
+        # label provenance accurately (docs/threat-model.md). Default stays UNVERIFIED
+        # so an unconfigured adapter cannot assert trust it has not established.
+        self.provenance = provenance
+        self.provenance_verified = provenance_verified
         self._request_ids: dict[str, str] = {}
         self._tools_list_requests: dict[str, str | None] = {}
         self._initialize_request_key: str | None = None
@@ -552,6 +571,8 @@ class MCPProtectedStdioProxy:
         shutdown_timeout_seconds: float = 2.0,
         max_message_bytes: int = 1_000_000,
         cwd: Path | None = None,
+        provenance: tuple[ProvenanceLabel, ...] = (ProvenanceLabel.UNVERIFIED,),
+        provenance_verified: bool = False,
     ) -> None:
         if not server_command:
             raise ValueError("server command is required")
@@ -572,6 +593,8 @@ class MCPProtectedStdioProxy:
             self.binding,
             request_id_capacity=request_id_capacity,
             schema_ttl_seconds=schema_ttl_seconds,
+            provenance=provenance,
+            provenance_verified=provenance_verified,
         )
         self._transport: MCPProtectedTransport | None = None
         self._has_run = False
@@ -935,6 +958,8 @@ class MCPProtectedStdioProxy:
                 request_id="mcpreq_" + uuid4().hex,
                 tool_schema=resolved.schema,
                 resource=resource,
+                provenance=self.session.provenance,
+                provenance_verified=self.session.provenance_verified,
             )
             receipt = self.service.authorize(intent, self.policy)
         except Exception as exc:
