@@ -47,6 +47,13 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
 - Align coverage measurement with the distributed package so the 80% combined statement/branch floor
   is not spent on non-shipped code.
 
+### CI
+
+- Enable CodeQL result upload with `security-events: write` and no `continue-on-error` so a finding
+  can fail the check.
+- **No green hosted CI run exists on this line.** Workflows are corrected, but hosted CI evidence is
+  tracked as `AG-CI-001` and cross-platform CI is no longer listed as a validated capability.
+
 ## 0.2.0rc3
 
 ### Runtime-integrity and provider boundary

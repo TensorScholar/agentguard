@@ -22,7 +22,24 @@ AgentGuard `v0.2.0rc3` is a hardened release candidate for deterministic runtime
 - single-host multi-process reconciliation leases, monotonic fencing tokens, crash takeover, stale-worker rejection, explicit operator recovery (automatic startup recovery disabled), claimed-attempt quota bounding, process-local round-robin fairness, and health/readiness probes;
 - dedicated provider-result hashing isolated from signing canonicalization, supporting finite JSON floating-point provider responses;
 - secret-minimized hash-chained audit, signed checkpoints, verifiable evidence manifests (with optional signature authentication), and signed execution attestations;
-- reproducible wheel/normalized-sdist validation, deterministic SBOM/release manifest generation, checksums, clean-install smoke, non-root container smoke, cross-platform CI, Security, and CodeQL gates.
+- reproducible wheel/normalized-sdist validation, deterministic SBOM/release manifest generation, checksums, clean-install smoke, non-root container smoke, and Security and CodeQL workflow definitions.
+
+### CI evidence status
+
+Hosted CI has **not** produced a green run on this line. The PR #14 GitHub Actions runs were
+runner-less infrastructure failures (`steps=[]`, `runner_id=0`) and therefore provide neither
+passing-CI evidence nor code-regression evidence. Until a green run exists on the release commit,
+"cross-platform CI gates" must not be cited as a validated capability.
+
+What *has* been verified is the local execution of the same gate that CI runs: `make check`
+(`ruff format --check`, `ruff check`, `mypy --strict`, `coverage` with the 80% combined
+statement/branch floor, schema drift check, architecture/secret/static security scans, release
+metadata consistency, and `compileall`) passes on the working tree, and the built wheel excludes
+`agentguard.research` and installs and runs clean.
+
+CodeQL is now configured to publish results with `security-events: write` and no
+`continue-on-error`, so a finding can fail the check. It has not yet been observed failing or
+passing on a hosted run.
 
 ## Engineering gaps closed on the current line
 
@@ -40,6 +57,8 @@ Closing these engineering gaps does **not** imply that AgentGuard is a productio
 - `AG-DX-001` / `AG-DX-002` (Operator Ergonomics) — broader operator/developer ergonomics and deployment automation;
 - `AG-BROKER-001` (Provider-Native IAM Downscoping) — provider-native credential minting/downscoping and broader real-provider integration decisions;
 - `AG-REL-001` (Release Signing & Provenance) — final exact-commit release evidence, release signing/provenance decision, tag/release publication, and independent artifact verification;
+- `AG-CI-001` (Hosted CI Evidence) — a green hosted CI run on the release commit, including cross-platform `compatibility` and `quality` matrix results. The workflow definitions are corrected and CodeQL is able to fail a build, but no green hosted run has been observed on this line;
+- `AG-SUP-001` (Dependency Hash Pinning) — hash pinning of the full runtime dependency closure. The build backend is hash-pinned; the runtime closure is pinned by exact version in `requirements/runtime-validated.txt` only, because `cryptography` and `cffi` ship platform-specific wheels whose hashes must be collected per platform;
 - `AG-VAL-001` (Independent Penetration & Pilot) — independent security review, long-duration soak testing, and controlled production pilot.
 
 Multi-host HA, distributed consensus, generic provider output DLP, hosted identity-backed approval, and generic provider compensation are explicit non-capabilities rather than hidden claims.
