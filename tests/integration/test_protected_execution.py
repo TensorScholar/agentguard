@@ -23,7 +23,7 @@ from agentguard.domain import (
 from agentguard.engine.canonical import digest
 from agentguard.engine.execution import (
     ExecutionGuardError,
-    authorize_execution,
+    preflight_execution,
     validate_execution_authority,
 )
 from agentguard.engine.policy import evaluate_policy
@@ -221,7 +221,7 @@ def test_post_validation_in_place_mutation_cannot_reach_executor(
 def test_preflight_validation_is_non_consuming(intent, policy, signer, verifier, state):
     service, broker, receipt, grant = _credential_flow(intent, policy, signer, verifier, state)
 
-    authorize_execution(
+    preflight_execution(
         intent,
         receipt,
         grant,
@@ -230,7 +230,7 @@ def test_preflight_validation_is_non_consuming(intent, policy, signer, verifier,
         broker_grant_verifier=broker.verifier,
         current_policy=policy,
     )
-    authorize_execution(
+    preflight_execution(
         intent,
         receipt,
         grant,

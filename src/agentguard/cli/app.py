@@ -49,7 +49,7 @@ from agentguard.engine.checkpoints import (
     issue_audit_checkpoint,
     verify_audit_checkpoint_signature,
 )
-from agentguard.engine.execution import authorize_execution
+from agentguard.engine.execution import preflight_execution
 from agentguard.engine.field_integrity import (
     issue_field_provenance_statement,
     issue_field_release,
@@ -318,7 +318,7 @@ def verify_execution(
             )
         execution_repository = SQLiteState(ledger)
     # Legacy/non-causal preflight remains persistence-free; no state is opened or created.
-    authorize_execution(
+    preflight_execution(
         intent,
         r,
         g,

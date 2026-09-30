@@ -4,7 +4,7 @@ import pytest
 
 from agentguard.adapters.broker import MockCredentialBroker
 from agentguard.domain import CredentialRequest, ProvenanceLabel
-from agentguard.engine.execution import ExecutionGuardError, authorize_execution
+from agentguard.engine.execution import ExecutionGuardError, preflight_execution
 from agentguard.engine.policy import evaluate_policy
 from agentguard.engine.receipts import issue_decision_receipt
 
@@ -31,7 +31,7 @@ def test_cross_tenant_reuse(intent, policy, signer, verifier, state):
         update={"principal": intent.principal.model_copy(update={"tenant_id": "other"})}
     )
     with pytest.raises(ExecutionGuardError, match="principal_digest_mismatch"):
-        authorize_execution(
+        preflight_execution(
             other,
             r,
             g,
@@ -48,7 +48,7 @@ def test_resource_substitution(intent, policy, signer, verifier, state):
         update={"resource": intent.resource.model_copy(update={"id": "order-999"})}
     )
     with pytest.raises(ExecutionGuardError, match="resource_digest_mismatch"):
-        authorize_execution(
+        preflight_execution(
             other,
             r,
             g,
@@ -65,7 +65,7 @@ def test_action_substitution(intent, policy, signer, verifier, state):
         update={"action": intent.action.model_copy(update={"tool": "refund.delete"})}
     )
     with pytest.raises(ExecutionGuardError, match="action_digest_mismatch"):
-        authorize_execution(
+        preflight_execution(
             other,
             r,
             g,
@@ -88,7 +88,7 @@ def test_budget_amount_excess(intent, policy, signer, verifier, state):
     narrowed = policy.model_copy(update={"rules": policy.rules[:1] + (selected,)})
     r, g, grant_verifier = grant_for(intent, narrowed, signer)
     with pytest.raises(ExecutionGuardError, match="budget.financial_amount_exceeded"):
-        authorize_execution(
+        preflight_execution(
             intent,
             r,
             g,

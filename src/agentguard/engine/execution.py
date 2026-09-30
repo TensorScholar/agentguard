@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -280,7 +281,7 @@ def validate_execution_authority(
     )
 
 
-def authorize_execution(
+def preflight_execution(
     intent: ActionIntent,
     receipt: DecisionReceipt,
     grant: CredentialGrant | None,
@@ -295,12 +296,14 @@ def authorize_execution(
     execution_repository: ExecutionRepository | None = None,
     now: datetime | None = None,
 ) -> None:
-    """Compatibility preflight for v0.2 callers.
+    """Validate execution authority WITHOUT consuming the decision nonce.
 
-    Historically this function consumed the decision nonce. It is intentionally non-consuming now;
-    only the protected execution lifecycle may claim execution authority through
-    reserve_execution().
-    The nonce_repository argument remains accepted so existing call sites do not break abruptly.
+    This function is a preflight only. It performs no state mutation and
+    therefore does not provide single-use enforcement. Only the protected
+    execution lifecycle may claim execution authority through ``reserve_execution()``.
+
+    The ``nonce_repository`` argument is retained so existing call sites do not
+    break abruptly; it is used only to resolve an ``execution_repository``.
     """
 
     if (
@@ -322,4 +325,38 @@ def authorize_execution(
         release_verifier=release_verifier,
         execution_repository=execution_repository,
         now=now,
+    )
+
+
+def authorize_execution(
+    intent: ActionIntent,
+    receipt: DecisionReceipt,
+    grant: CredentialGrant | None,
+    verifier: SignatureVerifier,
+    nonce_repository: NonceRepository | None = None,
+    **kwargs: object,
+) -> None:
+    """Deprecated. Use :func:`preflight_execution`.
+
+    This name is retained only so that call sites written against the historical
+    API fail loudly instead of silently losing single-use enforcement. It has
+    been non-consuming since the Q02 supersession; the old name implied an
+    authorization guarantee it does not provide.
+    """
+
+    warnings.warn(
+        "agentguard.engine.execution.authorize_execution is deprecated and does not "
+        "consume the decision nonce; it provides no single-use enforcement. "
+        "Use preflight_execution() for validation, or the protected execution "
+        "lifecycle (reserve_execution) to claim execution authority.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    preflight_execution(
+        intent,
+        receipt,
+        grant,
+        verifier,
+        nonce_repository,
+        **kwargs,  # type: ignore[arg-type]
     )

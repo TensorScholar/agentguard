@@ -31,6 +31,14 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
   absent, and that shipped v2 example policies declare `defaults.effect: deny`.
 - The v2 policy path is unchanged: `PolicyDefaults.effect` is `Literal[Effect.DENY]`.
 
+### Execution API safety
+
+- Rename `agentguard.engine.execution.authorize_execution` to `preflight_execution`. The function
+  performs validation only and does not consume the decision nonce; the previous name implied
+  single-use enforcement it does not perform.
+- Keep `authorize_execution` as a deprecated wrapper that emits `DeprecationWarning` and delegates
+  to `preflight_execution`.
+
 ## 0.2.0rc3
 
 ### Runtime-integrity and provider boundary

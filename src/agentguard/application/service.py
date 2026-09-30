@@ -58,8 +58,8 @@ from agentguard.engine.credentials import (
 )
 from agentguard.engine.execution import (
     ExecutionGuardError,
-    authorize_execution,
     execution_authority_digest,
+    preflight_execution,
     prepared_execution_binding_digest,
     validate_execution_authority,
 )
@@ -621,7 +621,7 @@ class AgentGuardService:
     ) -> None:
         """Compatibility preflight. This validates but never consumes execution authority."""
 
-        authorize_execution(
+        preflight_execution(
             intent,
             receipt,
             grant,
