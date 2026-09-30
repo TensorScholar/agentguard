@@ -51,3 +51,15 @@ This document states the current technical and operational boundary of the `0.2.
 - Real-provider interoperability is adapter/profile specific; passing deterministic tests does not establish universal provider compatibility.
 - No independent penetration test, long-duration soak test, or controlled production pilot has been completed for `0.2.0rc3`.
 - A release candidate must not be described as production-certified merely because CI, Security, CodeQL, packaging, and reproducibility gates pass.
+- The pre-registered authorization-lineage research program is retained in the repository as the research
+  record but is excluded from the distributed wheel and sdist. It is importable only from a source
+  checkout or editable install. Its result is `RESEARCH_CLAIM: NOT_VALIDATED` and
+  `AGENTGUARD_SPECIFIC_DIFFERENTIATION_THESIS: FALSIFIED_WITHIN_PROTOCOL`; see
+  `docs/research/FREEZE_V2_RESULT_ADJUDICATION.md`.
+- `agentguard.engine.execution.authorize_execution` is a deprecated alias. It is non-consuming and
+  provides no single-use enforcement; use `preflight_execution` for validation or the protected
+  execution lifecycle (`reserve_execution`) to claim execution authority.
+- The v1 policy model defaults `default_action` to `deny` when the key is absent. In that model
+  `allowed_tools` is a narrowing check that runs first and `default_action` is only the fallback for
+  tools that passed it, so a policy that wants to permit a tool must declare both. The v2 model is
+  structurally default-deny (`PolicyDefaults.effect` is `Literal[Effect.DENY]`).

@@ -183,3 +183,37 @@ Issue #12 remains open. Promotion debt includes:
 - Exclude terminal reconciliation work (`CONFIRMED_SUCCEEDED`, `CONFIRMED_FAILED`, `CONFLICT`) via atomic storage enforcement in `claim_reconciliation_lease()` and worker optimization in `run_once()` while preserving `UNKNOWN` execution state. Keep Q04-04 progress/fairness separate. **Merged via PR #18.**
 - Implement claimed-attempt quota bounding and process-local round-robin candidate rotation in `ReconciliationWorker.run_once()` so busy leases and non-progressing executions yield across ticks without introducing durable scheduler state. **Merged via PR #20.**
 - Separate provider-result hashing (`canonical_json_bytes_for_provider_result`) from signed-security canonicalization (`canonical_json_bytes`), normalizing finite JSON floats while preserving strict float rejection for signed authorization objects. **Merged via PR #19.**
+
+## Phase 0 — Stabilization and Honesty
+
+Decisions recorded for the stabilization pass. Each is a correction to existing behavior or
+documentation; none adds a product feature.
+
+- Publish the research outcome in `README.md` rather than only in `docs/research/`. The repository
+  now states `RESEARCH_CLAIM: NOT_VALIDATED`, `AGENTGUARD_SPECIFIC_DIFFERENTIATION_THESIS:
+  FALSIFIED_WITHIN_PROTOCOL`, the 6.45 slot-hold ratio favoring the no-guard baseline, the §6 scope
+  exclusions, and the unestablished product claims, above the fold.
+- Close the v1 fail-open policy default. `load_policy` and the `Policy` dataclass now default
+  `default_action` to `deny`. Shipped v1 example policies and policy packs carry explicit
+  `allowed_tools` allowlists, which are checked first and deny every tool they do not name. Policy v2
+  is unchanged. This is a **breaking change** for any policy relying on implicit allow-by-default.
+- Rename `authorize_execution` to `preflight_execution` and keep the old name only as a deprecated
+  wrapper that emits a `DeprecationWarning`. The function has been non-consuming since the Q02
+  supersession; the old name implied single-use enforcement it never performed.
+- Exclude `agentguard.research` from the wheel and sdist. The pre-registered experiment is retained
+  in the repository as the research record but is not shipped as unreferenced product code. Coverage
+  measurement is aligned to the distributed package, which restores a real margin above the 80%
+  combined statement/branch floor.
+- Make CodeQL able to fail a build: add `security-events: write`, remove `upload: never`, and keep
+  the SARIF artifact upload as retained evidence.
+- Reconcile `docs/project-status.md` with the runner-less CI record. "Cross-platform CI gates" is
+  removed from the validated-capabilities list and an explicit CI evidence status section is added,
+  because no green hosted run exists on this line. Added as promotion debt `AG-CI-001`.
+- Re-enable Dependabot for pip and GitHub Actions; the pause dates from the RC2 demonstration and is
+  lifted.
+- Pin the build backend by hash (`requirements/build-hashed.txt`) and build with `--no-isolation` so
+  the build does not depend on whatever the index serves. Full hash pinning of the platform-specific
+  runtime closure is recorded as `AG-SUP-001` rather than guessed at.
+- Record supersession rather than only forward decisions: ADR 0003 superseded by ADR 0005; ADR 0006
+  §7 superseded by ADR 0007; ADR 0001 annotated with the Q02 → Q04-01 supersession and the preflight
+  rename; ADR 0002 annotated with the v1 default-deny alignment.

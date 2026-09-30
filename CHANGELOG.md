@@ -62,6 +62,13 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
   the build does not depend on whatever the index serves. Hash pinning of the platform-specific
   runtime closure is tracked as `AG-SUP-001`.
 
+### Documentation
+
+- Record Phase 0 decisions in `docs/PROGRESS_TRACKER.md` as corrections to existing behavior rather
+  than only forward decisions.
+- Mark ADR 0003 superseded by ADR 0005 and ADR 0006 §7 superseded by ADR 0007; annotate ADR 0001 with
+  the Q02 to Q04-01 supersession and ADR 0002 with the v1 default-deny alignment.
+
 ## 0.2.0rc3
 
 ### Runtime-integrity and provider boundary

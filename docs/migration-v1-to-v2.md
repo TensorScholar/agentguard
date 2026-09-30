@@ -25,6 +25,39 @@ The installed CLI preserves the v0.1 `doctor`, `scan`, `gate`, `check-call`, `pr
 and `demo` workflows are the defaults; the v0.2 demo includes the v0.1 compatibility fixtures
 under `v1-compat/`.
 
+## Phase 0 breaking changes
+
+Two changes in the Phase 0 stabilization pass are breaking for existing callers.
+
+**1. The v1 policy default is now `deny`.** `load_policy()` and the `Policy` dataclass previously
+used `allow` when `default_action` was absent, which meant a minimal v1 policy authorized anything
+it did not explicitly block. That default is now `deny`. Note that in the v1 model `allowed_tools` is
+a narrowing check evaluated *first*, and `default_action` is only the fallback for tools that passed
+it — so permitting a tool requires declaring both. To migrate:
+
+```yaml
+# before: implicitly allow-by-default
+denied_tools:
+  - delete_file
+
+# after: explicit, and unmatched tools are denied by the allowlist
+default_action: allow
+allowed_tools:
+  - read_file
+  - write_file
+denied_tools:
+  - delete_file
+```
+
+Migrating to a v2 policy (`examples/scoped-refund/policy.yaml`) avoids this ambiguity entirely:
+`PolicyDefaults.effect` is structurally `deny`.
+
+**2. `authorize_execution` is renamed `preflight_execution`.** The function validates execution
+authority but does not consume the decision nonce, so it never provided single-use enforcement; the
+old name implied otherwise. The old name still resolves, but emits a `DeprecationWarning`. If your
+integration relied on the old name to enforce single use, it was never doing so — the protected
+execution lifecycle (`reserve_execution`) is the only path that claims execution authority.
+
 ## Audit database
 
 Do not overwrite an existing audit database. Export the v0.1 head hash and report, retain the
