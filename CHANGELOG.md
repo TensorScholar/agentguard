@@ -39,6 +39,14 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
 - Keep `authorize_execution` as a deprecated wrapper that emits `DeprecationWarning` and delegates
   to `preflight_execution`.
 
+### Packaging
+
+- Exclude `agentguard.research` from the wheel and sdist. The pre-registered authorization-lineage
+  research program is retained in the repository as the research record and is importable from a
+  source checkout or editable install, but is not distributed as unreferenced product code.
+- Align coverage measurement with the distributed package so the 80% combined statement/branch floor
+  is not spent on non-shipped code.
+
 ## 0.2.0rc3
 
 ### Runtime-integrity and provider boundary
