@@ -1,6 +1,49 @@
 # Changelog
 
-## Unreleased (Phase 0 stabilization)
+## Unreleased (Phase 1 product wedge)
+
+Product-focus pass. No feature was added, no module was deleted, and no behavior changed. The change is
+to what the project leads with and what a reader is shown first.
+
+### Product wedge
+
+- Narrow the product thesis to four mechanisms and state it as one paragraph: decision-bound credential
+  ceilings with late secret resolution; execution-time digest revalidation with single-use claim;
+  durable `ExternalEffectBinding` with `RECONCILE_BEFORE_RETRY`; hash-chained ledger with signed
+  evidence bundles and offline verification.
+- State six non-goals up front in `docs/limitations.md` and `docs/product-boundary.md`: multi-host/HA,
+  identity issuance, generic policy-gateway competition, vault or token minting, isolation/egress
+  control, and production certification.
+- Add a 5-minute grasp / 30-minute evaluation path to the README, naming who the product is for and
+  stating that the core single-use admission-ticket pattern is prior art.
+- Collapse the documented happy path to four steps: `authorize`, execute through `mcp-proxy-v2` (or
+  `agentguard-mcp-http`), `evidence-build`, `evidence-verify`, with `reconcile-execution` as an
+  operator-only branch.
+- Demote causal graphs, field provenance and typed releases, policy counterfactuals, delegated
+  authority trees, approval receipts, checkpoint signing, attestations, the reconciliation worker, and
+  the v0.1 compatibility CLI into an explicit "Advanced Surface" table. Code, tests, and support are
+  unchanged; `docs/project-status.md` now splits validated capabilities into product wedge versus
+  advanced surface.
+- Add `docs/credential-contract.md` documenting the ceiling-to-secret contract precisely, including the
+  honest limit that a static secret cannot be attenuated so exact scope equality is required, the
+  absence of audience proof and upstream revocation, and that `broker-demo` uses the non-production
+  mock broker while the production authority is reachable only via
+  `agentguard-mcp-http --credential-env`.
+- Add `docs/scenarios.md` with three concrete high-stakes scenarios (bounded refund, irreversible
+  delete, external effect that goes `UNKNOWN`), each mapped to the mechanisms it exercises and to the
+  existing `examples/` material.
+- Record Phase 1 decisions in `docs/PROGRESS_TRACKER.md` and restate the product thesis in Product
+  Validation Status without upgrading it from a hypothesis.
+
+### Documentation correction
+
+- The README and `docs/DEMO.md` described `verify-execution` as executing and as recording the decision
+  nonce. It is a preflight: it mutates nothing, consumes no nonce, and prints "Execution authority
+  verified; nonce not consumed. Use protected execution to claim authority." Both documents now say so,
+  and the happy path names the protected proxy as the real execution sink. The bearer-ticket property
+  of a `DecisionReceipt` is now also stated in `docs/limitations.md`.
+
+## Phase 0 (stabilization and honesty, completed)
 
 Stabilization and honesty pass. No product features were added. Two changes are breaking and are
 documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).

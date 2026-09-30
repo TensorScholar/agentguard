@@ -1,8 +1,44 @@
 # Product Boundary & Architecture
 
-AgentGuard is the **Runtime Action Integrity Layer** situated between an AI agent runtime and a tool executor.
+AgentGuard is a **decision-bound credential and execution-evidence layer** for high-stakes MCP tool
+calls. It sits between an agent runtime and a tool executor and does four things: it bounds the
+credential to the authorization, revalidates the authorization against the bytes actually dispatched,
+binds the external effect before it happens, and produces evidence a third party can verify offline.
 
-This document formalizes the boundary separating AgentGuard from adjacent systems across the modern enterprise AI stack. AgentGuard operates cooperatively with these systems across distinct architectural domains, rather than replacing them.
+> **Product thesis.** AgentGuard protects high-stakes MCP tool calls by binding a short-lived,
+> decision-scoped credential ceiling to a signed authorization, resolving the actual secret only at the
+> last moment, preventing replay and argument mutation, and producing independently verifiable evidence
+> of what was authorized versus what was observed — especially for actions that can leave ambiguous
+> external effects.
+
+This document formalizes the boundary separating AgentGuard from adjacent systems. AgentGuard operates
+cooperatively with them across distinct domains rather than replacing them.
+
+## What this release line leads with
+
+| Mechanism | Boundary it draws |
+|---|---|
+| Decision-bound credential ceilings + late secret resolution | Between *what the agent may call* and *what secret it holds* |
+| Execution-time digest revalidation + single-use claim | Between *what was authorized* and *what is dispatched* |
+| Durable `ExternalEffectBinding` + `RECONCILE_BEFORE_RETRY` | Between *an attempt* and *a committed external effect* |
+| Hash-chained ledger + signed evidence bundles | Between *what happened* and *what can be proven* |
+
+Everything else the codebase implements — causal execution graphs, field provenance and typed releases,
+policy counterfactuals, delegated authority trees, approval receipts, checkpoint signing, the
+background reconciliation worker, the preserved v0.1 CLI — is **advanced surface**. It is retained and
+supported. It is not the product and no claim here depends on it. See the README's
+[Advanced Surface](../README.md#advanced-surface-not-part-of-the-wedge).
+
+## Explicit non-goals for this release line
+
+Not roadmap items; boundaries:
+
+- **Multi-host, HA, or distributed consensus.** Single-host multi-process over local SQLite only.
+- **Issuing or verifying identity.** AgentGuard binds identity a trusted integration supplies.
+- **Generic policy-gateway competition.** No policy authoring, simulation, or content filtering.
+- **Secret storage or token minting.** One environment variable, read at dispatch, never persisted.
+- **Process isolation, filesystem MAC, or network egress control.**
+- **Production certification.** No independent penetration test, soak test, or pilot has completed.
 
 ---
 
@@ -33,12 +69,22 @@ This document formalizes the boundary separating AgentGuard from adjacent system
 │  • Normalizes proposed calls into versioned ActionIntent schemas       │
 │  • Deterministic Policy v2 evaluation (default-deny, blast-radius)     │
 │  • Cryptographic DecisionReceipt issuance (Ed25519 canonical hashing) │
+│                                                                        │
+│  Primary — the wedge this release line leads with:                     │
 │  • Credential ceiling enforcement & late secret resolution             │
 │  • Execution-time digest revalidation (blocks argument mutation)       │
 │  • Atomic nonce consumption (blocks receipt replay & double spend)     │
 │  • Durable external-effect binding & RECONCILE_BEFORE_RETRY contracts  │
-│  • Single-host multi-process reconciliation leasing & fencing tokens   │
-│  • Secret-minimized hash-chained audit & verifiable evidence bundles   │
+│  • Secret-minimized hash-chained ledger & offline-verifiable evidence  │
+│                                                                        │
+│  Advanced surface — retained, supported, NOT the product:               │
+│  • Declared causal execution graphs                                    │
+│  • Field provenance & typed-release lifecycle                          │
+│  • Policy counterfactual / least-authority analysis (advisory only)   │
+│  • Delegated authority grants, leases, delegation trees                │
+│  • Approval receipts (no identity-backed approval UX is bundled)       │
+│  • Signed checkpoints & execution attestations                         │
+│  • Single-host multi-process reconciliation leases & fencing tokens   │
 ==========================================================================
                                     │  [Verified, Bounded Dispatch]
                                     ▼
@@ -79,10 +125,11 @@ This document formalizes the boundary separating AgentGuard from adjacent system
 ### 4. Secret Management vs. AgentGuard
 - **Secret Vaults (e.g., HashiCorp Vault, AWS Secrets Manager, KMS):** Own enterprise secret storage, key rotation, and hardware-backed isolation.
 - **AgentGuard:** Enforces **credential ceilings** and late secret resolution. It ensures that a credential request matches the signed authorization decision, resolves the secret late via provider-neutral adapters immediately prior to execution, and ensures raw secrets never touch durable decision receipts, external bindings, or audit ledgers.
+- **Explicit limit:** the current source is one environment variable. Because a static secret cannot be attenuated, AgentGuard requires the requested scope set to **exactly** equal the configured profile's scopes rather than claiming least privilege it cannot enforce at the provider (`adapters/broker/production.py:250-252`). No token minting, no vault, no rotation. See [Credential Contract](credential-contract.md#what-is-still-missing).
 
 ### 5. Operating System & Network Infrastructure vs. AgentGuard
 - **Infrastructure Sandboxing (e.g., Containers, gVisor, eBPF, Firecracker, Linux MAC):** Owns process isolation, memory safety, CPU limits, and network egress firewalls.
-- **AgentGuard:** Operates within user space as an application/service-level integrity layer. It relies on deployment infrastructure for host-level isolation, filesystem permissions (`0600`), and secure network routing.
+- **AgentGuard:** Operates within user space as an application/service-level integrity layer. It relies on deployment infrastructure for host-level isolation, filesystem permissions (`0600`), and secure network routing. AgentGuard does not provide isolation and does not close alternate-path bypasses.
 
 ### 6. Observability & SIEM vs. AgentGuard
 - **SIEM & Centralized Logging (e.g., Splunk, Datadog, OpenTelemetry):** Long-term multi-system event correlation, visualization, and organization-wide alerting.

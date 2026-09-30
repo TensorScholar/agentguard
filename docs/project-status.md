@@ -8,21 +8,43 @@ AgentGuard `v0.2.0rc3` is a hardened release candidate for deterministic runtime
 
 ## Validated engineering capabilities
 
+Ordered by what this release line leads with. The first group is the product; the second is
+retained advanced surface that no product claim depends on.
+
+**Product wedge:**
+
 - strict Policy v2 and `ActionIntent` validation with deterministic default-deny authorization;
-- signed decision/approval receipts and execution-time digest revalidation;
-- atomic approval use, decision nonce, authority lease, typed-release, staging, execution reservation, and lock-safe serialized dispatch admission semantics;
-- signed delegated authority, field provenance, typed releases, staged execution, declared causal ancestry, and deterministic policy/authority analysis;
-- protected MCP stdio mediation with fail-closed fresh schema/inventory handling;
-- bounded protected MCP `2026-07-28` Streamable HTTP execution;
-- TLS/Bearer/Host requirements for non-loopback HTTP binding and Origin enforcement when configured for browser-reachable use;
-- provider-neutral credential authority with late secret resolution, durable profile/revocation state, and exact provider endpoint binding;
-- frozen provider/external-effect contracts with explicit idempotency/replay semantics and `RECONCILE_BEFORE_RETRY` as the safe default without stronger evidence;
+- signed decision/approval receipts and execution-time digest revalidation against the live call;
+- atomic approval use, decision nonce, execution reservation, and lock-safe serialized dispatch
+  admission semantics;
+- provider-neutral credential authority with late secret resolution, durable profile/revocation
+  state, and exact provider endpoint binding; ceiling issuance, enforcement, and non-persistence of
+  secret material;
+- frozen provider/external-effect contracts with explicit idempotency/replay semantics and
+  `RECONCILE_BEFORE_RETRY` as the safe default without stronger evidence;
 - durable external-effect binding before side-effecting dispatch on the configured HTTP provider path;
-- provider-specific durable reconciliation with explicit evidence trust levels, terminal resolution exclusion with operator recheck, and no blind redispatch;
-- single-host multi-process reconciliation leases, monotonic fencing tokens, crash takeover, stale-worker rejection, explicit operator recovery (automatic startup recovery disabled), claimed-attempt quota bounding, process-local round-robin fairness, and health/readiness probes;
-- dedicated provider-result hashing isolated from signing canonicalization, supporting finite JSON floating-point provider responses;
-- secret-minimized hash-chained audit, signed checkpoints, verifiable evidence manifests (with optional signature authentication), and signed execution attestations;
-- reproducible wheel/normalized-sdist validation, deterministic SBOM/release manifest generation, checksums, clean-install smoke, non-root container smoke, and Security and CodeQL workflow definitions.
+- provider-specific durable reconciliation with explicit evidence trust levels, terminal resolution
+  exclusion with operator recheck, and no blind redispatch;
+- protected MCP stdio mediation and bounded protected MCP `2026-07-28` Streamable HTTP execution, both
+  with fail-closed fresh schema/inventory handling;
+- TLS/Bearer/Host requirements for non-loopback HTTP binding and Origin enforcement when configured for
+  browser-reachable use;
+- secret-minimized hash-chained audit and verifiable evidence manifests (with optional signature
+  authentication) supporting offline third-party verification;
+- dedicated provider-result hashing isolated from signing canonicalization, supporting finite JSON
+  floating-point provider responses.
+
+**Advanced surface — retained, supported, not the product:**
+
+- signed delegated authority, capability leases, field provenance, typed releases, staged execution,
+  declared causal ancestry, and deterministic policy/authority analysis;
+- single-host multi-process reconciliation leases, monotonic fencing tokens, crash takeover,
+  stale-worker rejection, explicit operator recovery (automatic startup recovery disabled),
+  claimed-attempt quota bounding, process-local round-robin fairness, and health/readiness probes;
+- signed checkpoints and signed execution attestations;
+- reproducible wheel/normalized-sdist validation, deterministic SBOM/release manifest generation,
+  checksums, clean-install smoke, non-root container smoke, and Security and CodeQL workflow
+  definitions.
 
 ### CI evidence status
 

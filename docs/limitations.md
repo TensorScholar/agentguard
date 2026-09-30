@@ -2,9 +2,38 @@
 
 This document states the current technical and operational boundary of the `0.2.0rc3` line. It is deliberately stricter than the implemented feature list.
 
+**Scope of this release line.** AgentGuard leads with four mechanisms: decision-bound credential
+ceilings with late secret resolution; execution-time digest revalidation with single-use claim; durable
+external-effect binding with reconcile-before-retry; and a hash-chained ledger with offline-verifiable
+evidence. See the [product thesis](product-boundary.md) and
+[Credential Contract](credential-contract.md). Everything else the codebase implements — causal
+execution graphs, field provenance and typed releases, policy counterfactuals, delegated authority
+trees, approval receipts, checkpoint signing — is advanced surface, not the product, and no claim depends
+on it.
+
+## Non-goals for this release line
+
+Boundaries, not roadmap items. Listed first because they are the fastest way to disqualify this project
+if it is not a fit.
+
+- **Multi-host, HA, or distributed consensus.** Single-host multi-process over local SQLite only.
+- **Issuing or verifying identity.** AgentGuard binds identity that a trusted integration supplies. It
+  does not mint, prove, or verify workload identity.
+- **Generic policy-gateway competition.** No policy authoring, simulation, or content filtering.
+- **Secret storage, rotation, or token minting.** One environment variable, read at dispatch, never
+  persisted.
+- **Process isolation or network egress control.**
+- **Production certification.** No independent penetration test, soak test, or production pilot has
+  completed.
+
 ## Enforcement and integration boundary
 
-- AgentGuard enforces only traffic routed through an AgentGuard adapter. `mcp-posture` can detect bypasses in supplied configuration files but cannot prove the absence of hidden, generated, dynamically selected, or network-level routes.
+- AgentGuard enforces only traffic routed through an AgentGuard adapter. `mcp-posture` can detect bypasses in supplied configuration files but cannot prove the absence of hidden, generated, dynamically selected, or network-level routes. **If the agent can reach the provider by another path, none of the mechanisms in this release apply.**
+- `agentguard verify-execution` is a **preflight only**. It validates authority and deliberately does not consume the decision nonce, so it provides no replay protection. Only the protected execution lifecycle (`reserve_execution`, reached via `mcp-proxy-v2` or `agentguard-mcp-http`) claims single-use authority. Despite the name, `verify-execution` does not execute.
+- A `DecisionReceipt` is a **bearer admission ticket** inside its validity window. It binds principal
+  claims, not a holder key, so receipt, grant, and approval material must be handled as sensitive until
+  consumed. External work on this pattern binds authority non-bearer and sink-bound, which is strictly
+  stronger than what this release provides.
 - Verified identity, field provenance, effect projection, and declared causal ancestry are only as trustworthy and complete as the integration that supplies them. AgentGuard does not infer hidden dependencies from arbitrary application memory or external systems.
 - The final executor/provider adapter is trusted to invoke the exact verified operation. Operating-system sandboxing, process isolation, filesystem MAC, and network egress enforcement are outside AgentGuard.
 
@@ -18,8 +47,28 @@ This document states the current technical and operational boundary of the `0.2.
 
 ## Credential and provider boundary
 
-- The included production credential source resolves an explicitly configured environment-held secret late in the execution path. It is not a general secret vault and does not mint provider-native/downscoped short-lived tokens.
-- The preserved mock broker is for demos/contract testing and must not be represented as a production credential provider.
+The full contract is in [credential-contract.md](credential-contract.md). The limits that matter most:
+
+- The included production credential source resolves an explicitly configured environment-held secret
+  late in the execution path. It is not a general secret vault and does not mint provider-native or
+  downscoped short-lived tokens.
+- **A static secret cannot be attenuated.** Because the source is one environment variable, requesting
+  fewer scopes does not yield a weaker credential. AgentGuard therefore requires the requested scope
+  set to exactly equal the configured profile's scopes, rather than claim least privilege it cannot
+  enforce at the provider (`adapters/broker/production.py:250-252`). To narrow a credential you must
+  configure a narrower secret.
+- **No audience proof.** AgentGuard binds a *declared* audience to a decision. It does not
+  cryptographically prove the provider will accept that audience for that token, so a misconfigured
+  profile can claim an audience the provider does not enforce.
+- **No revocation call.** Profile revocation is durable AgentGuard state only. A leaked secret remains
+  valid at the provider until it expires.
+- **No memory zeroization.** Resolved secrets are not scrubbed from process memory; Python cannot
+  guarantee erasure of immutable `str` bytes (ADR 0005).
+- The preserved mock broker is for demos/contract testing and must not be represented as a production
+  credential provider. It ships inside the wheel because the test suite uses it; that is a packaging
+  inconvenience, not an endorsement.
+- The production credential authority is reachable only via `agentguard-mcp-http --credential-env`;
+  `broker-demo` exercises the same contract against the mock broker with no secret source.
 - Broader provider-specific credential integrations remain adapters that must independently prove audience/scope/tenant/lifetime and revocation semantics.
 - External-effect bindings prove what AgentGuard intended to send and where; they do not prove the external provider's business truth.
 - `AGENTGUARD_SIGNED` and `PROVIDER_CORRELATED` evidence cannot confirm an ambiguous external outcome. Only a trusted provider-specific reconciler may emit `PROVIDER_VERIFIED` evidence that confirms success or failure.

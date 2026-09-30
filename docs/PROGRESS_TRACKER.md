@@ -136,11 +136,30 @@ The project does **not** currently establish:
 
 ## Product Validation Status
 
-Current product thesis remains a **HYPOTHESIS**:
+The product thesis was narrowed in Phase 1. It remains a **HYPOTHESIS** — narrowing a thesis does not
+validate it:
 
-> For a consequential agent workflow, AgentGuard preserves the binding between trusted business facts, authorization, credential-controlled submission and durable outcome evidence across pauses, crashes and caller retries, with materially less integration burden or fewer integrity failures than a competently implemented existing stack.
+> **Product thesis.** AgentGuard protects high-stakes MCP tool calls by binding a short-lived,
+> decision-scoped credential ceiling to a signed authorization, resolving the actual secret only at the
+> last moment, preventing replay and argument mutation, and producing independently verifiable evidence
+> of what was authorized versus what was observed — especially for actions that can leave ambiguous
+> external effects.
 
-No claim of demonstrated market demand, willingness to pay, pilot success, or comparative production superiority is established yet.
+The commercial hypothesis attached to it is unchanged and still unvalidated:
+
+> An operator will adopt and pay for the credential-ceiling and evidence chain specifically, rather than
+> for general runtime authorization, at an integration burden low enough to be worth it.
+
+No claim of demonstrated market demand, willingness to pay, pilot success, or comparative production
+superiority is established yet.
+
+**What the narrowed thesis does and does not rest on.** It does not rest on the Freeze v2 result: the
+ceiling, the late resolution, the reconcile-before-retry contract, and the evidence chain are mechanisms
+whose value is independent of whether structured enforcement measurably reduces integrity failures
+against a baseline. It does rest on credential-ceiling adoption being a real problem buyers recognise
+and are willing to integrate — which is untested. The core admission-ticket pattern is prior art
+(`draft-das-agentic-execution-finality-02`, `draft-farley-acta-signed-receipts-03`); the ceiling bound
+to that decision is the part with no prior art found.
 
 ## Release / Promotion Debt
 
@@ -217,3 +236,56 @@ documentation; none adds a product feature.
 - Record supersession rather than only forward decisions: ADR 0003 superseded by ADR 0005; ADR 0006
   §7 superseded by ADR 0007; ADR 0001 annotated with the Q02 → Q04-01 supersession and the preflight
   rename; ADR 0002 annotated with the v1 default-deny alignment.
+
+## Phase 1 — Define the Wedge and Kill Complexity
+
+Product-focus decisions. No feature was added, no module was deleted, and no behavior changed. The
+change is to what the project leads with and what a reader is shown first.
+
+The problem this phase addresses: the surface was broad enough that a reader could not tell what the
+product *is*. Seven README sections, 34 CLI subcommands, and a 16-item "validated capabilities" list
+implied a general agent control plane. That is not what this project is competitive at, and leading with
+it invited comparison against gateway vendors on breadth — a comparison this project loses.
+
+Decisions recorded:
+
+- **Narrow the thesis to four mechanisms.** Decision-bound credential ceilings with late secret
+  resolution; execution-time digest revalidation with single-use claim; durable `ExternalEffectBinding`
+  with `RECONCILE_BEFORE_RETRY`; hash-chained ledger with signed evidence bundles and offline
+  verification. Stated as a single paragraph in the README, `docs/product-boundary.md`, and the Product
+  Validation Status above.
+- **State non-goals first.** `docs/limitations.md` now opens with the six non-goals (multi-host/HA,
+  identity, generic policy-gateway competition, vault/token minting, isolation/egress, production
+  certification) so a non-fit disqualifies itself in one read.
+- **Demote, do not delete.** Causal graphs, field provenance and typed releases, policy counterfactuals,
+  delegated authority trees, approval receipts, checkpoint signing, attestations, the reconciliation
+  worker, and the v0.1 compatibility CLI move to an explicit
+  [Advanced Surface](../README.md#advanced-surface-not-part-of-the-wedge) table in the README with a
+  statement that no product claim depends on them. `project-status.md` splits "validated engineering
+  capabilities" into product wedge versus advanced surface. All code, tests, and support remain.
+- **Collapse the happy path to four steps.** `authorize` → `mcp-proxy-v2` (or `agentguard-mcp-http`) →
+  `evidence-build` → `evidence-verify`, with `reconcile-execution` as an operator-only branch. The
+  advanced commands are removed from the quick-start flow in both the README and `docs/DEMO.md`.
+- **Correct a documentation error found while doing this.** The README and DEMO both described
+  `verify-execution` as executing and as recording the decision nonce. It is a *preflight*: it mutates
+  nothing, consumes no nonce, and prints "Execution authority verified; nonce not consumed. Use
+  protected execution to claim authority." Both documents now state this, and the happy path points at
+  the protected proxy as the real execution sink. This was a live correctness defect in the docs, not
+  a wording preference.
+- **Document the credential contract precisely.** New `docs/credential-contract.md` writes out ceiling
+  issuance, request validation, grant shape, late resolution, header-injection constraints, and a
+  table of where the secret never goes. It records that a static secret cannot be attenuated, so exact
+  scope equality is required rather than claiming unenforceable least privilege
+  (`adapters/broker/production.py:250-252`); that there is no audience proof and no upstream revocation
+  call; and that `broker-demo` uses the non-production mock broker while the production authority is
+  reachable only via `agentguard-mcp-http --credential-env`.
+- **Add three concrete scenarios.** New `docs/scenarios.md`: bounded refund, irreversible delete, and an
+  external effect that goes `UNKNOWN`. Each states which mechanisms it exercises and links to the
+  existing `examples/` material, including the honest admission that the `UNKNOWN` path has no fixture
+  because faking it would misrepresent the mechanism.
+- **Surface the 5-minute/30-minute evaluation path.** The README states explicitly who the product is
+  for, how long it takes to grasp and evaluate it, and that the core admission-ticket pattern is prior
+  art so a buyer is not sold something they can get from a spec.
+
+New debt items introduced by this phase are listed in `docs/credential-contract.md` and
+`docs/scenarios.md` under their respective Phase 2 tables.
