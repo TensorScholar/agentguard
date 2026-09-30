@@ -10,6 +10,61 @@
 
 > **Release Status:** `v0.2.0rc3` is an engineering-validated release candidate. It implements protected MCP stdio and bounded Streamable HTTP profiles, production credential authority, durable external-effect reconciliation, and single-host multi-process coordination. Full production certification requires independent security review, long-duration operational validation, and a controlled production pilot. See [Project Status](docs/project-status.md) and [Known Limitations](docs/limitations.md).
 
+---
+
+## Research Status — read this before evaluating the design
+
+A pre-registered experiment (`AG-LINEAGE-PREREG-v1.0`, "Freeze v2") was run against this
+codebase to test whether AgentGuard's own execution-integrity design differentiates from a
+competently implemented baseline. **It did not.** The results are stated here in full because
+a negative result is a real result and hiding it would make every other number in this
+README harder to trust.
+
+```text
+EXPERIMENT_RECORD                                = ACCEPTED
+RESEARCH_CLAIM                                  = NOT_VALIDATED
+AGENTGUARD_SPECIFIC_DIFFERENTIATION_THESIS       = FALSIFIED_WITHIN_PROTOCOL
+PUBLICATION_STATUS = ELIGIBLE_FOR_TECHNICAL_REPORT_OR_NEGATIVE_RESULT_PUBLICATION
+```
+
+**In plain language.** Within that preregistration and its retained corpus, the frozen
+AgentGuard-specific differentiation criterion was not demonstrated and the preregistered
+falsification predicate evaluated true. In the measured arms, **both** AgentGuard and the
+baseline recorded **0 primary violations** (3,600 retained trials each; 10,800 logical
+trials; 0 harness-invalid), and the completion difference point estimate was `0.0`
+(exact McNemar `p = 1.0`). The measured cost was asymmetric: A1–B4 slot-hold median
+difference **+0.026 seconds**, a **slot-hold ratio of 6.45 favoring the no-guard baseline**.
+Operator mean difference was `0.0`.
+
+**What this does NOT mean.** Explicitly excluded, per
+[the adjudication](docs/research/FREEZE_V2_RESULT_ADJUDICATION.md) §6: system execution
+failure; demonstrated AgentGuard unsafety; universal equivalence between the two arms; proof
+that AgentGuard can never differentiate; real-provider conclusions; production conclusions;
+universal safety claims; impossibility claims. The record is *accepted* as a record — that
+acceptance is explicitly not acceptance of the research thesis.
+
+**What remains unestablished for the product.** The product thesis is a
+[hypothesis](docs/PROGRESS_TRACKER.md), not a finding. No claim of demonstrated market demand,
+willingness to pay, pilot success, or comparative production superiority is established. No
+independent penetration test, long-duration soak test, or controlled production pilot has been
+completed for `0.2.0rc3`.
+
+**Publication note.** The result is eligible for publication as a technical report or
+negative-result note. It has not been published or accepted anywhere. Follow-up work must be
+a new experimental generation with a new preregistration, freeze, and seed/manifest binding;
+Freeze v2 remains unchanged historical evidence.
+
+**Consequence for adopters.** Do not adopt this project expecting a demonstrated reduction in
+integrity failures relative to a competent baseline; that claim is not supported. Adopt it, if
+at all, for the specific mechanisms it does implement — credential ceilings with late secret
+resolution, durable effect binding with reconcile-before-retry, and the evidence-bundle /
+checkpoint chain — whose value does not depend on that experiment's outcome. The core
+authorization pattern (single-use signed admission ticket, digest revalidated at dispatch) is
+not unique to this project; it is specified in external work including
+`draft-das-agentic-execution-finality-02` and `draft-farley-acta-signed-receipts-03`.
+
+---
+
 ## AgentGuard Core and AgentGuard Reference
 
 This repository is AgentGuard Core, the canonical runtime, at `v0.2.0rc3`. Production certification is not claimed.

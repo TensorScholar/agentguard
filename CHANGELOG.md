@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased (Phase 0 stabilization)
+
+Stabilization and honesty pass. No product features were added. Two changes are breaking and are
+documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
+
+### Research honesty
+
+- Add a `Research Status` section to `README.md` above the fold recording
+  `RESEARCH_CLAIM: NOT_VALIDATED` and
+  `AGENTGUARD_SPECIFIC_DIFFERENTIATION_THESIS: FALSIFIED_WITHIN_PROTOCOL`, the 6.45 slot-hold ratio
+  favoring the no-guard baseline, the scope exclusions from
+  `docs/research/FREEZE_V2_RESULT_ADJUDICATION.md` §6, and the unestablished product claims.
+- State in the README that the core single-use-receipt / digest-revalidation pattern is not unique to
+  this project and is specified in external work.
+
 ## 0.2.0rc3
 
 ### Runtime-integrity and provider boundary
