@@ -13,6 +13,12 @@ import pytest
 
 from agentguard.adapters.crypto import Ed25519Signer
 from agentguard.adapters.protocols.mcp.intent import intent_from_tools_call
+from agentguard.adapters.protocols.mcp.modern import (
+    CLIENT_CAPABILITIES_META_KEY,
+    CLIENT_INFO_META_KEY,
+    MODERN_PROTOCOL_PROFILE,
+    PROTOCOL_VERSION_META_KEY,
+)
 from agentguard.cli.io import parse_provenance
 from agentguard.domain import Effect, Principal, ProvenanceLabel
 from agentguard.engine.policy import evaluate_policy
@@ -291,3 +297,31 @@ def test_denial_error_tuple_covers_expected_types() -> None:
         "EvidenceVerificationError",
         "ServiceDeploymentError",
     } <= names
+
+
+# ---------------------------------------------------------------------------
+# Gap 5: the modern MCP envelope meta keys were undiscoverable from the docs.
+# Recorded here because the demo client must send them exactly.
+# ---------------------------------------------------------------------------
+
+
+def test_envelope_meta_keys_are_stable() -> None:
+    assert PROTOCOL_VERSION_META_KEY == "io.modelcontextprotocol/protocolVersion"
+    assert CLIENT_CAPABILITIES_META_KEY == "io.modelcontextprotocol/clientCapabilities"
+    assert CLIENT_INFO_META_KEY == "io.modelcontextprotocol/clientInfo"
+    assert MODERN_PROTOCOL_PROFILE == "2026-07-28"
+
+
+def test_demo_policy_fixture_is_valid_and_default_deny() -> None:
+    """The Phase 2 demo policy must load and stay default-deny."""
+
+    import yaml
+
+    from agentguard.domain import PolicyDocument
+
+    path = Path(__file__).resolve().parents[1] / "examples" / "harness" / "policy.yaml"
+    document = PolicyDocument.model_validate_json(json.dumps(yaml.safe_load(path.read_text())))
+
+    assert document.defaults.effect == Effect.DENY
+    assert document.defaults.unknown_capability == Effect.DENY
+    assert document.defaults.unknown_provenance == Effect.DENY
