@@ -54,6 +54,14 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
 - **No green hosted CI run exists on this line.** Workflows are corrected, but hosted CI evidence is
   tracked as `AG-CI-001` and cross-platform CI is no longer listed as a validated capability.
 
+### Supply chain
+
+- Re-enable Dependabot version-update pull requests for pip and GitHub Actions; the pause dates from
+  the RC2 demonstration.
+- Pin the build backend by hash in `requirements/build-hashed.txt` and build with `--no-isolation` so
+  the build does not depend on whatever the index serves. Hash pinning of the platform-specific
+  runtime closure is tracked as `AG-SUP-001`.
+
 ## 0.2.0rc3
 
 ### Runtime-integrity and provider boundary

@@ -1,20 +1,27 @@
 version: 2
 updates:
-  # Version-update PRs are paused for the RC2 demonstration and can be re-enabled during the
-  # post-release maintenance window.
+  # Version-update pull requests are enabled. They were paused for the RC2
+  # demonstration; the pause is lifted as part of the Phase 0 supply-chain
+  # stabilization. Every PR is validated by the same `make check` gate as any
+  # other change, and direct runtime constraints live in
+  # requirements/runtime-validated.txt.
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     groups:
       python-runtime:
         dependency-type: production
       python-development:
         dependency-type: development
+    reviewers:
+      - TensorScholar
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
+    reviewers:
+      - TensorScholar

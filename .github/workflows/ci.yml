@@ -81,16 +81,40 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - name: Build reproducibly
+      - name: Verify hash-pinned build backend
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements/validation.txt
+          # The build backend is fetched from the network during the build. Pin it
+          # by hash so the build does not depend on whatever the index serves.
+          python -m venv /tmp/agentguard-build-venv
+          /tmp/agentguard-build-venv/bin/python -m pip install --upgrade pip
+          /tmp/agentguard-build-venv/bin/python -m pip install \
+            --require-hashes -r requirements/build-hashed.txt
+          # The pinned backend must be the one pyproject declares.
+          /tmp/agentguard-build-venv/bin/python - <<'PY'
+          import pathlib, re, tomllib
+          import setuptools
+          spec = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+          declared = spec["build-system"]["requires"]
+          expected = re.match(r"setuptools==([0-9.]+)", next(d for d in declared if "setuptools" in d))
+          assert expected, f"build-system must pin setuptools exactly, got {declared!r}"
+          installed = setuptools.__version__
+          assert installed == expected.group(1), (
+              f"build backend version mismatch: pyproject pins {expected.group(1)}, "
+              f"hash-pinned toolchain installed {installed}"
+          )
+          print(f"build backend hash-pinned and version-matched: setuptools=={installed}")
+          PY
+      - name: Build reproducibly with the hash-pinned backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/agentguard-build-venv/bin/python -m pip install build twine
           export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
           rm -rf dist dist-a dist-b release
-          python -m build --outdir dist-a
-          python -m build --outdir dist-b
+          /tmp/agentguard-build-venv/bin/python -m build --no-isolation --outdir dist-a
+          /tmp/agentguard-build-venv/bin/python -m build --no-isolation --outdir dist-b
 
           WHEEL_A="$(find dist-a -maxdepth 1 -name '*.whl' -print -quit)"
           WHEEL_B="$(find dist-b -maxdepth 1 -name '*.whl' -print -quit)"
