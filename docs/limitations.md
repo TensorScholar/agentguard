@@ -34,6 +34,18 @@ if it is not a fit.
   claims, not a holder key, so receipt, grant, and approval material must be handled as sensitive until
   consumed. External work on this pattern binds authority non-bearer and sink-bound, which is strictly
   stronger than what this release provides.
+- **Provenance on the live MCP path is operator-declared, not inferred.** The protected adapters
+  normalize a call from the wire and cannot know its origin, so `--provenance` /
+  `--provenance-verified` are deployment assertions. Omitted, provenance is `unverified` and a policy
+  with `unknown_provenance != allow` refuses every call. This is the adapter-as-TCB-boundary
+  assumption stated in `threat-model.md`, not a derived fact.
+- **The capability classifier is keyword-based and advisory.** It reads the tool name, description,
+  and schemas. A provider whose description omits the words AgentGuard looks for classifies as
+  `unknown` and is denied under a default-deny `unknown_capability`. That is a real ergonomic cost,
+  not a bug, and it is the policy's job to decide whether to allow such a tool.
+- A reconciliation resolution records **no provider operation id**. The reconciler observes it and
+  folds it into `evidence_digest`, but the frozen provider contract carries only a digest, so
+  `execution_resolutions.provider_operation_id_digest` stays empty (`AG-EVID-001`).
 - Verified identity, field provenance, effect projection, and declared causal ancestry are only as trustworthy and complete as the integration that supplies them. AgentGuard does not infer hidden dependencies from arbitrary application memory or external systems.
 - The final executor/provider adapter is trusted to invoke the exact verified operation. Operating-system sandboxing, process isolation, filesystem MAC, and network egress enforcement are outside AgentGuard.
 

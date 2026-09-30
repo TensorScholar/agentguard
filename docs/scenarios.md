@@ -84,37 +84,33 @@ guess. `RECONCILE_BEFORE_RETRY` is the default `ReplayDisposition`, so a retry i
 stronger evidence exists. Reconciliation never auto-redispatches — it is operator- or
 reconciler-driven.
 
-**Run it.**
+**Run it.** This one is now fully reproducible:
 
 ```bash
-# An execution that ended UNKNOWN appears in durable state:
-agentguard audit-verify --ledger .agentguard/demo/audit.sqlite
-
-# Only a trusted provider-specific reconciler may resolve it.
-agentguard reconcile-execution --execution-id <id> --evidence provider-evidence.json
+pip install -e '.[http]'
+python examples/harness/run_demo.py
 ```
 
-`reconcile-execution` **deliberately rejects** file-supplied evidence claiming `PROVIDER_VERIFIED` or
-`CONFIRMED_*` (`cli/app.py:615-623`), and `ProviderReconciliationEvidence` enforces the same rule at
-the type level (`domain/provider_contracts.py:166-175`). Locally signed evidence can say an outcome is
-*ambiguous*; it can never manufacture proof that a provider committed.
+The harness provider commits the refund, then **drops the connection**. The gateway times out and
+records `UNKNOWN` with `retry_safe: false`; the provider's own ledger shows the refund **did**
+happen. Then `agentguard-reconcile-worker --once` queries the provider's `refund.status` tool and
+resolves the execution to `confirmed_succeeded` at `provider_verified` trust — **without
+redispatching**. The provider ledger still holds exactly two refunds.
 
-```json
-{
-  "status": "confirmed_succeeded",
-  "source": "provider-status-tool",
-  "evidence_digest": "sha256:<digest>",
-  "observed_at": "2026-07-29T10:00:12Z",
-  "trust_level": "provider_verified",
-  "provider_operation_id": "ch_3Qd7Xk2eZvKYlo2C"
-}
+```
+== E. Ambiguous effect stays UNKNOWN and is not retried
+   PASS gateway refuses to guess (code -32004, retry_safe false)
+   PASS provider actually committed despite the dropped connection -- 1 -> 2
+   PASS AgentGuard recorded the execution as unknown -- exec_... -> unknown
+== F. Reconcile-before-retry via the provider status tool
+   PASS resolution is confirmed_succeeded at PROVIDER_VERIFIED trust
+   PASS reconciliation did not redispatch -- still exactly 2 refunds
 ```
 
-**Material:** [`examples/indirect-injection/`](../examples/indirect-injection) (how the injected
-instruction gets there) and `examples/scoped-refund/` for the dispatch shape.
-The `UNKNOWN` outcome arises naturally from a real timeout on a live upstream — there is no fixture
-that fakes it, and inventing one would misrepresent the path. See
-[Phase 2 debt](#phase-2-debt-from-this-scenario-work).
+**Material:** [`examples/harness/`](../examples/harness) (provider, strict policy, driver),
+[`examples/indirect-injection/`](../examples/indirect-injection) (how the injected instruction gets
+there). **Read the harness README first** — the fake provider confirms from its own ledger, which
+is not an external attestation.
 
 **Mechanisms exercised:** all four.
 
@@ -123,12 +119,16 @@ that fakes it, and inventing one would misrepresent the path. See
 ## What these scenarios do not show
 
 - **No real provider integration.** The status-tool reconciliation contract is trusted configuration,
-  not a claim about arbitrary MCP servers.
-- **No production credential source.** Ceilings and late resolution are exercised against an
-  environment-backed source. There is no audience proof and no native downscoping yet — see
+  not a claim about arbitrary MCP servers. The harness provider confirms from its own ledger.
+- **No production credential source beyond env-backed late resolution.** There is no audience proof
+  and no native downscoping yet — see
   [Credential Contract](credential-contract.md#what-is-still-missing).
 - **No bypass-route closure.** If the agent can reach the provider by another path, none of this
   applies. `mcp-posture` can detect bypasses in supplied configuration but cannot prove their absence.
+- **A reconciliation resolution records no provider operation id.** The reconciler observes the
+  provider's operation id and folds it into the evidence digest, but the frozen provider contract
+  carries only a digest, so `execution_resolutions.provider_operation_id_digest` stays empty. Tracked
+  as `AG-EVID-001`.
 - **Not the research result.** None of the above depends on the falsified differentiation thesis. See
   the [README Research Status](../README.md#research-status--read-this-before-evaluating-the-design).
 
@@ -138,6 +138,5 @@ that fakes it, and inventing one would misrepresent the path. See
 
 | Item | Why |
 |---|---|
-| Irreversible-delete fixture (`examples/irreversible-delete/`) | Scenarios 1 and 3 currently share the refund fixture; a dedicated delete fixture would exercise the `deleted_files` / `records_modified` budget path end to end. |
-| Reproducible `UNKNOWN` walkthrough | Scenario 3's ambiguous dispatch requires a live upstream. A committed fake-upstream recipe (server that accepts then drops the connection) would make the reconcile path demonstrable without a real provider. Deferred: it needs a new test-harness server, which is Phase 2 scope. |
-| Per-scenario evidence bundles | Today all scenarios export from the shared demo bundle. Per-scenario bundles would make the audit story in each scenario directly verifiable. |
+| `AG-EVID-001` — propagate the provider operation id into the resolution record | `ProviderReconciliationEvidence` observes `provider_operation_id` and digests it into `evidence_digest`, but `ReconciliationEvidence` only carries the digest, so the resolution's `provider_operation_id_digest` column is always empty. Closing it means an additive change to the frozen provider contract (ADR 0004), so it is deferred rather than slipped in. |
+| Irreversible-delete fixture (`examples/irreversible-delete/`) | Scenarios 1 and 3 share the refund fixture; a dedicated delete fixture would exercise the `deleted_files` / `records_modified` budget path end to end. |

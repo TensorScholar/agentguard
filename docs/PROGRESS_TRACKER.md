@@ -289,3 +289,68 @@ Decisions recorded:
 
 New debt items introduced by this phase are listed in `docs/credential-contract.md` and
 `docs/scenarios.md` under their respective Phase 2 tables.
+
+## Phase 2 — Practical MVP of the Wedge
+
+The goal was narrow: a platform or security engineer can protect one high-stakes MCP tool path, see
+mutation and replay blocked, export and independently verify evidence, and understand the reconcile
+path — in under 30 minutes, from the primary docs alone. No new product surface, no research, no
+multi-host work.
+
+The demo now runs in **~5 seconds**, 28 checks, exit 0.
+
+### Gaps found by running the documented path, and fixed
+
+Each of these made the documented happy path fail for a new user. All were found by executing it,
+not by reading it.
+
+1. **Tool description was discarded before capability classification.** `intent_from_tools_call`
+   rebuilt a `{"name", "inputSchema"}` dict for `classify_tool_definition`, and both the HTTP and
+   stdio schema caches dropped `description` when building the bound schema. A tool whose capability
+   is only inferable from its description therefore classified as `unknown` — which a default-deny
+   `unknown_capability` then rejected. The strict happy path was unusable against most real MCP
+   servers. Fixed in `intent.py`, `http_gateway.py`, and `protected.py`. This also *strengthens*
+   schema binding: provider-declared semantics now participate in the schema digest, so a provider
+   cannot silently change a tool's meaning without detection.
+2. **No MCP adapter ever supplied provenance.** All three protected adapters called
+   `intent_from_tools_call` without `provenance`/`provenance_verified`, so every live MCP intent was
+   `(unverified, False)` and any policy with `unknown_provenance != allow` refused every call.
+   Added `--provenance` / `--provenance-verified` to `mcp-proxy-v2` and `agentguard-mcp-http`, defaulting
+   to `unverified`. The parser lives in `cli/io.py` and rejects unknown labels and the contradictory
+   `unverified` + trusted mix.
+3. **`agentguard init` never created the key `agentguard-mcp-http` expects.** The gateway defaults
+   `--credential-key` to `.agentguard/credential-broker-private.pem` with key id
+   `credential-broker-ed25519`, but `init` only wrote `broker-private.pem` (`mock-broker-ed25519`).
+   Following the documented setup made the production credential path fail immediately. `init` now
+   writes both.
+4. **Stable reason codes were rendered as Rich tracebacks.** `ExecutionGuardError`,
+   `EvidenceVerificationError`, `ServiceDeploymentError` and friends carry the code operators and CI
+   match on, but the code was buried in a traceback. The entrypoint now prints
+   `<Type>: <reason_code>` on stderr and exits 2.
+5. **The gateway swallowed the credential reason code.** It reported only
+   `CredentialAuthorityError`, making eight distinct credential failures indistinguishable. It now
+   includes `error.data.reason_code`, e.g. `credential.profile_scope_mismatch`. A missing
+   `--credential-key` file is caught at startup with a message naming `agentguard init`.
+6. **The documented execution sink needed an MCP server the reader did not have.** `-- <your-mcp-server-command>`
+   made the primary path unrunnable without an existing server. Added `examples/harness/`: a
+   stdlib-only fake provider with its own durable ledger, a strict default-deny demo policy, and a
+   driver that exercises the real CLIs as subprocesses. Not installed by `pip`; lives in `examples/`.
+7. **The provider must key effects on the AgentGuard execution id.** The reconciler queries by
+   `binding.attempt.execution_id`, and AgentGuard sets the downstream JSON-RPC `id` to exactly that
+   value. The harness provider records and looks up on that id, so reconciliation needs no
+   out-of-band shared state. Its `refund.status` returns `structuredContent`, which is the channel
+   the reconciler reads.
+
+### What was deliberately not done
+
+- **No propagation of the provider operation id into resolutions.** The reconciler observes it and
+  folds it into `evidence_digest`, but `ReconciliationEvidence` carries only a digest, so
+  `provider_operation_id_digest` stays empty. Fixing it is an additive change to the contract frozen
+  by ADR 0004 and is recorded as `AG-EVID-001` rather than slipped in.
+- **No new credential provider.** The env-backed source is the documented happy path. No Vault, no
+  IAM, no minting. The brief made a thin adapter optional and it would not have improved the demo,
+  since the demo needs exactly one env-backed source to be honest about.
+- **No fuzzing campaign, no CI changes, no changes to the research claim.** The research result stands
+  exactly as adjudicated.
+- **No new CLI commands.** Two flags were added to existing entrypoints; everything else reuses
+  commands that already existed.

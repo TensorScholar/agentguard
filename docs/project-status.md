@@ -80,6 +80,7 @@ Closing these engineering gaps does **not** imply that AgentGuard is a productio
 - `AG-BROKER-001` (Provider-Native IAM Downscoping) — provider-native credential minting/downscoping and broader real-provider integration decisions;
 - `AG-REL-001` (Release Signing & Provenance) — final exact-commit release evidence, release signing/provenance decision, tag/release publication, and independent artifact verification;
 - `AG-CI-001` (Hosted CI Evidence) — a green hosted CI run on the release commit, including cross-platform `compatibility` and `quality` matrix results. The workflow definitions are corrected and CodeQL is able to fail a build, but no green hosted run has been observed on this line;
+- `AG-EVID-001` (Provider Operation Id in Resolutions) — propagate the observed provider operation id into `execution_resolutions.provider_operation_id_digest`. The reconciler observes it and folds it into `evidence_digest`, but the frozen provider contract (ADR 0004) carries only a digest, so the column is always empty. Closing it is an additive contract change, deliberately not slipped in;
 - `AG-SUP-001` (Dependency Hash Pinning) — hash pinning of the full runtime dependency closure. The build backend is hash-pinned; the runtime closure is pinned by exact version in `requirements/runtime-validated.txt` only, because `cryptography` and `cffi` ship platform-specific wheels whose hashes must be collected per platform;
 - `AG-VAL-001` (Independent Penetration & Pilot) — independent security review, long-duration soak testing, and controlled production pilot.
 

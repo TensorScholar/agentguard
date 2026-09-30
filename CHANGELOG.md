@@ -1,6 +1,63 @@
 # Changelog
 
-## Unreleased (Phase 1 product wedge)
+## Unreleased (Phase 2 practical MVP)
+
+Practical-MVP pass. Every item below closed a gap that made the documented happy path fail for a new
+user. Each was found by executing the documented path, not by reading it.
+
+### Fixed: the documented happy path did not work
+
+- **Tool description was discarded before capability classification.** `intent_from_tools_call`
+  rebuilt a `{"name", "inputSchema"}` dict for `classify_tool_definition`, and both the HTTP and stdio
+  schema caches dropped `description` when building the bound schema. A tool whose capability is only
+  inferable from its description classified as `unknown`, which a default-deny `unknown_capability`
+  then rejected -- making the strict happy path unusable against most real MCP servers. Fixed in
+  `intent.py`, `http_gateway.py`, and `protected.py`. This also strengthens schema binding: declared
+  semantics now participate in the schema digest, so a provider cannot silently change a tool's
+  meaning without detection.
+- **No MCP adapter ever supplied provenance.** All three protected adapters called
+  `intent_from_tools_call` without provenance, so every live MCP intent was `(unverified, False)` and
+  any policy with `unknown_provenance != allow` refused every call. Added `--provenance` and
+  `--provenance-verified` to `mcp-proxy-v2` and `agentguard-mcp-http`, defaulting to `unverified`.
+  The parser rejects unknown labels and the contradictory `unverified` + trusted-label mix.
+- **`agentguard init` never created the key `agentguard-mcp-http` expects.** The gateway defaults
+  `--credential-key` to `.agentguard/credential-broker-private.pem`; `init` only wrote
+  `broker-private.pem`. Following the documented setup made the production credential path fail
+  immediately. `init` now writes both.
+- **Stable reason codes were rendered as Rich tracebacks.** The entrypoint now prints
+  `<Type>: <reason_code>` on stderr and exits 2 for `ExecutionGuardError`,
+  `EvidenceVerificationError`, `ServiceDeploymentError`, and related denial classes.
+- **The gateway swallowed the credential reason code.** It now includes `error.data.reason_code`, for
+  example `credential.profile_scope_mismatch`. A missing `--credential-key` file is caught at startup
+  with a message naming `agentguard init`.
+
+### Added: runnable demo harness
+
+- `examples/harness/` -- a stdlib-only fake MCP provider with its own durable ledger, a strict
+  default-deny demo policy, and a one-command driver. Not installed by `pip`. The provider commits a
+  refund then drops the connection, so an ambiguous outcome is real rather than asserted, and its
+  `refund.status` tool returns `structuredContent` so the real reconciler can resolve the `UNKNOWN`
+  without redispatching.
+- `python examples/harness/run_demo.py` runs the whole path in about five seconds: 28 checks, exit 0.
+  It proves credential late-resolution with no secret in any durable artifact, argument mutation and
+  receipt replay refused with stable codes, an ambiguous effect recorded `UNKNOWN` with
+  `retry_safe: false`, provider-verified reconciliation without redispatch, and offline evidence
+  verification including tamper detection.
+- The harness README states plainly what the demo does NOT prove: the fake provider confirms from its
+  own ledger and is not an external attestation, and none of it is a certification, benchmark, or
+  penetration test.
+
+### New debt (not claimed as done)
+
+- `AG-EVID-001` -- a reconciliation resolution records no provider operation id. The reconciler
+  observes it and folds it into `evidence_digest`, but the contract frozen by ADR 0004 carries only a
+  digest, so `provider_operation_id_digest` stays empty. Additive contract change, deliberately
+  deferred.
+- Provenance on the live MCP path is operator-declared, not inferred. Recorded in `docs/limitations.md`
+  as the adapter-as-TCB-boundary assumption it is.
+- The capability classifier remains keyword-based and advisory.
+
+## Phase 1 (product wedge, completed)
 
 Product-focus pass. No feature was added, no module was deleted, and no behavior changed. The change is
 to what the project leads with and what a reader is shown first.

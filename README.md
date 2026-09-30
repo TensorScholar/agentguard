@@ -194,8 +194,22 @@ This is the whole supported path. Everything else in the CLI is optional and doc
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e '.[http]'
-agentguard demo --output .agentguard/demo --force   # fixtures + one runnable scenario
+
+# One command, ~5 seconds, 28 checks. Starts a local fake provider and the
+# protected gateway, then drives the real CLIs.
+python examples/harness/run_demo.py
 ```
+
+It proves, with the real product code and no mocks: a side-effecting call is admitted under a
+decision-scoped ceiling and dispatched; tampered arguments and replayed receipts are refused with
+stable codes; an ambiguous outcome stays `UNKNOWN` instead of being guessed; reconciliation resolves
+it without redispatching; and the evidence bundle verifies offline and detects tampering.
+
+The fake provider confirms from its own ledger — that is **not** an external attestation. Read
+[`examples/harness/README.md`](examples/harness/README.md) before drawing conclusions. None of this
+is a certification, benchmark, or penetration test.
+
+To drive it by hand instead, the path is:
 
 **1. Authorize** — evaluate an untrusted intent, issue a signed `DecisionReceipt` carrying the
 canonical intent digest and a `credential_ceiling`:

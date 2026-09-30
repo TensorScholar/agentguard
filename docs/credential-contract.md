@@ -103,29 +103,76 @@ header with a secret.
 The production credential authority is reachable from the Streamable HTTP gateway. It is the only
 supported path that both resolves secrets late *and* executes through a protected proxy.
 
+`agentguard init` writes the signing key the gateway expects, so no manual key generation is needed:
+
 ```bash
 export PAYMENTS_API_TOKEN='...'          # the secret; never written to disk by AgentGuard
 
 agentguard-mcp-http \
-  --policy examples/scoped-refund/policy.yaml \
+  --policy examples/harness/policy.yaml \
   --key .agentguard/demo/private.pem \
   --server-id customer-operations \
   --upstream-url https://payments.internal/mcp \
+  --tenant-id acme \
   --credential-env PAYMENTS_API_TOKEN \
   --credential-audience payments \
   --credential-scope refund:create \
   --credential-header-name Authorization \
   --credential-header-scheme Bearer \
-  --access-token-env AGENTGUARD_HTTP_ACCESS_TOKEN
+  --access-token-env AGENTGUARD_HTTP_ACCESS_TOKEN \
+  --provenance authenticated_user_input \
+  --provenance-verified
 ```
 
 This constructs an `EnvironmentCredentialSource`, stores a durable non-secret
 `CredentialAuthorityProfile` keyed to that source binding, and builds a `BrokeredCredentialAuthority`
 whose grant verifier is wired into the protected service (`http_cli.py:138-172`).
 
+### `--provenance` is required for the live path
+
+Every protected MCP adapter derives the intent from the wire and cannot know where the call came
+from, so provenance is **deployment configuration**, supplied by the operator:
+
+| Flag | Meaning |
+|---|---|
+| `--provenance <label>` | Repeatable. Provenance the transport establishes. Omitted ⇒ `unverified`. |
+| `--provenance-verified` | Assert that the declared provenance has been cryptographically verified. |
+
+Without it, every intent is `(unverified, False)` and any policy with
+`unknown_provenance != allow` will refuse every call. `unverified` cannot be combined with a
+trusted label — the parser rejects that as contradictory rather than silently picking one.
+
+This is the adapter-as-TCB-boundary assumption from [the threat model](threat-model.md): the
+deployment is trusted to label provenance accurately. The default is deliberately the safe value.
+
 Requires the `http` extra. A non-loopback listener additionally requires TLS, a bearer token, and an
 explicit Host allowlist; browser-reachable use additionally requires an Origin allowlist
 (`service_deployment.py`). Those are enforced, not advisory.
+
+### Credential failure codes
+
+The gateway reports the specific stable code in `error.data.reason_code`, so a misconfiguration is
+identifiable without reading source:
+
+```json
+{"error": {"code": -32003, "message": "credential issuance failed",
+           "data": {"reason": "CredentialAuthorityError",
+                    "reason_code": "credential.profile_scope_mismatch"}}}
+```
+
+| Code | Usual cause |
+|---|---|
+| `credential.profile_unavailable` | No stored profile for `(audience, tenant_id)`. Usually `--tenant-id` does not match the policy ceiling's `tenant_id`. |
+| `credential.profile_scope_mismatch` | `--credential-scope` differs from the policy ceiling's scopes. Exact equality is required — see above. |
+| `credential.tenant_mismatch` / `credential.audience_mismatch` | Ceiling and request disagree. |
+| `credential.requested_ttl_exceeds_decision` | Requested TTL above the ceiling. |
+| `credential.source_binding_mismatch` | Profile was stored against a different credential source. |
+| `credential.profile_expired` / `credential.grant_window_invalid` | The decision or profile expired before issuance. |
+| `credential.material_invalid` | The resolved secret was empty, whitespace-padded, or contained CR/LF/NUL. |
+| `credential.handle_forbidden` | A `brokered_execution` grant carried secret material. |
+
+A **missing** `--credential-key` file is caught at startup with an actionable message naming
+`agentguard init`.
 
 ---
 

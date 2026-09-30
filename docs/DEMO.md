@@ -19,7 +19,49 @@ pip install -e '.[http]'
 
 ---
 
-## 1. One command, the whole spine
+## 0. One Command, Everything (~5 seconds)
+
+```bash
+pip install -e '.[http]'
+python examples/harness/run_demo.py
+```
+
+This is the recommended starting point. It starts a local fake MCP provider, starts the protected
+gateway with the **production** credential authority, and drives the real CLIs as subprocesses —
+so what you see is what an operator gets, not a mock of the library.
+
+```
+== A. Argument mutation is blocked
+   PASS tampered amount refused with execution.arguments_digest_mismatch
+== C. Authorized side effect is dispatched
+   PASS refund.create admitted and dispatched
+   PASS provider committed the authorized amount -- amount_minor=8500
+== Credential handling
+   PASS secret never written to any durable sqlite state
+== B. Receipt replay is blocked
+   PASS second dispatch of a consumed receipt refused (decision_receipt.replayed)
+== D. Evidence export, offline verify, tamper detection
+   PASS offline verify: signature verified -- {"ok": true, "signature_verified": true}
+   PASS escalated credential ceiling in the bundle is detected
+== E. Ambiguous effect stays UNKNOWN and is not retried
+   PASS gateway refuses to guess (code -32004, retry_safe false)
+   PASS provider actually committed despite the dropped connection
+== F. Reconcile-before-retry via the provider status tool
+   PASS resolution is confirmed_succeeded at PROVIDER_VERIFIED trust
+   PASS reconciliation did not redispatch -- still exactly 2 refunds
+```
+
+28 checks, exit code 0.
+
+**Read [`examples/harness/README.md`](../examples/harness/README.md) before drawing conclusions.**
+The fake provider confirms outcomes from its own ledger; that is not an external attestation, and
+none of this is a certification, benchmark, or penetration test.
+
+The sections below walk the same path by hand.
+
+---
+
+## 1. Fixtures and the attack suite
 
 ```bash
 agentguard demo --output .agentguard/demo --force
