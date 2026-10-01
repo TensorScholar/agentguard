@@ -50,7 +50,7 @@ Read this before drawing conclusions.
   ledger*. That is not an attestation by Stripe or anyone else. The reconciler is only as
   trustworthy as the status tool you configure — AgentGuard cannot verify a provider's honesty.
 - **Not a certification, benchmark, or penetration test.** No independent security review, soak
-  test, or production pilot has been done for `0.2.0rc3`.
+  test, or production pilot has been done for `0.2.0rc4`.
 - **Not the research result.** Nothing here depends on the Freeze v2 outcome. See the
   [README Research Status](../../README.md#research-status--read-this-before-evaluating-the-design).
 - **Single host only.** SQLite, one gateway process, one reconciler tick.

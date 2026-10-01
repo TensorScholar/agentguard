@@ -1,6 +1,6 @@
 # Limitations
 
-This document states the current technical and operational boundary of the `0.2.0rc3` line. It is deliberately stricter than the implemented feature list.
+This document states the current technical and operational boundary of the `0.2.0rc4` line. It is deliberately stricter than the implemented feature list.
 
 **Scope of this release line.** AgentGuard leads with four mechanisms: decision-bound credential
 ceilings with late secret resolution; execution-time digest revalidation with single-use claim; durable
@@ -110,7 +110,7 @@ The full contract is in [credential-contract.md](credential-contract.md). The li
 
 - Identity-backed interactive approval UX, HSM/KMS signer integration, SIEM storage, centralized policy distribution, and distributed multi-host coordination are not bundled services.
 - Real-provider interoperability is adapter/profile specific; passing deterministic tests does not establish universal provider compatibility.
-- No independent penetration test, long-duration soak test, or controlled production pilot has been completed for `0.2.0rc3`.
+- No independent penetration test, long-duration soak test, or controlled production pilot has been completed for `0.2.0rc4`.
 - A release candidate must not be described as production-certified merely because CI, Security, CodeQL, packaging, and reproducibility gates pass.
 - The pre-registered authorization-lineage research program is retained in the repository as the research
   record but is excluded from the distributed wheel and sdist. It is importable only from a source

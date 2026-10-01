@@ -2,8 +2,28 @@
 
 ## 0.2.0rc4
 
-Three stabilization and delivery passes. The release remains an engineering-validated release
-candidate on a single host, not production certified, and with no green hosted CI run yet.
+Three stabilization and delivery passes, plus a packaging and positioning pass. Packaging only — no
+enforcement behavior changed in Phase 3.
+
+### Phase 3 - packaging and positioning
+
+- Cut `0.2.0rc4`. Phases 0-2 were verified but sat under an "Unreleased" heading above the shipped
+  `0.2.0rc3`, so an installed artifact contained all the Phase 0-2 code while advertising a version
+  that previously meant a different tree. `0.2.0rc3` and `0.2.0rc4` are not interchangeable. Version
+  metadata, CITATION, and the changelog heading move together.
+- **Fix an sdist packaging defect.** `MANIFEST.in` included `examples/` without `*.py`, so an sdist
+  consumer received the harness README instructing them to run `run_demo.py` without receiving it.
+  The wheel still carries no harness files and `src/agentguard/research` remains excluded from both.
+- Add a cold-start evaluation path to the README: install, run the demo, verify evidence and detect
+  tampering, then read the credential contract and limitations. Every command in it was executed
+  verbatim from a clean virtualenv.
+- Add `docs/COLLABORATION.md` (one-page collaboration brief) and `docs/FAQ.md` (talking points).
+- Restructure `docs/project-status.md` with a Phase 0-3 delivery history and promotion debt grouped by
+  what blocks a pilot, what blocks a credential-path production claim, and what is non-blocking. Add
+  `AG-TEST-001` (fuzzing), previously flagged but never recorded as debt.
+
+Still true and still stated up front: engineering-validated release candidate, not production
+certified; no independent review, soak test, or pilot; and no green hosted CI run (`AG-CI-001`).
 
 ### Phases 0-2
 

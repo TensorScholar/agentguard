@@ -8,7 +8,95 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Release Status:** `v0.2.0rc3` is an engineering-validated release candidate. It implements protected MCP stdio and bounded Streamable HTTP profiles, production credential authority, durable external-effect reconciliation, and single-host multi-process coordination. Full production certification requires independent security review, long-duration operational validation, and a controlled production pilot. See [Project Status](docs/project-status.md) and [Known Limitations](docs/limitations.md).
+> **Release Status:** `v0.2.0rc4` is an engineering-validated **release candidate**, not a
+> production-certified release. It adds a runnable happy-path demo, provenance declared per adapter, and
+> a documented credential contract on top of the protected MCP stdio and bounded Streamable HTTP
+> profiles, production credential authority, durable external-effect reconciliation, and single-host
+> multi-process coordination. Production certification still requires an independent security review,
+> long-duration operational validation, and a controlled production pilot. There is also **no green
+> hosted CI run yet** (`AG-CI-001`); `make check` passes locally on the release commit. See
+> [Project Status](docs/project-status.md) and [Known Limitations](docs/limitations.md).
+
+> **Evaluating this project?** Run the demo first — it takes about five seconds:
+> [the under-30-minute evaluation path](#evaluate-this-in-under-30-minutes).
+
+---
+
+## Evaluate This in Under 30 Minutes
+
+Start here. If you only do the first step, you will still have seen the thing that matters.
+
+**Step 1 — run the demo (~5 minutes, most of it setup).**
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e '.[http]'
+python examples/harness/run_demo.py
+```
+
+It prints `passed: 28   failed: 0`. Watch three lines:
+
+```
+secret never written to any durable sqlite state
+gateway refuses to guess (code -32004, retry_safe false)
+resolution is confirmed_succeeded at PROVIDER_VERIFIED trust
+```
+
+The first is the credential contract holding. The second and third are the same event: a refund the
+provider **did** commit, whose response was lost. AgentGuard recorded `UNKNOWN` rather than guessing,
+then resolved it from the provider's own status tool **without sending the refund again**.
+
+```bash
+cat .agentguard-demo/provider/provider-ledger.jsonl 2>/dev/null   # with --keep
+```
+
+Read [`examples/harness/README.md`](examples/harness/README.md) for **what this does not prove** —
+the fake provider confirms from its own ledger, which is not an external attestation.
+
+**Step 2 — verify the evidence yourself (2 minutes, no code).**
+
+```bash
+agentguard demo --output .agentguard/demo --force
+agentguard evidence-build .agentguard/demo/intent.json .agentguard/demo/receipt.json \
+  --key .agentguard/demo/private.pem --output ./ev
+agentguard evidence-verify ./ev --public-key .agentguard/demo/public.pem --require-signature
+# {"ok": true, "checked_artifacts": 2, "signature_verified": true}
+
+# now break it: escalate the credential ceiling inside the signed bundle
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path("ev/decision-receipt.json")
+d = json.loads(p.read_text())
+d["credential_ceiling"]["scopes"] = ["admin"]
+p.write_text(json.dumps(d))
+PY
+agentguard evidence-verify ./ev --public-key .agentguard/demo/public.pem --require-signature
+# EvidenceVerificationError: evidence.size_mismatch:decision-receipt.json   (exit 2)
+```
+
+Use a path inside your working directory. AgentGuard refuses to read or write through symlinked
+path components, so `/tmp/...` fails on macOS, where `/tmp` is a symlink to `/private/tmp`.
+
+A third party holding only the bundle and a public key can confirm what was authorized, and cannot be
+fooled by an escalated credential ceiling.
+
+**Step 3 — read the two documents that decide whether you care (~15 minutes).**
+
+- [Credential Contract](docs/credential-contract.md) — the exact ceiling-to-secret flow, every failure
+  code, and an explicit table of what is still missing.
+- [Limitations](docs/limitations.md) — six non-goals first, then every residual risk. Start here if
+  you are deciding whether this fits.
+
+**If you are evaluating whether the *design* is differentiated:** read
+[Research Status](#research-status--read-this-before-evaluating-the-design) first. The project's own
+pre-registered experiment says it is not, and that changes what this is worth to you.
+
+**First conversation, or want the short form?**
+
+- [Collaboration brief](docs/COLLABORATION.md) — the problem, what works today, non-goals, the research
+  result, and the kind of collaboration we are looking for. Five minutes.
+- [FAQ and talking points](docs/FAQ.md) — "why not just a policy gateway", "your research says the
+  thesis is falsified", "what does the demo actually prove", "single-host only, is that intentional".
 
 ---
 
@@ -47,7 +135,7 @@ acceptance is explicitly not acceptance of the research thesis.
 [hypothesis](docs/PROGRESS_TRACKER.md), not a finding. No claim of demonstrated market demand,
 willingness to pay, pilot success, or comparative production superiority is established. No
 independent penetration test, long-duration soak test, or controlled production pilot has been
-completed for `0.2.0rc3`.
+completed for `0.2.0rc4`.
 
 **Publication note.** The result is eligible for publication as a technical report or
 negative-result note. It has not been published or accepted anywhere. Follow-up work must be
@@ -109,13 +197,13 @@ Stated plainly so nobody buys a control plane:
 - **Sandboxing or egress control.** Process isolation, filesystem MAC, and network egress are
   deployment responsibilities.
 - **Production certification.** No independent penetration test, soak test, or production pilot has
-  been completed for `0.2.0rc3`.
+  been completed for `0.2.0rc4`.
 
 ---
 
 ## AgentGuard Core and AgentGuard Reference
 
-This repository is AgentGuard Core, the canonical runtime, at `v0.2.0rc3`. Production certification is not claimed.
+This repository is AgentGuard Core, the canonical runtime, at `v0.2.0rc4`. Production certification is not claimed.
 
 `agentguard-reference` `v1.0.1` is a different artifact. It is a public standard-library example of one guarded callback. It is not a newer version of this core, and it does not carry the MCP, credential, reconciliation, or research record maintained here.
 
@@ -403,7 +491,7 @@ Full separation-of-concerns specification: [Product Boundary](docs/product-bound
 
 ---
 
-## Known Technical Limitations (Release Candidate `0.2.0rc3`)
+## Known Technical Limitations (Release Candidate `0.2.0rc4`)
 
 - **State Model:** Validated for **single-host, multi-process** deployments via local SQLite locking. Network filesystems (NFS/CIFS) or cross-host consensus are explicitly outside the current correctness claim.
 - **Credential Sourcing:** Resolves environment-held secrets late; dynamic token minting and provider-native IAM downscoping require downstream adapters.

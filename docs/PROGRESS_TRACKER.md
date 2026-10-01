@@ -9,7 +9,7 @@ This tracker does not change the Freeze v2 research claim. Production certificat
 ## Repository Baseline
 
 - Remote `main`: `5275e94f28a7c4282908d2fc88f5a44f2c3a7583`.
-- Declared release version: `0.2.0rc3`.
+- Declared release version: `0.2.0rc4`.
 - Current status document: `docs/project-status.md`.
 - Freeze v2 adjudication: `docs/research/FREEZE_V2_RESULT_ADJUDICATION.md`.
 - Preserved Q01 commit: `7effe3e203d2123f5e6d4733706f78613b1f7bb8`.
@@ -43,7 +43,7 @@ The protected execution path rechecks authorization expiry immediately before re
 **Status: APPROVED for `d8c4bcc`.**
 
 Validated in an isolated Python 3.12 environment with repository constraints:
-- package version `0.2.0rc3`;
+- package version `0.2.0rc4`;
 - `cryptography 50.0.1`;
 - `pip check`: no broken requirements;
 - targeted validation: exit code 0;
@@ -354,3 +354,45 @@ not by reading it.
   exactly as adjudicated.
 - **No new CLI commands.** Two flags were added to existing entrypoints; everything else reuses
   commands that already existed.
+
+## Phase 3 — Packaging and Positioning
+
+Goal: make the project evaluable by an external engineer and collaboration-ready, without adding
+product surface. No new mechanisms, no CLI expansion, no behavior change except where a packaging or
+documentation bug forced a fix.
+
+Decisions recorded:
+
+- **Cut `0.2.0rc4`.** Phases 0–2 were verified but sat under an "Unreleased" heading above the
+  shipped `0.2.0rc3`, so an installed artifact contained all the Phase 0–2 code while advertising a
+  version number that previously meant a different tree. Two people pinning `0.2.0rc3` could have
+  received different code, which contradicts `release-process.md`'s own rule that releases are
+  evidence-bound to an exact commit. `0.2.0rc4` is the release candidate that contains Phases 0–2, and
+  the two versions are not interchangeable. Version metadata, CITATION, and the changelog heading are
+  updated together; `check_release_metadata.py` enforces the match.
+- **Fixed a packaging defect found by inspecting the artifact.** `MANIFEST.in` included `examples/`
+  by `*.md *.json *.jsonl *.yaml` but not `*.py`, so an sdist consumer received the harness README
+  telling them to run `run_demo.py` without receiving `run_demo.py`. Added `*.py`. Verified: the
+  sdist now carries all four harness files, the wheel still carries none of them, and
+  `src/agentguard/research` remains excluded from both.
+- **Rebuilt and verified rather than assumed.** Wheel byte-identical across two `--no-isolation`
+  builds; normalized sdist byte-identical; `twine check` PASSED on both; a clean install from the
+  sdist reports `0.2.0rc4`, cannot import `agentguard.research`, and exposes `--provenance`.
+- **Added a cold-start evaluation path** to the README as the first section an outsider meets: install,
+  run the demo, verify evidence and detect tampering, then read the credential contract and
+  limitations. Fixed two defects in my own instructions while writing it: the evidence commands wrote
+  to `/tmp`, which AgentGuard correctly refuses on macOS because `/tmp` is a symlink, and the failure
+  cascaded confusingly. Both steps were then executed verbatim from a clean virtualenv.
+- **Added `docs/COLLABORATION.md`** — problem, four mechanisms, what is demonstrably working, the
+  falsified-thesis result and what survives it, non-goals, the collaboration we want, and what we are
+  not asking for. Modest and specific; no hype.
+- **Added `docs/FAQ.md`** — the four questions that decide whether there is a second conversation.
+- **Restructured `docs/project-status.md` for external eyes**: a delivery-history table for Phases 0–3,
+  promotion debt grouped into what blocks a pilot, what blocks a credential-path production claim, and
+  what is engineering debt rather than blocking. Added `AG-TEST-001` (fuzzing), which had been flagged
+  in earlier audits as the largest methodological gap but never recorded as a debt item.
+- **Kept the release-candidate posture.** No claim of production certification, no suggestion that
+  hosted CI is green, and `AG-CI-001` remains open and listed first among the blocking items.
+
+Deliberately not done: no tagging or publication of `0.2.0rc4` (that is a separate explicit step), no
+`AG-EVID-001` contract change, no marketing content, and no change to any enforcement behavior.
