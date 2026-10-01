@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased (Phase 2 practical MVP)
+## 0.2.0rc4
+
+Three stabilization and delivery passes. The release remains an engineering-validated release
+candidate on a single host, not production certified, and with no green hosted CI run yet.
+
+### Phases 0-2
+
+The release remains a release candidate: engineering validated on a single host, not production
+certified, and with no green hosted CI run yet (`AG-CI-001`). Phase 0 was stabilization and honesty,
+Phase 1 defined the product wedge, Phase 2 made it demable end to end.
+
+### Phase 2 - practical MVP of the wedge
 
 Practical-MVP pass. Every item below closed a gap that made the documented happy path fail for a new
 user. Each was found by executing the documented path, not by reading it.
@@ -57,7 +68,7 @@ user. Each was found by executing the documented path, not by reading it.
   as the adapter-as-TCB-boundary assumption it is.
 - The capability classifier remains keyword-based and advisory.
 
-## Phase 1 (product wedge, completed)
+### Phase 1 - product wedge
 
 Product-focus pass. No feature was added, no module was deleted, and no behavior changed. The change is
 to what the project leads with and what a reader is shown first.
@@ -100,7 +111,7 @@ to what the project leads with and what a reader is shown first.
   and the happy path names the protected proxy as the real execution sink. The bearer-ticket property
   of a `DecisionReceipt` is now also stated in `docs/limitations.md`.
 
-## Phase 0 (stabilization and honesty, completed)
+### Phase 0 - stabilization and honesty
 
 Stabilization and honesty pass. No product features were added. Two changes are breaking and are
 documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).

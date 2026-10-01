@@ -16,7 +16,7 @@ from scripts.verify_release import (
 
 SAMPLE_COMMIT = "5c57bfe6d944cd05d268150277502bb42ca2e198"
 WRONG_COMMIT = "1111111111111111111111111111111111111111"
-SAMPLE_VERSION = "0.2.0rc3"
+SAMPLE_VERSION = "0.2.0rc4"
 SAMPLE_PROJECT = "agentguard"
 SAMPLE_IDENTITY = "release-signer@agentguard.dev"
 SAMPLE_NAMESPACE = "agentguard-release-v1"
@@ -42,8 +42,8 @@ def release_bundle(tmp_path: Path):
     release_dir = artifact_root / "release"
     release_dir.mkdir()
 
-    wheel_content = b"PK-wheel-content-v0.2.0rc3"
-    sdist_content = b"tar-gz-sdist-content-v0.2.0rc3"
+    wheel_content = b"PK-wheel-content-v0.2.0rc4"
+    sdist_content = b"tar-gz-sdist-content-v0.2.0rc4"
     wheel_file = dist_dir / f"agentguard-{SAMPLE_VERSION}-py3-none-any.whl"
     sdist_file = dist_dir / f"agentguard-{SAMPLE_VERSION}.tar.gz"
     wheel_file.write_bytes(wheel_content)
