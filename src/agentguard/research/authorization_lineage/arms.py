@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -129,6 +131,45 @@ class _ResearchProviderExecutor(ProtectedExecutor):
         raise AmbiguousExecutionError("research.ambiguous_without_observed_effect")
 
 
+class HarnessFencedState(SQLiteFencedReconciliationState):
+    """Fenced state whose in-transaction clock is overridable for a scheduled barrier.
+
+    The production state samples authoritative wall time inside ``BEGIN IMMEDIATE`` so a
+    caller-supplied stale timestamp cannot extend a lease or a reservation past real expiry.
+    That TOCTOU guard is deliberate and is left intact here.
+
+    The S11 schedule, however, has to create a deterministic ordering between two
+    reconciliation lease claims -- a stale worker and its fenced successor -- and it can only
+    do that if the lease window advances by simulated time rather than by real elapsed time.
+    This subclass therefore exposes the same ``_transaction_now`` override point the core
+    unit tests use, and only the harness may set it.
+
+    The default is ``None``, meaning real wall time, so every trial that does not explicitly
+    install a simulated clock exercises exactly the production behavior.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._simulated_transaction_time: datetime | None = None
+        super().__init__(path)
+
+    def _transaction_now(self) -> datetime:
+        simulated = self._simulated_transaction_time
+        if simulated is not None:
+            return simulated
+        return datetime.now(UTC)
+
+    @contextmanager
+    def simulated_transaction_time(self, value: datetime) -> Iterator[None]:
+        """Advance simulated in-transaction time for the duration of the block only."""
+
+        previous = self._simulated_transaction_time
+        self._simulated_transaction_time = value
+        try:
+            yield
+        finally:
+            self._simulated_transaction_time = previous
+
+
 class A0Arm:
     """Pinned current-AgentGuard arm using the real core protected execution service.
 
@@ -139,7 +180,7 @@ class A0Arm:
     def __init__(self, root: Path) -> None:
         self.root = root
         root.mkdir(parents=True, exist_ok=True)
-        self.state = SQLiteFencedReconciliationState(root / "agentguard.sqlite")
+        self.state = HarnessFencedState(root / "agentguard.sqlite")
         self.signer = Ed25519Signer.generate("research-decision-ed25519")
         self.verifier = Ed25519Verifier({self.signer.key_id: self.signer.public_key()})
         self.authority_signer = Ed25519Signer.generate("research-authority-ed25519")

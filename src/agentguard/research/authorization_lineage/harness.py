@@ -487,18 +487,27 @@ class DevTrialHarness:
                         return fence.commit_is_current(b4_new, now=t0 + timedelta(seconds=2))
 
                 else:
-                    ag_old = arm.state.claim_reconciliation_lease(
-                        first_result.attempt_id,
-                        "worker-old",
-                        now=t0,
-                        lease_seconds=1,
-                    )
-                    ag_new = arm.state.claim_reconciliation_lease(
-                        first_result.attempt_id,
-                        "worker-new",
-                        now=t0 + timedelta(seconds=2),
-                        lease_seconds=5,
-                    )
+                    # The core state samples lease expiry inside BEGIN IMMEDIATE from
+                    # authoritative wall time, which is the production TOCTOU guard and is
+                    # left intact. S11 must instead establish a deterministic gap between the
+                    # stale claim and its fenced successor, so the two claims are wrapped in the
+                    # harness's simulated in-transaction clock. Outside these blocks the state
+                    # samples real time, so no other schedule changes behavior.
+                    takeover_at = t0 + timedelta(seconds=2)
+                    with arm.state.simulated_transaction_time(t0):
+                        ag_old = arm.state.claim_reconciliation_lease(
+                            first_result.attempt_id,
+                            "worker-old",
+                            now=t0,
+                            lease_seconds=1,
+                        )
+                    with arm.state.simulated_transaction_time(takeover_at):
+                        ag_new = arm.state.claim_reconciliation_lease(
+                            first_result.attempt_id,
+                            "worker-new",
+                            now=takeover_at,
+                            lease_seconds=5,
+                        )
                     if ag_old is None or ag_new is None:
                         raise HarnessScheduleError(
                             "AgentGuard reconciliation takeover could not be established"

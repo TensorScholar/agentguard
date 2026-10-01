@@ -3,7 +3,9 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
-from agentguard.adapters.storage.sqlite import SQLiteFencedReconciliationState
+from agentguard.adapters.storage.sqlite import (
+    SQLiteFencedReconciliationState as _SQLiteFencedReconciliationState,
+)
 from agentguard.domain import (
     EvidenceTrustLevel,
     ReconciliationEvidence,
@@ -11,6 +13,15 @@ from agentguard.domain import (
 )
 
 NOW = datetime(2026, 9, 2, 20, 0, tzinfo=UTC)
+
+
+class SQLiteFencedReconciliationState(_SQLiteFencedReconciliationState):
+    def __init__(self, path) -> None:
+        self.serialized_now = NOW
+        super().__init__(path)
+
+    def _transaction_now(self) -> datetime:
+        return self.serialized_now
 
 
 def _insert_unknown(path, execution_id: str = "exec_semantics") -> None:
@@ -58,6 +69,7 @@ def _resolve(
     allow_terminal_recheck: bool = False,
 ):
     now = NOW + timedelta(seconds=offset)
+    state.serialized_now = now
     lease = state.claim_reconciliation_lease(
         execution_id,
         f"worker-{offset}",
