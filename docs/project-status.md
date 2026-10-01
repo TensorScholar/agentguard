@@ -66,9 +66,12 @@ retained advanced surface that no product claim depends on.
 
 ### CI evidence status
 
-**Green self-hosted validation exists for `0.2.0rc4`.** Run
-[`36910522462`](https://github.com/TensorScholar/agentguard/actions/runs/36910522462), commit
-`0ec42a29`, runner `agentguard-mac-arm64` (macOS / ARM64 / CPython 3.12.10), 8m52s:
+**Green self-hosted validation exists for `0.2.0rc4`.** Two runs, both on runner
+`agentguard-mac-arm64` (macOS / ARM64 / CPython 3.12.10):
+[`36910522462`](https://github.com/TensorScholar/agentguard/actions/runs/36910522462) on commit `0ec42a29`
+(8m52s), and the superseding [`36916055898`](https://github.com/TensorScholar/agentguard/actions/runs/36916055898)
+on the final branch head `6f071ed` (7m4s). **`36916055898` is the authoritative artifact** — it is the run
+whose evidence reflects the current `HOSTED_CI_REPLACED` wording. Both are recorded:
 
 - `make check` — **PASS** (839 passed, 3 skipped): `ruff format --check`, `ruff check`,
   `mypy --strict`, `coverage` at the 80% combined statement/branch floor, schema drift, architecture,
@@ -118,11 +121,12 @@ Open and visible. Nothing below is claimed as done.
 - `AG-VAL-001` (Independent Penetration & Pilot) — independent security review, long-duration soak
   testing, and a controlled production pilot. This is the real gate.
 - `AG-CI-001` (Hosted and Cross-Platform CI Evidence) — **partially satisfied.** Green **self-hosted**
-  validation evidence now exists for the `0.2.0rc4` product line: run
-  [`36910522462`](https://github.com/TensorScholar/agentguard/actions/runs/36910522462) on commit
-  `0ec42a29` via runner `agentguard-mac-arm64`, where `make check` passed (839 passed, 3 skipped),
-  `pip_audit` passed, and the AgentGuard MCP security gate passed. That is a real engineering signal and
-  it is recorded here rather than claimed vaguely. What remains open:
+  validation evidence now exists for the `0.2.0rc4` product line: runs
+  [`36910522462`](https://github.com/TensorScholar/agentguard/actions/runs/36910522462) and the superseding
+  [`36916055898`](https://github.com/TensorScholar/agentguard/actions/runs/36916055898) (commit `6f071ed`),
+  via runner `agentguard-mac-arm64`, where `make check` passed (839 passed, 3 skipped), `pip_audit`
+  passed, and the AgentGuard MCP security gate passed. That is a real engineering signal and it is
+  recorded here rather than claimed vaguely. What remains open:
   - **No green hosted CI.** PR #30 made `ci.yml`, `codeql.yml`, and `security.yml` `workflow_dispatch`-only,
     so hosted CI does not run automatically on pushes or pull requests.
   - **No cross-platform matrix.** The evidence is a single combination: macOS / ARM64 / CPython 3.12.10.

@@ -428,6 +428,11 @@ Result — run `36910522462`, commit `0ec42a29`: **success** in 8m52s, with `mak
 3 skipped, `pip_audit` pass, MCP security gate pass. Green self-hosted validation evidence now exists for
 the `0.2.0rc4` product line.
 
+Re-run after the evidence-wording commit: run `36916055898`, head `6f071ed`: **success** in 7m4s with the
+same gate results. It supersedes `36910522462` as the authoritative artifact for this line, because its
+evidence reflects the corrected `HOSTED_CI_REPLACED` wording. Both runs are cited in
+`docs/project-status.md` and the changelog rather than only the newer one.
+
 `AG-CI-001` is therefore **partially satisfied and remains open**, narrowed to what is still missing:
 
 - no green hosted CI (`ci.yml`, `codeql.yml`, `security.yml` are `workflow_dispatch`-only);
@@ -438,9 +443,13 @@ the `0.2.0rc4` product line.
 Also corrected here: the self-hosted evidence artifact asserted `HOSTED_CI_REPLACED=false`, which PR #30
 made untrue — self-hosted validation has been the primary path since that merge. It now reports
 `HOSTED_CI_REPLACED=true` with a meaning key, plus explicit `HOSTED_CI_GREEN_ON_THIS_REF=false` and
-`CROSS_PLATFORM_MATRIX=false` so the artifact cannot be read as a hosted-green claim. Note that run
-`36910522462` predates this correction and its retained artifact still contains the old
-`HOSTED_CI_REPLACED=false` string; a subsequent run regenerates it.
+`CROSS_PLATFORM_MATRIX=false` so the artifact cannot be read as a hosted-green claim.
+
+Run `36910522462` predates this correction, so its retained artifact still contains the old
+`HOSTED_CI_REPLACED=false` string. That is now resolved rather than merely noted: run `36916055898` on
+head `6f071ed` regenerated the artifact with `HOSTED_CI_REPLACED=true`,
+`HOSTED_CI_GREEN_ON_THIS_REF=false`, and `CROSS_PLATFORM_MATRIX=false`. Both runs remain cited so the
+superseded one is not mistaken for current evidence.
 
 No product behavior changed. No production certification is claimed: there is still no independent
 security review, no soak test, and no pilot.

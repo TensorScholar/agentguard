@@ -7,9 +7,12 @@ enforcement behavior changed in Phase 3.
 
 ### CI evidence for 0.2.0rc4
 
-- Green **self-hosted** validation now exists for this line: run `36910522462` on commit `0ec42a29`
-  via runner `agentguard-mac-arm64`, where `make check` passed (839 passed, 3 skipped), `pip_audit`
-  passed, and the AgentGuard MCP security gate passed.
+- Green **self-hosted** validation now exists for this line: runs [`36910522462`](https://github.com/TensorScholar/agentguard/actions/runs/36910522462)
+  and, superseding it on the final branch head, [`36916055898`](https://github.com/TensorScholar/agentguard/actions/runs/36916055898)
+  (commit `6f071ed`), both via runner `agentguard-mac-arm64`, where `make check` passed
+  (839 passed, 3 skipped), `pip_audit` passed, and the AgentGuard MCP security gate passed. `36916055898`
+  is the authoritative artifact: it is the one whose evidence reflects the current
+  `HOSTED_CI_REPLACED` wording.
 - `AG-CI-001` is narrowed, **not closed**. Still missing: green hosted CI (`ci.yml`, `codeql.yml`,
   `security.yml` are `workflow_dispatch`-only since PR #30); a cross-platform matrix (evidence is
   macOS / ARM64 / CPython 3.12.10 only); and independence (`TRUST_SCOPE=trusted-owner-same-repository-only`,
