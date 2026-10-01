@@ -6,7 +6,7 @@ from agentguard.adapters.broker import MockCredentialBroker
 from agentguard.adapters.executor import DeterministicFakeExecutor
 from agentguard.application import AgentGuardService
 from agentguard.domain import CredentialRequest, ExecutionStatus
-from agentguard.engine.execution import ExecutionGuardError, authorize_execution
+from agentguard.engine.execution import ExecutionGuardError, preflight_execution
 
 
 def test_authorize_broker_execute(intent, policy, signer, verifier, state):
@@ -87,7 +87,7 @@ def test_argument_mutation_is_blocked(intent, policy, signer, verifier, state):
     grant = broker.issue(receipt, request)
     mutated = intent.model_copy(update={"arguments": {**intent.arguments, "order_id": "other"}})
     with pytest.raises(ExecutionGuardError, match="arguments_digest_mismatch"):
-        authorize_execution(
+        preflight_execution(
             mutated,
             receipt,
             grant,

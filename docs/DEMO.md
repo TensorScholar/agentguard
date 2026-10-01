@@ -1,103 +1,96 @@
-# AgentGuard Interactive Demo: Action Integrity & Attack Prevention
+# AgentGuard Demo: the Wedge Happy Path
 
-This walkthrough demonstrates the core technical invariant of AgentGuard:
+The invariant this walkthrough demonstrates:
 
-$$\text{Authorized action} == \text{Credentialed action} == \text{Executed action}$$
+$$\text{authorized action} \;=\; \text{credentialed action} \;=\; \text{executed action}$$
 
-Modern AI agents fail catastrophically not during intent formation, but at the execution boundary. When an agent interacts with external tools via protocols like MCP (Model Context Protocol), it is vulnerable to **argument mutation**, **credential scope inflation**, **receipt replay**, and **ambiguous external effects**.
+The path below is the **whole supported happy path**: authorize → execute through the protected proxy
+→ export evidence → verify offline, with an operator reconcile step for ambiguous effects. Everything
+else in the CLI is listed in the README's
+[Advanced Surface](../README.md#advanced-surface-not-part-of-the-wedge) and is not part of this
+walkthrough.
 
-AgentGuard acts as a deterministic, fail-closed execution-integrity kernel that intercepts tool calls before side-effects occur.
+Setup (once):
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e '.[http]'
+```
 
 ---
 
-## Scenario: Bounded Financial Operations
+## 0. One Command, Everything (~5 seconds)
 
-An autonomous customer support agent (`prod/support-agent-v3`) processes order returns.
-- **MCP Server:** `customer-operations`
-- **Tool:** `refund.create`
-- **Authorized Operation:** Refund **\$85.00** (`amount_minor: 8500`) for Order `order-1042`.
-- **Policy Limit:** Maximum \$100.00 (`amount_minor: 10000`), requires single-use credential, verified user provenance.
+```bash
+pip install -e '.[http]'
+python examples/harness/run_demo.py
+```
+
+This is the recommended starting point. It starts a local fake MCP provider, starts the protected
+gateway with the **production** credential authority, and drives the real CLIs as subprocesses —
+so what you see is what an operator gets, not a mock of the library.
+
+```
+== A. Argument mutation is blocked
+   PASS tampered amount refused with execution.arguments_digest_mismatch
+== C. Authorized side effect is dispatched
+   PASS refund.create admitted and dispatched
+   PASS provider committed the authorized amount -- amount_minor=8500
+== Credential handling
+   PASS secret never written to any durable sqlite state
+== B. Receipt replay is blocked
+   PASS second dispatch of a consumed receipt refused (decision_receipt.replayed)
+== D. Evidence export, offline verify, tamper detection
+   PASS offline verify: signature verified -- {"ok": true, "signature_verified": true}
+   PASS escalated credential ceiling in the bundle is detected
+== E. Ambiguous effect stays UNKNOWN and is not retried
+   PASS gateway refuses to guess (code -32004, retry_safe false)
+   PASS provider actually committed despite the dropped connection
+== F. Reconcile-before-retry via the provider status tool
+   PASS resolution is confirmed_succeeded at PROVIDER_VERIFIED trust
+   PASS reconciliation did not redispatch -- still exactly 2 refunds
+```
+
+28 checks, exit code 0.
+
+**Read [`examples/harness/README.md`](../examples/harness/README.md) before drawing conclusions.**
+The fake provider confirms outcomes from its own ledger; that is not an external attestation, and
+none of this is a certification, benchmark, or penetration test.
+
+The sections below walk the same path by hand.
 
 ---
 
-## 1. Fast-Path: Automated Attack & Verification Suite
-
-Generate the demo fixtures and run the automated execution and attack suite:
+## 1. Fixtures and the attack suite
 
 ```bash
 agentguard demo --output .agentguard/demo --force
 ```
 
-This single command executes 5 sequential operations through the kernel:
-1. **Golden Path:** Authorizes and executes the \$85.00 refund within policy limits.
-2. **Attack 1 (Argument Mutation):** An adversarial prompt injection attempts to execute with `amount_minor: 85000` (\$850.00).
-3. **Attack 2 (Scope Inflation):** The agent attempts to execute using a credential inflated with `payments:admin`.
-4. **Attack 3 (Replay Attack):** The agent or network retry attempts to re-execute using the already-consumed decision receipt.
-5. **Cryptographic Evidence Packaging:** Hashes all artifacts, records audit events into SQLite, and signs an evidence manifest with an Ed25519 key.
-
-### Inspect the Interception Results
-
-View the machine-verifiable results in `.agentguard/demo/results.json`:
+This runs the bounded-refund scenario ([Scenario 1](scenarios.md#scenario-1--bounded-refund-the-canonical-case))
+through the kernel: golden path, then argument mutation, then scope inflation, then receipt replay,
+then evidence packaging.
 
 ```bash
 cat .agentguard/demo/results.json
 ```
 
-**Expected Output:**
 ```json
 {
   "happy_path": "authorized",
   "argument_mutation": "execution.arguments_digest_mismatch",
   "excessive_scope": "credential.scope_exceeds_decision",
   "replay": "decision_receipt.replayed",
-  "audit": [
-    true,
-    7,
-    "226e2386333128a7ac5a83184a414631209b14c2ee05f4ef211168f330ddf38a",
-    null
-  ]
+  "audit": [true, 7, "226e2386…f38a", null]
 }
 ```
 
-Across these demonstrated scenarios, each attack routed through the protected execution path is intercepted with a deterministic, stable reason code before protected external execution dispatch occurs.
+Each attack was stopped by a stable reason code **before** protected dispatch. The reason codes are
+the contract; the demo prints them.
 
 ---
 
-## 2. Cryptographic Evidence Verification
-
-AgentGuard bundles the normalized intent, signed decision receipt, credential grant, and execution results into an authenticated evidence manifest.
-
-Verify the integrity and Ed25519 signature of the evidence bundle offline:
-
-```bash
-agentguard evidence-verify .agentguard/demo/evidence \
-  --public-key .agentguard/demo/public.pem \
-  --require-signature
-```
-
-**Expected Output:**
-```json
-{
-  "ok": true,
-  "checked_artifacts": 4,
-  "signature_verified": true
-}
-```
-
-This verifies that:
-- The SHA-256 canonical digests of all inputs, receipts, and outputs match the manifest.
-- The manifest signature was produced by the trusted decision authority key.
-- No artifact in the bundle was altered or detached post-execution.
-
----
-
-## 3. Step-by-Step Manual Execution Walkthrough
-
-For a deep inspection of how each phase operates independently, run the lifecycle manually:
-
-### Step 3.1: Policy Evaluation & Authorization
-
-Evaluate an untrusted `ActionIntent` against Policy v2:
+## 2. Authorize
 
 ```bash
 agentguard authorize \
@@ -108,11 +101,30 @@ agentguard authorize \
   --output .agentguard/demo/manual-decision.json
 ```
 
-This derives the canonical SHA-256 digest of the intent, verifies provenance, and outputs a signed `DecisionReceipt` with an embedded `credential_ceiling`.
+Produces a signed `DecisionReceipt` carrying the canonical SHA-256 intent digest **and the
+`credential_ceiling` for this specific refund** — audience, scopes, tenant, TTL. That ceiling, not the
+caller's request, is what bounds the credential. See
+[Credential Contract §1](credential-contract.md#1-the-decision-issues-a-ceiling).
 
-### Step 3.2: Issue Bounded Credential Grant
+## 3. Resolve the credential
 
-Simulate the credential authority binding the decision receipt to a short-lived, scoped credential grant:
+**Production path** (late resolution, real secret) — the Streamable HTTP gateway:
+
+```bash
+export PAYMENTS_API_TOKEN='...'
+
+agentguard-mcp-http \
+  --policy examples/scoped-refund/policy.yaml \
+  --key .agentguard/demo/private.pem \
+  --server-id customer-operations \
+  --upstream-url https://payments.internal/mcp \
+  --credential-env PAYMENTS_API_TOKEN \
+  --credential-audience payments \
+  --credential-scope refund:create \
+  --access-token-env AGENTGUARD_HTTP_ACCESS_TOKEN
+```
+
+**Contract-test path** (no secret source) — for demos and tests only:
 
 ```bash
 agentguard broker-demo \
@@ -121,11 +133,12 @@ agentguard broker-demo \
   --output .agentguard/demo/manual-grant.json
 ```
 
-*(Note: `broker-demo` is a local contract-test adapter that demonstrates grant signing and ceiling downscoping without external vault dependencies.)*
+> `broker-demo` uses the **mock broker**. It exercises grant signing and ceiling enforcement without a
+> secret source and **must not be treated as a production credential provider**. The production
+> credential authority is reachable only via `agentguard-mcp-http --credential-env`. Full contract:
+> [credential-contract.md](credential-contract.md).
 
-### Step 3.3: Execution-Time Revalidation & Binding
-
-Execute the protected action against the signed receipt and grant:
+## 4. Preflight (does **not** execute)
 
 ```bash
 agentguard verify-execution \
@@ -137,50 +150,112 @@ agentguard verify-execution \
   --state .agentguard/demo/audit.sqlite
 ```
 
-AgentGuard atomically:
-1. Re-derives the canonical digest of `request.json` and verifies it matches `manual-decision.json`.
-2. Verifies the decision receipt signature.
-3. Checks that `manual-grant.json` does not exceed the `credential_ceiling`.
-4. Checks the current policy has not changed.
-5. Records the decision nonce in SQLite to prevent replay.
+This re-derives the canonical digest, verifies the receipt signature, checks the grant does not exceed
+the ceiling, and re-evaluates the current policy.
+
+It then prints, by design:
+
+```
+Execution authority verified; nonce not consumed. Use protected execution to claim authority.
+```
+
+**The name is misleading and the message is the truth.** `verify-execution` is a *preflight*: it mutates
+nothing and consumes no nonce, so it provides no replay protection. Use it to debug a decision. (It was
+`authorize_execution` until Phase 0, which was a worse name — see
+[ADR 0001](adr/0001-action-integrity-kernel.md).)
+
+## 5. Execute through the protected proxy
+
+This is the real execution sink, and the only step that claims single-use authority:
+
+```bash
+agentguard mcp-proxy-v2 \
+  --policy examples/scoped-refund/policy.yaml \
+  --server-id customer-operations \
+  --key .agentguard/demo/private.pem \
+  --state .agentguard/demo/action-integrity.sqlite \
+  -- <your-mcp-server-command>
+```
+
+For every call the proxy, in one `BEGIN IMMEDIATE` transaction:
+
+1. recomputes the canonical digest **from the live call** and compares it to the signed digest;
+2. re-evaluates the current policy and requires the matched rules to be identical;
+3. clamps the resolved credential to the receipt's ceiling;
+4. claims the nonce, decrements any capability lease, consumes any typed release, and writes durable
+   `RESERVED` state;
+5. persists an `ExternalEffectBinding` **before** the side-effecting dispatch;
+6. dispatches, and classifies the result as definite or `UNKNOWN`.
+
+## 6. Export and verify evidence offline
+
+```bash
+agentguard evidence-build \
+  examples/scoped-refund/request.json \
+  .agentguard/demo/manual-decision.json \
+  --grant .agentguard/demo/manual-grant.json \
+  --key .agentguard/demo/private.pem \
+  --output .agentguard/demo/evidence-bundle
+
+agentguard evidence-verify .agentguard/demo/evidence-bundle \
+  --public-key .agentguard/demo/public.pem \
+  --require-signature
+```
+
+```json
+{"ok": true, "checked_artifacts": 3, "signature_verified": true}
+```
+
+A third party holding only the bundle and the public key can confirm that the digests match, the
+manifest was signed by the trusted decision key, and nothing was altered or detached. They do not need
+access to AgentGuard, the ledger, or the provider.
+
+To prove no secret leaked into the bundle:
+
+```bash
+grep -R "$PAYMENTS_API_TOKEN" .agentguard/demo/evidence-bundle \
+  && echo "LEAK" || echo "no secret in bundle"
+```
 
 ---
 
-## 4. MCP Posture & Bypass Detection
+## 7. Reconcile an ambiguous effect (operator path)
 
-In addition to runtime execution integrity, AgentGuard audits client configuration to detect unsafe, direct, or parallel bypass routes around protected MCP adapters.
-
-### Audit Protected Configuration:
-
-```bash
-agentguard mcp-posture \
-  --config examples/mcp_posture_protected.json \
-  --fail-on-bypass
-```
-*Result: Passes with 0 bypasses identified.*
-
-### Audit Bypass Configuration:
+If a dispatch times out, the execution is `UNKNOWN` and is **never auto-retried**. See
+[Scenario 3](scenarios.md#scenario-3--external-effect-that-goes-unknown).
 
 ```bash
-agentguard mcp-posture \
-  --config examples/mcp_posture_bypass.json \
-  --fail-on-bypass
+# Find it
+agentguard audit-verify --ledger .agentguard/demo/audit.sqlite
+
+# Only a trusted provider-specific reconciler may resolve it
+agentguard reconcile-execution --execution-id <id> --evidence provider-evidence.json
 ```
-*Result: Exits non-zero, identifying unmediated direct paths to MCP servers that circumvent the security kernel.*
+
+`reconcile-execution` rejects file-supplied evidence claiming `PROVIDER_VERIFIED` or `CONFIRMED_*`.
+Locally signed evidence can record that an outcome is *ambiguous*; it cannot manufacture proof that a
+provider committed. Reconciliation never auto-redispatches.
+
+A crashed executor leaves a `DISPATCHING` record that needs **explicit** operator recovery
+(`recover_incomplete_executions()`); automatic startup recovery was removed because executor liveness
+cannot be established from shared local state. See [Limitations](limitations.md).
 
 ---
 
-## 5. Preserved v0.1 Compatibility Suite
+## Bypass detection (optional)
 
-The `agentguard demo` command also exports legacy v0.1 MCP posture fixtures to `.agentguard/demo/v1-compat/`.
-
-You can inspect and scan these legacy configurations using the preserved v0.1 CLI commands:
+`mcp-posture` audits supplied MCP client configuration for unmediated direct routes. It detects bypasses
+in the configuration you give it; it cannot prove none exist.
 
 ```bash
-# Scan dangerous legacy MCP configuration
-agentguard scan --config .agentguard/demo/v1-compat/dangerous_mcp_config.json --format markdown
-
-# Evaluate CI risk gate
-agentguard gate --config .agentguard/demo/v1-compat/dangerous_mcp_config.json --fail-on-risk high
+agentguard mcp-posture --config examples/mcp_posture_protected.json --fail-on-bypass  # 0 bypasses
+agentguard mcp-posture --config examples/mcp_posture_bypass.json    --fail-on-bypass  # exits non-zero
 ```
 
+---
+
+## Legacy fixtures
+
+`agentguard demo` also exports v0.1 compatibility fixtures to `.agentguard/demo/v1-compat/`. The v0.1
+commands (`scan`, `gate`, …) remain available and are documented in the README's
+[Advanced Surface](../README.md#advanced-surface-not-part-of-the-wedge).

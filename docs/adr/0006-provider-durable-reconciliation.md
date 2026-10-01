@@ -1,8 +1,16 @@
 # ADR 0006: Provider-Specific Durable Reconciliation
 
-- Status: Accepted for Phase 6D
+- Status: Accepted for Phase 6D; **§7 (operator-triggered reconciliation) superseded by
+  [ADR 0007](0007-service-multiprocess-deployment.md)**
 - Date: 2026-09-02
 - Depends on: ADR 0004 provider/external-effect contract freeze and ADR 0005 production credential authority
+
+> **Supersession note.** Sections 1–6 of this ADR stand. Section 7's scoping decision — that
+> continuous workers, leases, scheduling, and multi-process ownership are Phase 6E concerns — is
+> superseded by ADR 0007, which introduced single-host multi-process reconciliation leases with
+> monotonic fencing tokens and a background reconciliation worker. That ADR also records (Q04-02) the
+> removal of automatic startup recovery, because executor liveness cannot be established from shared
+> local state.
 
 ## Context
 

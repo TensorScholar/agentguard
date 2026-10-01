@@ -6,6 +6,10 @@ on:
 permissions:
   actions: read
   contents: read
+  # Required for the analyze step to publish results and for findings to fail
+  # the check. Without this the previous configuration published no results at
+  # all and nothing could fail.
+  security-events: write
 
 jobs:
   analyze:
@@ -21,13 +25,17 @@ jobs:
         with:
           languages: python
       - name: Analyze
+        # Results are uploaded to code scanning so that an alert fails this
+        # check. This step must not be continue-on-error: a CodeQL failure is a
+        # build failure.
         uses: github/codeql-action/analyze@adfda868f108ac4222129de456ea554034a27db7 # v4
         with:
-          upload: never
+          category: "/language:python"
           output: codeql-results
-      - name: Upload CodeQL SARIF
+      - name: Retain CodeQL SARIF as build evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: codeql-sarif
           path: codeql-results/*.sarif
+          retention-days: 30
           if-no-files-found: error

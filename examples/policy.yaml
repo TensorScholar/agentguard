@@ -1,5 +1,19 @@
+# Example v1 policy. Safe by default: the allowed_tools allowlist is the
+# load-bearing control and is checked first, so any tool it does not name is
+# denied. Prefer the v2 policy in examples/scoped-refund/policy.yaml for new
+# integrations; the v2 default is structurally deny.
 default_action: allow
 redact_secret_outputs: true
+
+allowed_tools:
+  - read_file
+  - read_directory
+  - list_directory
+  - search
+  - grep
+  - glob
+  - write_file
+  - edit_file
 
 denied_tools:
   - delete_file

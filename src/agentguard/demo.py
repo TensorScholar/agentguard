@@ -14,7 +14,7 @@ from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.application import AgentGuardService
 from agentguard.compatibility.v1_demo import write_demo
 from agentguard.domain import ActionIntent, CredentialRequest, PolicyDocument
-from agentguard.engine.execution import ExecutionGuardError, authorize_execution
+from agentguard.engine.execution import ExecutionGuardError, preflight_execution
 from agentguard.security.files import secure_atomic_write
 
 RESOURCE_ROOT = Path(__file__).parent / "resources"
@@ -61,7 +61,7 @@ def create_demo(output: Path, force: bool = False) -> None:
     mutated = intent.model_copy(update={"arguments": {**intent.arguments, "amount_minor": 85000}})
     mutation_result = "unexpected_allow"
     try:
-        authorize_execution(
+        preflight_execution(
             mutated,
             receipt,
             grant,
@@ -78,7 +78,7 @@ def create_demo(output: Path, force: bool = False) -> None:
         grant.model_copy(update={"scopes": grant.scopes | {"payments:admin"}})
     )
     try:
-        authorize_execution(
+        preflight_execution(
             intent,
             receipt,
             inflated_grant,

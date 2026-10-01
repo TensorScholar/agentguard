@@ -525,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--expected-version",
         required=True,
-        help="Expected release version (e.g. 0.2.0rc3)",
+        help="Expected release version (e.g. 0.2.0rc4)",
     )
     parser.add_argument(
         "--expected-commit",

@@ -1,6 +1,6 @@
 # Production deployment guide
 
-AgentGuard `0.2.0rc3` is a release candidate. This guide describes the validated deployment boundary; it does not certify a deployment as production-ready.
+AgentGuard `0.2.0rc4` is a release candidate. This guide describes the validated deployment boundary; it does not certify a deployment as production-ready.
 
 ## Promotion gate
 
@@ -48,7 +48,7 @@ All coordinating processes must use the same local filesystem database. Do **not
 Install the HTTP extra and inspect the installed service command:
 
 ```bash
-python -m pip install 'agentguard[http]==0.2.0rc3'
+python -m pip install 'agentguard[http]==0.2.0rc4'
 agentguard-mcp-http --help
 ```
 
@@ -97,14 +97,14 @@ Keep lease duration comfortably above the configured provider timeout; the CLI e
 
 ### Multi-host service
 
-`0.2.0rc3` does **not** provide a distributed HA contract. Horizontal multi-host scaling requires a shared transactional state adapter that proves equivalent atomic reservation, lease, fencing, and durability semantics, plus the signer/HSM, identity-backed approval, telemetry, policy distribution, and rollback controls appropriate to that environment.
+`0.2.0rc4` does **not** provide a distributed HA contract. Horizontal multi-host scaling requires a shared transactional state adapter that proves equivalent atomic reservation, lease, fencing, and durability semantics, plus the signer/HSM, identity-backed approval, telemetry, policy distribution, and rollback controls appropriate to that environment.
 
 ## Container
 
 ```bash
-docker build -t agentguard:0.2.0rc3 .
-docker run --rm agentguard:0.2.0rc3 --version
-docker run --rm --entrypoint agentguard-mcp-http agentguard:0.2.0rc3 --help
+docker build -t agentguard:0.2.0rc4 .
+docker run --rm agentguard:0.2.0rc4 --version
+docker run --rm --entrypoint agentguard-mcp-http agentguard:0.2.0rc4 --help
 ```
 
 The image runs as a non-root user and includes the HTTP extra. Mount only required policy/public-key/state paths. Never mount a host Docker socket or a broad home directory into the container.

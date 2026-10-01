@@ -25,10 +25,32 @@ def test_policy_requires_approval_for_shell_tool() -> None:
     assert decision.rule_id == "capability.requires_approval"
 
 
-def test_policy_allows_safe_readme_read() -> None:
+def test_policy_denies_unmatched_call_by_default() -> None:
+    # A bare Policy is default-deny: an unmatched tool is never authorized by
+    # omission. Use an explicit allowed_tools allowlist to permit a tool.
     decision = Policy().evaluate(ToolCall(tool_name="read_file", arguments={"path": "README.md"}))
 
+    assert decision.decision == Decision.DENY
+    assert decision.rule_id == "default.deny"
+
+
+def test_policy_allows_explicitly_allowlisted_read() -> None:
+    # In the v1 model allowed_tools is a narrowing check and default_action is
+    # the fallback for tools that passed it, so permitting a tool takes both.
+    policy = Policy(allowed_tools=("read_file",), default_action=Decision.ALLOW)
+
+    decision = policy.evaluate(ToolCall(tool_name="read_file", arguments={"path": "README.md"}))
+
     assert decision.decision == Decision.ALLOW
+
+
+def test_policy_allowlist_denies_tool_outside_allow_default() -> None:
+    policy = Policy(allowed_tools=("read_file",), default_action=Decision.ALLOW)
+
+    decision = policy.evaluate(ToolCall(tool_name="write_file", arguments={"path": "a.txt"}))
+
+    assert decision.decision == Decision.DENY
+    assert decision.rule_id == "tool.allowlist"
 
 
 def test_policy_denies_known_capability() -> None:

@@ -81,7 +81,23 @@ jobs:
           python -m pip install -c requirements/confirmatory-runtime-lock.txt -r requirements/validation.txt
           python -m pip check
 
+      # Scoped to the research branch ONLY. Do not widen this.
+      #
+      # CONFIRMATORY_RUNTIME_IDENTITY.json freezes the git blob of pyproject.toml
+      # (and four other paths) as the identity of the confirmatory experiment. The
+      # preflight fails closed when any of them drift, which is correct for
+      # research integrity but means it can never pass on a product commit:
+      # every product change to packaging or version drifts pyproject.toml by
+      # design. On such commits it failed before `make check` could run, so this
+      # workflow produced no engineering signal at all.
+      #
+      # `github.head_ref` is set for pull_request events (where github.ref is
+      # refs/pull/N/merge); the github.ref arm covers a direct push. Both are
+      # needed because this workflow triggers on push-to-main and PR-to-main.
       - name: Confirmatory runtime preflight
+        if: >-
+          github.head_ref == 'research/authorization-lineage-experiment-v1' ||
+          github.ref == 'refs/heads/research/authorization-lineage-experiment-v1'
         shell: bash
         run: |
           set -euo pipefail
@@ -133,6 +149,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p evidence
+          # Report the preflight honestly instead of asserting PASS unconditionally.
+          # It only runs on the research branch; on product refs it did not execute.
+          if [ "${{ github.head_ref }}" = "research/authorization-lineage-experiment-v1" ] ||
+             [ "${{ github.ref }}" = "refs/heads/research/authorization-lineage-experiment-v1" ]; then
+            CONFIRMATORY_PREFLIGHT_STATUS="PASS"
+          else
+            CONFIRMATORY_PREFLIGHT_STATUS="NOT_RUN (research-branch-only gate)"
+          fi
           cat <<EOF > evidence/self-hosted-evidence.md
           # Self-Hosted CI Execution Evidence
 
@@ -144,14 +168,17 @@ jobs:
           - **Runner Architecture**: ${{ runner.arch }}
           - **Python Version**: $(python --version 2>&1)
           - **Pip Check**: PASS
-          - **Confirmatory Runtime Preflight**: PASS
+          - **Confirmatory Runtime Preflight**: ${CONFIRMATORY_PREFLIGHT_STATUS}
           - **Make Check**: PASS
           - **Dependency Audit**: PASS
           - **AgentGuard Gate**: PASS
 
           \`\`\`text
           CI_EXECUTION_CLASS=self-hosted
-          HOSTED_CI_REPLACED=false
+          HOSTED_CI_REPLACED=true
+          HOSTED_CI_REPLACED_MEANING=primary validation path since PR #30; hosted ci.yml/codeql.yml/security.yml are workflow_dispatch-only
+          HOSTED_CI_GREEN_ON_THIS_REF=false
+          CROSS_PLATFORM_MATRIX=false
           TRUST_SCOPE=trusted-owner-same-repository-only
           RUNNER_PERSISTENCE=persistent
           SELF_HOSTED_RUNNER_GENERAL_PR_SAFE=false
@@ -167,9 +194,19 @@ jobs:
         run: |
           set -euo pipefail
           test -s evidence/self-hosted-evidence.md
-          test -s evidence/confirmatory-preflight.json
           test -s evidence/agentguard-findings.json
           test -s evidence/agentguard-summary.md
+          # The confirmatory preflight only runs on the research branch (see its
+          # `if:` above), so its output is only required there. Asserting it
+          # unconditionally would fail every product run.
+          if [ "${{ github.head_ref }}" = "research/authorization-lineage-experiment-v1" ] ||
+             [ "${{ github.ref }}" = "refs/heads/research/authorization-lineage-experiment-v1" ]; then
+            test -s evidence/confirmatory-preflight.json
+          else
+            if [ -e evidence/confirmatory-preflight.json ]; then
+              echo "::warning::unexpected confirmatory preflight output on a non-research ref"
+            fi
+          fi
 
       - name: Upload safe evidence artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

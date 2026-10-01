@@ -1,0 +1,35 @@
+schema_version: "2"
+metadata:
+  id: demo-refund
+  revision: 1
+  description: >
+    Demo policy for the AgentGuard happy path. Default-deny at every axis:
+    unknown provenance, unknown capability, and unmatched tools are all denied.
+    This is intentionally strict -- nothing here is relaxed to make the demo pass.
+defaults:
+  effect: deny
+  maximum_credential_ttl_seconds: 60
+  unknown_provenance: deny
+  unknown_capability: deny
+rules:
+  - id: allow-scoped-refund
+    priority: 100
+    effect: allow
+    reason_code: demo.refund.scoped
+    action:
+      servers:
+        - customer-operations
+      tools:
+        - refund.create
+    principal:
+      tenant_ids:
+        - acme
+    provenance:
+      contains_any:
+        - authenticated_user_input
+    credential:
+      audience: payments.internal
+      scopes:
+        - refund:create
+      tenant_id: acme
+      maximum_ttl_seconds: 60

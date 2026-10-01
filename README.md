@@ -1,6 +1,6 @@
 # AgentGuard
 
-**Deterministic runtime authorization and execution-integrity controls for AI agents.**
+**Decision-bound credential ceilings and verifiable execution evidence for high-stakes MCP tool calls.**
 
 [![CI](https://github.com/TensorScholar/agentguard/actions/workflows/ci.yml/badge.svg)](https://github.com/TensorScholar/agentguard/actions/workflows/ci.yml)
 [![Security](https://github.com/TensorScholar/agentguard/actions/workflows/security.yml/badge.svg)](https://github.com/TensorScholar/agentguard/actions/workflows/security.yml)
@@ -8,28 +8,232 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Release Status:** `v0.2.0rc3` is an engineering-validated release candidate. It implements protected MCP stdio and bounded Streamable HTTP profiles, production credential authority, durable external-effect reconciliation, and single-host multi-process coordination. Full production certification requires independent security review, long-duration operational validation, and a controlled production pilot. See [Project Status](docs/project-status.md) and [Known Limitations](docs/limitations.md).
+> **Release Status:** `v0.2.0rc4` is an engineering-validated **release candidate**, not a
+> production-certified release. It adds a runnable happy-path demo, provenance declared per adapter, and
+> a documented credential contract on top of the protected MCP stdio and bounded Streamable HTTP
+> profiles, production credential authority, durable external-effect reconciliation, and single-host
+> multi-process coordination. Production certification still requires an independent security review,
+> long-duration operational validation, and a controlled production pilot. **CI status is partial:** green
+> *self-hosted* validation exists for this line (`make check` 839 passed, `pip_audit`, MCP gate — see
+> [Project Status](docs/project-status.md#ci-evidence-status)), but there is still **no green hosted
+> CI** and **no cross-platform matrix**, so `AG-CI-001` remains open. See
+> [Project Status](docs/project-status.md) and [Known Limitations](docs/limitations.md).
+
+> **Evaluating this project?** Run the demo first — it takes about five seconds:
+> [the under-30-minute evaluation path](#evaluate-this-in-under-30-minutes).
+
+---
+
+## Evaluate This in Under 30 Minutes
+
+Start here. If you only do the first step, you will still have seen the thing that matters.
+
+**Step 1 — run the demo (~5 minutes, most of it setup).**
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e '.[http]'
+python examples/harness/run_demo.py
+```
+
+It prints `passed: 28   failed: 0`. Watch three lines:
+
+```
+secret never written to any durable sqlite state
+gateway refuses to guess (code -32004, retry_safe false)
+resolution is confirmed_succeeded at PROVIDER_VERIFIED trust
+```
+
+The first is the credential contract holding. The second and third are the same event: a refund the
+provider **did** commit, whose response was lost. AgentGuard recorded `UNKNOWN` rather than guessing,
+then resolved it from the provider's own status tool **without sending the refund again**.
+
+```bash
+cat .agentguard-demo/provider/provider-ledger.jsonl 2>/dev/null   # with --keep
+```
+
+Read [`examples/harness/README.md`](examples/harness/README.md) for **what this does not prove** —
+the fake provider confirms from its own ledger, which is not an external attestation.
+
+**Step 2 — verify the evidence yourself (2 minutes, no code).**
+
+```bash
+agentguard demo --output .agentguard/demo --force
+agentguard evidence-build .agentguard/demo/intent.json .agentguard/demo/receipt.json \
+  --key .agentguard/demo/private.pem --output ./ev
+agentguard evidence-verify ./ev --public-key .agentguard/demo/public.pem --require-signature
+# {"ok": true, "checked_artifacts": 2, "signature_verified": true}
+
+# now break it: escalate the credential ceiling inside the signed bundle
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path("ev/decision-receipt.json")
+d = json.loads(p.read_text())
+d["credential_ceiling"]["scopes"] = ["admin"]
+p.write_text(json.dumps(d))
+PY
+agentguard evidence-verify ./ev --public-key .agentguard/demo/public.pem --require-signature
+# EvidenceVerificationError: evidence.size_mismatch:decision-receipt.json   (exit 2)
+```
+
+Use a path inside your working directory. AgentGuard refuses to read or write through symlinked
+path components, so `/tmp/...` fails on macOS, where `/tmp` is a symlink to `/private/tmp`.
+
+A third party holding only the bundle and a public key can confirm what was authorized, and cannot be
+fooled by an escalated credential ceiling.
+
+**Step 3 — read the two documents that decide whether you care (~15 minutes).**
+
+- [Credential Contract](docs/credential-contract.md) — the exact ceiling-to-secret flow, every failure
+  code, and an explicit table of what is still missing.
+- [Limitations](docs/limitations.md) — six non-goals first, then every residual risk. Start here if
+  you are deciding whether this fits.
+
+**If you are evaluating whether the *design* is differentiated:** read
+[Research Status](#research-status--read-this-before-evaluating-the-design) first. The project's own
+pre-registered experiment says it is not, and that changes what this is worth to you.
+
+**First conversation, or want the short form?**
+
+- [Collaboration brief](docs/COLLABORATION.md) — the problem, what works today, non-goals, the research
+  result, and the kind of collaboration we are looking for. Five minutes.
+- [FAQ and talking points](docs/FAQ.md) — "why not just a policy gateway", "your research says the
+  thesis is falsified", "what does the demo actually prove", "single-host only, is that intentional".
+
+---
+
+## Research Status — read this before evaluating the design
+
+A pre-registered experiment (`AG-LINEAGE-PREREG-v1.0`, "Freeze v2") was run against this
+codebase to test whether AgentGuard's own execution-integrity design differentiates from a
+competently implemented baseline. **It did not.** The results are stated here in full because
+a negative result is a real result and hiding it would make every other number in this
+README harder to trust.
+
+```text
+EXPERIMENT_RECORD                                = ACCEPTED
+RESEARCH_CLAIM                                  = NOT_VALIDATED
+AGENTGUARD_SPECIFIC_DIFFERENTIATION_THESIS       = FALSIFIED_WITHIN_PROTOCOL
+PUBLICATION_STATUS = ELIGIBLE_FOR_TECHNICAL_REPORT_OR_NEGATIVE_RESULT_PUBLICATION
+```
+
+**In plain language.** Within that preregistration and its retained corpus, the frozen
+AgentGuard-specific differentiation criterion was not demonstrated and the preregistered
+falsification predicate evaluated true. In the measured arms, **both** AgentGuard and the
+baseline recorded **0 primary violations** (3,600 retained trials each; 10,800 logical
+trials; 0 harness-invalid), and the completion difference point estimate was `0.0`
+(exact McNemar `p = 1.0`). The measured cost was asymmetric: A1–B4 slot-hold median
+difference **+0.026 seconds**, a **slot-hold ratio of 6.45 favoring the no-guard baseline**.
+Operator mean difference was `0.0`.
+
+**What this does NOT mean.** Explicitly excluded, per
+[the adjudication](docs/research/FREEZE_V2_RESULT_ADJUDICATION.md) §6: system execution
+failure; demonstrated AgentGuard unsafety; universal equivalence between the two arms; proof
+that AgentGuard can never differentiate; real-provider conclusions; production conclusions;
+universal safety claims; impossibility claims. The record is *accepted* as a record — that
+acceptance is explicitly not acceptance of the research thesis.
+
+**What remains unestablished for the product.** The product thesis is a
+[hypothesis](docs/PROGRESS_TRACKER.md), not a finding. No claim of demonstrated market demand,
+willingness to pay, pilot success, or comparative production superiority is established. No
+independent penetration test, long-duration soak test, or controlled production pilot has been
+completed for `0.2.0rc4`.
+
+**Publication note.** The result is eligible for publication as a technical report or
+negative-result note. It has not been published or accepted anywhere. Follow-up work must be
+a new experimental generation with a new preregistration, freeze, and seed/manifest binding;
+Freeze v2 remains unchanged historical evidence.
+
+**Consequence for adopters.** Do not adopt this project expecting a demonstrated reduction in
+integrity failures relative to a competent baseline; that claim is not supported. Adopt it, if
+at all, for the specific mechanisms it does implement — credential ceilings with late secret
+resolution, durable effect binding with reconcile-before-retry, and the evidence-bundle /
+checkpoint chain — whose value does not depend on that experiment's outcome. The core
+authorization pattern (single-use signed admission ticket, digest revalidated at dispatch) is
+not unique to this project; it is specified in external work including
+`draft-das-agentic-execution-finality-02` and `draft-farley-acta-signed-receipts-03`.
+
+---
+
+## What AgentGuard Is
+
+> AgentGuard protects high-stakes MCP tool calls by binding a short-lived, decision-scoped credential
+> ceiling to a signed authorization, resolving the actual secret only at the last moment, preventing
+> replay and argument mutation, and producing independently verifiable evidence of what was
+> authorized versus what was observed — especially for actions that can leave ambiguous external
+> effects.
+
+That is the whole product. Four mechanisms carry it, and they are what this release line leads with:
+
+| # | Mechanism | What it stops | Where it lives |
+|---|---|---|---|
+| 1 | **Decision-bound credential ceilings + late secret resolution** | An agent holding a broad long-lived secret; a caller inflating scope, audience, tenant, or lifetime beyond what was authorized. The ceiling is *derived from the signed decision*, the secret is read only at dispatch, and it is never written to the grant, the audit ledger, or the evidence bundle. | `engine/credentials.py`, `domain/credential_authority.py`, `adapters/broker/production.py` |
+| 2 | **Execution-time digest revalidation + single-use claim** | Argument mutation between authorization and dispatch (an approved \$85 refund dispatched as \$850), and receipt replay. The canonical digest is recomputed from the *live* call and compared; the decision nonce is claimed atomically in one transaction. | `engine/receipts.py`, `engine/execution.py`, `adapters/storage/sqlite/state.py` |
+| 3 | **Durable `ExternalEffectBinding` + `RECONCILE_BEFORE_RETRY`** | Duplicate irreversible side effects when a call times out. An ambiguous outcome stays `UNKNOWN` and blind retry is forbidden; an operator must reconcile against provider evidence first. | `domain/provider_contracts.py`, `adapters/reconciliation/`, `adapters/storage/sqlite/reconciliation.py` |
+| 4 | **Hash-chained ledger + signed evidence bundles + offline verification** | Detached audit logs. What was authorized and what was observed are linked by cryptographic digest and can be verified by a third party offline, with no access to AgentGuard. | `audit.py`, `adapters/evidence/bundle.py`, `engine/attestation.py` |
+
+The core authorization pattern — a single-use signed admission ticket, digest-revalidated at dispatch —
+is **not unique to this project**; it is specified in external work (see [Research Status](#research-status--read-this-before-evaluating-the-design)). What AgentGuard adds on top is the **credential ceiling bound to that decision** and the **reconcile-before-retry contract**. Judge it on those.
+
+**Who this is for.** A platform or security engineer who already has MCP traffic, already has an
+identity story, and needs two specific things: a secret an agent cannot widen, and evidence they can
+hand to an auditor without handing over the system.
+
+**Time to grasp: ~5 minutes** (this section, then the [happy path](#the-wedge-happy-path-four-steps)).
+**Time to evaluate: ~30 minutes** (run the demo, verify an evidence bundle, read
+[Limitations](docs/limitations.md)).
+
+### Not in scope for this release line
+
+Stated plainly so nobody buys a control plane:
+
+- **Multi-host or HA operation.** Single-host multi-process via local SQLite. No consensus, no
+  cross-host coordination, no replicated state. This is an architectural boundary, not a roadmap item.
+- **Full identity.** AgentGuard binds identity that a trusted integration supplies. It does not issue
+  or verify workload identity (OIDC/SPIFFE/mTLS), and `DecisionReceipt` is a **bearer ticket** inside
+  its validity window.
+- **Generic policy-gateway competition.** This is not a policy authoring, simulation, or content-filter
+  product, and it does not try to match gateway vendors on breadth.
+- **A vault or IAM.** No secret storage, no token minting, no provider-native downscoping. AgentGuard
+  reads a secret from a configured environment variable at dispatch and does not persist it.
+- **Sandboxing or egress control.** Process isolation, filesystem MAC, and network egress are
+  deployment responsibilities.
+- **Production certification.** No independent penetration test, soak test, or production pilot has
+  been completed for `0.2.0rc4`.
+
+---
 
 ## AgentGuard Core and AgentGuard Reference
 
-This repository is AgentGuard Core, the canonical runtime, at `v0.2.0rc3`. Production certification is not claimed.
+This repository is AgentGuard Core, the canonical runtime, at `v0.2.0rc4`. Production certification is not claimed.
 
 `agentguard-reference` `v1.0.1` is a different artifact. It is a public standard-library example of one guarded callback. It is not a newer version of this core, and it does not carry the MCP, credential, reconciliation, or research record maintained here.
 
 ---
 
-## The Problem: Boundary Failures in Agent Execution
+## The Problem This Actually Solves
 
-When autonomous AI agents interact with production infrastructure via tool transports such as MCP (Model Context Protocol), catastrophic failures rarely happen within the language model's reasoning loop. They happen at the **boundaries** between policy, identity, credentials, tool transports, and external execution:
+An agent that can *call a tool* can move money, delete data, or send mail. When something goes wrong
+it is rarely the model's reasoning — it is that **the thing that was authorized and the thing that
+was executed were allowed to drift apart**, and nothing downstream can prove it afterwards.
 
-- **Argument Mutation:** An approved action is executed with tampered parameters due to downstream prompt injection or model drift (e.g., an authorized \$85 refund is dispatched as \$850).
-- **Scope & Credential Drift:** An agent acquires or uses credentials that exceed its approved audience, scope, tenant, or lifetime.
-- **Action & Permit Replay:** An authorization receipt, capability lease, or execution permit is intercepted and re-executed.
-- **Transport Bypass:** A client bypasses protected proxy mediation through direct or parallel transport routes.
-- **Ambiguous External Effects:** An external API call times out mid-flight; the agent blindly retries, causing duplicate irreversible mutations.
-- **Detached Audit Evidence:** Execution logs are unlinked from the cryptographic decision, making post-incident forensic attribution impossible.
+Three failures account for most of it:
 
-AgentGuard addresses these integrity failures with **deterministic, fail-closed runtime controls** and stable reason codes. **No generative model participates in the trusted authorization or execution path.**
+- **The agent holds a secret it should never have had.** A long-lived, broad-scope token sits in the
+  agent's environment. One prompt injection later, the agent can call anything that token reaches —
+  not just the refund it was approved for.
+- **The approved call is not the dispatched call.** Authorization happens on one representation of the
+  request; execution happens on another. An approved \$85 refund becomes \$850, and the approval
+  record still says \$85.
+- **A timed-out call gets retried and does it twice.** The first attempt may have committed. The
+  client cannot tell, retries anyway, and now an irreversible mutation has happened twice.
+
+And after any of it, the audit log is a separate artifact from the decision — so the question "was this
+authorized?" is answered by assertion rather than by evidence.
+
+AgentGuard's answer is narrow and mechanical: bind the credential to the decision, bind the decision
+to the exact dispatched bytes, record the effect *before* it happens, and produce evidence a third
+party can verify. **No generative model participates in the trusted path.**
 
 ---
 
@@ -72,60 +276,87 @@ For detailed domain boundaries and separation of concerns, see [Product Boundary
 
 ---
 
-## 60-Second Quick Start: The "Rogue Refund" Demo
+## The Wedge Happy Path: Four Steps
 
-AgentGuard ships with an automated scenario demonstrating real-time interception of argument tampering, scope inflation, and replay attacks:
-
-```bash
-# 1. Setup virtual environment
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
-
-# 2. Run the automated multi-attack verification suite
-agentguard demo --output .agentguard/demo --force
-```
-
-### Inspect the Interception Results
+This is the whole supported path. Everything else in the CLI is optional and documented in
+[Advanced Surface](#advanced-surface-not-part-of-the-wedge).
 
 ```bash
-cat .agentguard/demo/results.json
+python -m venv .venv && source .venv/bin/activate
+pip install -e '.[http]'
+
+# One command, ~5 seconds, 28 checks. Starts a local fake provider and the
+# protected gateway, then drives the real CLIs.
+python examples/harness/run_demo.py
 ```
 
-```json
-{
-  "happy_path": "authorized",
-  "argument_mutation": "execution.arguments_digest_mismatch",
-  "excessive_scope": "credential.scope_exceeds_decision",
-  "replay": "decision_receipt.replayed",
-  "audit": [
-    true,
-    7,
-    "226e2386333128a7ac5a83184a414631209b14c2ee05f4ef211168f330ddf38a",
-    null
-  ]
-}
-```
+It proves, with the real product code and no mocks: a side-effecting call is admitted under a
+decision-scoped ceiling and dispatched; tampered arguments and replayed receipts are refused with
+stable codes; an ambiguous outcome stays `UNKNOWN` instead of being guessed; reconciliation resolves
+it without redispatching; and the evidence bundle verifies offline and detects tampering.
 
-### Offline Cryptographic Evidence Verification
+The fake provider confirms from its own ledger — that is **not** an external attestation. Read
+[`examples/harness/README.md`](examples/harness/README.md) before drawing conclusions. None of this
+is a certification, benchmark, or penetration test.
 
-Verify that the execution evidence bundle was authentically signed and untampered:
+To drive it by hand instead, the path is:
+
+**1. Authorize** — evaluate an untrusted intent, issue a signed `DecisionReceipt` carrying the
+canonical intent digest and a `credential_ceiling`:
 
 ```bash
-agentguard evidence-verify .agentguard/demo/evidence \
-  --public-key .agentguard/demo/public.pem \
-  --require-signature
+agentguard authorize examples/scoped-refund/request.json \
+  examples/scoped-refund/policy.yaml \
+  --key .agentguard/demo/private.pem \
+  --ledger .agentguard/demo/audit.sqlite \
+  --output decision.json
 ```
 
-```json
-{
-  "ok": true,
-  "checked_artifacts": 4,
-  "signature_verified": true
-}
+**2. Execute through the protected proxy** — this is the real execution sink. AgentGuard re-verifies
+the receipt signature, recomputes the canonical digest **from the live call**, clamps the credential to
+the ceiling, and atomically claims the nonce before the tool runs:
+
+```bash
+agentguard mcp-proxy-v2 --policy examples/scoped-refund/policy.yaml \
+  --server-id customer-operations \
+  --key .agentguard/demo/private.pem \
+  --state .agentguard/demo/action-integrity.sqlite \
+  -- <your-mcp-server-command>
 ```
 
-For the complete interactive walkthrough and step-by-step lifecycle, see [Demo Walkthrough](docs/DEMO.md).
+> **`agentguard verify-execution` does not execute.** Despite the name it is a *preflight*: it
+> validates authority and deliberately leaves the nonce unconsumed, printing "Execution authority
+> verified; nonce not consumed. Use protected execution to claim authority." Use it to debug a
+> decision, not to run a tool.
+
+**3. Export evidence** — bundle the intent, receipt, and grant into a signed, portable manifest:
+
+```bash
+agentguard evidence-build examples/scoped-refund/request.json decision.json \
+  --key .agentguard/demo/private.pem --output evidence/
+```
+
+**4. Verify offline** — a third party with only the public key and the bundle:
+
+```bash
+agentguard evidence-verify evidence/ \
+  --public-key .agentguard/demo/public.pem --require-signature
+# {"ok": true, "checked_artifacts": 3, "signature_verified": true}
+```
+
+**Reconciling an ambiguous effect** (operator path, step 4b) — when a dispatch times out the execution
+stays `UNKNOWN` and is never auto-retried. A provider-specific reconciler must supply evidence:
+
+```bash
+agentguard reconcile-execution --execution-id <id> --evidence provider-evidence.json
+```
+
+`reconcile-execution` **refuses** file-supplied evidence that claims `PROVIDER_VERIFIED` or
+`CONFIRMED_*`. Local evidence cannot establish external business truth; only a trusted
+provider-specific reconciler can. See [Scenarios](docs/scenarios.md#scenario-3-external-effect-that-goes-unknown).
+
+For the credential ceiling specifically — which is mechanism #1 and the reason to choose this project —
+see [Credential Contract](docs/credential-contract.md).
 
 ---
 
@@ -154,55 +385,115 @@ flowchart LR
 
 ### Execution Lifecycle
 
-1. **Normalize:** Inbound tool proposals are parsed into a strictly typed, versioned `ActionIntent`.
-2. **Authorize:** The deterministic Policy v2 engine evaluates the intent (default-deny, blast-radius limits, verified provenance).
-3. **Sign:** If permitted, AgentGuard issues an Ed25519-signed `DecisionReceipt` containing the intent's canonical SHA-256 digest and a `credential_ceiling`.
-4. **Bind & Revalidate:** A `DecisionReceipt` can authorize at most one committed protected dispatch. Before execution, AgentGuard re-verifies the canonical digest against the live call, clamps credentials to the decision ceiling, and atomically claims the decision nonce in SQLite to prevent replay.
-5. **Durable Binding:** Before side-effecting dispatch, an `ExternalEffectBinding` is persisted. If the call times out or fails ambiguously, it remains `UNKNOWN`.
-6. **Reconciliation:** Ambiguous executions require provider-verified reconciliation before retry; blind retries are forbidden by default.
-7. **Attest:** Audit records are hash-chained and packaged into verifiable evidence bundles (which may include cryptographic attestations).
+The wedge path, step for step. Steps 2, 3, 5 and 6 are the four mechanisms this release leads with.
 
-For full architectural specifications, see [Architecture](docs/architecture.md) and [ADRs](docs/adr/).
+1. **Normalize:** the inbound tool proposal is parsed into a strictly typed, versioned `ActionIntent`.
+2. **Authorize & sign:** deterministic default-deny Policy v2 evaluation; on allow, an Ed25519-signed
+   `DecisionReceipt` is issued carrying the canonical SHA-256 intent digest **and the
+   `credential_ceiling` for this specific action**. ← *mechanism 1 begins*
+3. **Resolve the secret late:** the credential authority binds the grant to the decision, clamps scope,
+   audience, tenant and TTL to the ceiling, and reads the actual secret **at dispatch**. The secret is
+   never written to the grant, durable state, the ledger, or the evidence bundle.
+4. **Revalidate & claim:** the canonical digest is recomputed **from the live call** and compared to the
+   signed digest; the current policy is re-evaluated and re-matched; the nonce is claimed atomically.
+   A `DecisionReceipt` can authorize **at most one** committed dispatch. ← *mechanisms 1–2*
+5. **Bind before effect:** an `ExternalEffectBinding` is persisted *before* any side-effecting
+   dispatch. A timeout or ambiguous failure leaves the execution `UNKNOWN`, never a guess. ← *mechanism 3*
+6. **Reconcile, don't retry:** an `UNKNOWN` execution requires provider-verified evidence before any
+   retry. Blind retry is forbidden by contract. A crashed executor leaves a `DISPATCHING` record that
+   requires explicit operator recovery — see [Limitations](docs/limitations.md).
+7. **Attest:** audit events are hash-chained and packaged into signed, offline-verifiable evidence
+   bundles linking what was authorized to what was observed. ← *mechanism 4*
+
+Full specification: [Architecture](docs/architecture.md) and [ADRs](docs/adr/).
 
 ---
 
 ## Core Capabilities
 
-- **Authorization & Execution Integrity:** Deterministic default-deny Policy v2, Ed25519-signed decision receipts, execution-time canonical JSON digest revalidation (blocks parameter tampering), and atomic nonce consumption (blocks replay).
-- **Protected MCP Mediation & Posture Auditing:** Protected stdio (`mcp-proxy-v2`) and Streamable HTTP (`2026-07-28`) proxies with dynamic schema hashing, fail-closed inventory, and `mcp-posture` bypass route detection.
-- **Credential Clamping & Durable Reconciliation:** Late environment-backed secret resolution, exact endpoint binding, and single-host multi-process reconciliation workers coordinated via SQLite leases and monotonic fencing tokens (`RECONCILE_BEFORE_RETRY`).
-- **Tamper-Evident Audit & Cryptographic Evidence:** Secret minimization at persistence boundaries, hash-chained SQLite ledgers, exportable signed checkpoints, and offline-verifiable evidence bundles.
+Ordered by what this release line leads with:
+
+- **Decision-Bound Credential Ceilings:** a short-lived ceiling (audience, scopes, tenant, TTL)
+  derived from the signed decision itself; the secret is resolved at the last moment from a configured
+  source and never written to the grant, durable state, audit, or evidence. See
+  [Credential Contract](docs/credential-contract.md).
+- **Execution-Time Digest Revalidation & Single-Use Claim:** Ed25519-signed decision receipts,
+  canonical-digest revalidation against the live call, and atomic nonce/lease/release reservation in
+  one `BEGIN IMMEDIATE` transaction.
+- **Durable Effect Binding & Reconcile-Before-Retry:** `ExternalEffectBinding` persisted before any
+  side-effecting dispatch; ambiguous outcomes stay `UNKNOWN`; blind retry is forbidden; single-host
+  multi-process reconciliation leases with monotonic fencing tokens.
+- **Tamper-Evident Ledger & Offline-Verifiable Evidence:** secret-minimized hash-chained SQLite
+  ledger, exportable signed checkpoints, signed execution attestations, and evidence bundles that a
+  third party verifies with no network access.
+- **Protected MCP Mediation:** bounded stdio (`2025-03-26`) and Streamable HTTP (`2026-07-28`)
+  profiles with fail-closed schema/inventory handling, and `mcp-posture` bypass-route detection.
+
+---
+
+## Advanced Surface: Not Part of the Wedge
+
+These are implemented, tested, and supported. They are **not** the product, they are not in the happy
+path, and no claim above depends on them. Do not evaluate this project on their absence.
+
+| Capability | Commands | Status |
+|---|---|---|
+| Causal execution graphs (declared ancestry only; AgentGuard does not infer hidden dependencies) | `causal-graph` | Advanced |
+| Field provenance & typed-release lifecycle | `provenance-issue`, `field-release-issue` | Advanced |
+| Policy counterfactual / least-authority analysis | `policy-counterfactual`, `authority-analyze`, `explain`, `simulate` | Advanced, advisory only — never issues authority |
+| Delegated authority grants, leases, delegation trees | `authority-issue-root`, `authority-delegate`, `authority-lease`, `authority-reference`, `authority-revoke`, `authority-lease-revoke` | Advanced |
+| Human approval receipts | `approve` | Advanced; no identity-backed approval UX is bundled |
+| Checkpoint signing and cross-store verification | `audit-checkpoint-create`, `audit-checkpoint-verify`, `audit-verify` | Advanced |
+| Execution attestation / verification | `attest-execution`, `verify-attestation` | Advanced |
+| Preserved v0.1 compatibility CLI | `doctor`, `scan`, `gate`, `check-call`, `proxy`, `approve-call`, `approvals`, `mcp-proxy`, `report`, `verify-audit` | Legacy, retained |
+| Reconciliation worker (background daemon) | `agentguard-reconcile-worker` | Operator/host concern, not per-call |
+
+The full command list is `agentguard --help`. The count is not a feature.
 
 ---
 
 ## CLI Manual Walkthrough
 
-For manual inspection of individual pipeline stages:
+Stage-by-stage inspection of the pipeline. See [Demo Walkthrough](docs/DEMO.md) for the full session.
 
 ```bash
-# 1. Authorize an untrusted request
-agentguard authorize examples/scoped-refund/request.json examples/scoped-refund/policy.yaml --output decision.json
+# 1. Authorize an untrusted request -> signed DecisionReceipt + credential ceiling
+agentguard authorize examples/scoped-refund/request.json examples/scoped-refund/policy.yaml \
+  --output decision.json
 
-# 2. Request a bounded credential grant (demo test harness)
+# 2. Bounded credential grant, for contract testing only (MOCK broker — not production)
 agentguard broker-demo examples/scoped-refund/request.json decision.json --output grant.json
 
-# 3. Revalidate digest and execute
-agentguard verify-execution examples/scoped-refund/request.json decision.json examples/scoped-refund/policy.yaml --grant grant.json
+# 3. Preflight: revalidate digest, ceiling, and policy. Does NOT execute or consume the nonce.
+agentguard verify-execution examples/scoped-refund/request.json decision.json \
+  examples/scoped-refund/policy.yaml --grant grant.json
 
 # 4. Audit MCP configuration for bypass routes
 agentguard mcp-posture --config examples/mcp_posture_protected.json --fail-on-bypass
 ```
 
+For the **production** credential authority — the documented happy path — use
+`agentguard-mcp-http` with `--credential-env`, `--credential-audience`, and `--credential-scope`.
+`broker-demo` exists to exercise grant signing and ceiling enforcement without a secret source and
+must not be mistaken for a production credential provider. See
+[Credential Contract](docs/credential-contract.md).
+
 ---
 
 ## Product Boundary & Operational Scope
 
-- **What AgentGuard Owns:** Deterministic action authorization, signed decision receipts, execution-time parameter binding, replay prevention, credential ceilings, protected MCP transport boundaries, external-effect state machines, single-host reconciliation leasing with monotonic fencing, and hash-chained audit evidence.
-- **What AgentGuard Delegates:** Model planning and task orchestration (agent frameworks), caller identity proofing (OIDC/SPIFFE), long-term secret storage and rotation (enterprise vaults), operating-system process isolation (containers/sandboxes), and distributed multi-host consensus.
+- **What AgentGuard Owns:** the credential ceiling bound to a signed decision, late secret resolution,
+  execution-time digest revalidation, single-use claim, durable external-effect binding with
+  reconcile-before-retry, and hash-chained evidence linking what was authorized to what was observed.
+- **What AgentGuard Delegates:** model planning and orchestration (agent frameworks), caller identity
+  proofing (OIDC/SPIFFE/mTLS), long-term secret storage and rotation (vaults, KMS), process isolation
+  and network egress control (containers, sandboxing, firewalls), and SIEM-grade log aggregation.
+
+Full separation-of-concerns specification: [Product Boundary](docs/product-boundary.md).
 
 ---
 
-## Known Technical Limitations (Release Candidate `0.2.0rc3`)
+## Known Technical Limitations (Release Candidate `0.2.0rc4`)
 
 - **State Model:** Validated for **single-host, multi-process** deployments via local SQLite locking. Network filesystems (NFS/CIFS) or cross-host consensus are explicitly outside the current correctness claim.
 - **Credential Sourcing:** Resolves environment-held secrets late; dynamic token minting and provider-native IAM downscoping require downstream adapters.

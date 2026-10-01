@@ -8,7 +8,7 @@ import pytest
 from agentguard.adapters.broker import MockCredentialBroker
 from agentguard.adapters.storage.sqlite import SQLiteState
 from agentguard.domain import CredentialRequest
-from agentguard.engine.execution import ExecutionGuardError, authorize_execution
+from agentguard.engine.execution import ExecutionGuardError, preflight_execution
 from agentguard.engine.policy import evaluate_policy
 from agentguard.engine.receipts import issue_decision_receipt
 
@@ -31,7 +31,7 @@ def _receipt_and_grant(intent, policy, signer):
 
 
 def _authorize(intent, receipt, grant, verifier, state, broker_verifier, policy):
-    authorize_execution(
+    preflight_execution(
         intent,
         receipt,
         grant,
@@ -95,7 +95,7 @@ def test_missing_current_policy_fails_closed(intent, policy, signer, verifier, t
     receipt, grant, broker_verifier = _receipt_and_grant(intent, policy, signer)
 
     with pytest.raises(ExecutionGuardError, match="execution.policy_unavailable"):
-        authorize_execution(
+        preflight_execution(
             intent,
             receipt,
             grant,

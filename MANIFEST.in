@@ -2,9 +2,15 @@ include README.md LICENSE CHANGELOG.md CITATION.cff MANIFEST.in Makefile setup.p
 include Dockerfile .dockerignore
 include src/agentguard/py.typed
 recursive-include src/agentguard/resources *.yaml *.json
+# src/agentguard/research is intentionally NOT distributed. It is the
+# pre-registered authorization-lineage research record
+# (RESEARCH_CLAIM: NOT_VALIDATED, thesis FALSIFIED_WITHIN_PROTOCOL; see
+# docs/research/FREEZE_V2_RESULT_ADJUDICATION.md) and is excluded from the
+# wheel and sdist by tool.setuptools.packages.find.exclude in pyproject.toml.
+prune src/agentguard/research
 recursive-include schemas *.json
 recursive-include docs *.md
-recursive-include examples *.md *.json *.jsonl *.yaml
+recursive-include examples *.md *.json *.jsonl *.yaml *.py
 recursive-include requirements *.txt
 recursive-include scripts *.py
 recursive-include benchmarks *.py *.json
