@@ -218,7 +218,12 @@ class AgentGuardService:
             ttl_seconds=ttl_seconds,
             issuer=issuer,
         )
-        self.state.store_authority_grant(grant)
+        try:
+            self.state.store_authority_grant(grant)
+        except RuntimeError as exc:
+            if str(exc).startswith("authority."):
+                raise AuthorityError(str(exc)) from exc
+            raise
         self.state.append(
             self._authority_event(
                 AuditEventType.AUTHORITY_GRANTED,

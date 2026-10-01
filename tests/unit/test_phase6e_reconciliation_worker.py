@@ -8,7 +8,7 @@ import pytest
 
 from agentguard.adapters.storage.sqlite import (
     ReconciliationLeaseError,
-    SQLiteFencedReconciliationState,
+    SQLiteFencedReconciliationState as _SQLiteFencedReconciliationState,
 )
 from agentguard.application.reconciliation_worker import (
     ReconciliationWorker,
@@ -39,6 +39,17 @@ class FixedClock:
 
     def advance(self, seconds: int) -> None:
         self.value += timedelta(seconds=seconds)
+
+
+class SQLiteFencedReconciliationState(_SQLiteFencedReconciliationState):
+    """Keep the existing synthetic worker timelines explicit at the storage boundary."""
+
+    def __init__(self, path: Path) -> None:
+        self.clock = FixedClock()
+        super().__init__(path)
+
+    def _transaction_now(self) -> datetime:
+        return self.clock.now()
 
 
 def _insert_unknown(path: Path, execution_id: str = "exec_1", reserved_offset_sec: int = 2) -> None:
@@ -199,6 +210,7 @@ def test_reconciliation_lease_is_exclusive_and_expiry_allows_fenced_takeover(tmp
         is None
     )
 
+    second.clock.advance(10)
     lease_b = second.claim_reconciliation_lease(
         "exec_1", "worker-b", now=NOW + timedelta(seconds=10), lease_seconds=10
     )
@@ -215,6 +227,7 @@ def test_stale_worker_cannot_commit_resolution_after_lease_takeover(tmp_path) ->
 
     lease_a = stale.claim_reconciliation_lease("exec_1", "worker-a", now=NOW, lease_seconds=5)
     assert lease_a is not None
+    current.clock.advance(5)
     lease_b = current.claim_reconciliation_lease(
         "exec_1", "worker-b", now=NOW + timedelta(seconds=5), lease_seconds=30
     )
@@ -240,6 +253,7 @@ def test_lease_renewal_and_release_require_exact_live_fencing_token(tmp_path) ->
     lease = state.claim_reconciliation_lease("exec_1", "worker-a", now=NOW, lease_seconds=10)
     assert lease is not None
 
+    state.clock.advance(2)
     renewed = state.renew_reconciliation_lease(
         lease, now=NOW + timedelta(seconds=2), lease_seconds=20
     )
@@ -255,10 +269,12 @@ def test_lease_renewal_and_release_require_exact_live_fencing_token(tmp_path) ->
     assert state.release_reconciliation_lease(forged) is False
     assert state.release_reconciliation_lease(renewed) is True
 
+    state.clock.advance(28)
     expired = state.claim_reconciliation_lease(
         "exec_1", "worker-a", now=NOW + timedelta(seconds=30), lease_seconds=1
     )
     assert expired is not None
+    state.clock.advance(1)
     with pytest.raises(ReconciliationLeaseError, match="reconciliation.lease_lost"):
         state.renew_reconciliation_lease(expired, now=NOW + timedelta(seconds=31), lease_seconds=10)
 
@@ -307,6 +323,7 @@ class FakeService:
     def __init__(self, state: SQLiteFencedReconciliationState, clock: FixedClock) -> None:
         self.state = state
         self.clock = clock
+        state.clock = clock
         self.calls = 0
 
     def reconcile_execution(self, execution_id: str, reconciler: StaticReconciler):
@@ -336,6 +353,7 @@ class SelectiveFailingService:
     ) -> None:
         self.state = state
         self.clock = clock
+        state.clock = clock
         self.failing_ids = failing_ids
         self.calls: list[str] = []
 
@@ -356,6 +374,7 @@ def _worker(
     service,
     max_items_per_tick: int = 100,
 ) -> ReconciliationWorker:
+    state.clock = clock
     return ReconciliationWorker(
         service=service,  # type: ignore[arg-type]
         state=state,

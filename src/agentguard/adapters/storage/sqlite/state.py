@@ -184,6 +184,10 @@ class IncompatibleStateDatabaseError(RuntimeError):
 
 
 class SQLiteState:
+    def _transaction_now(self) -> datetime:
+        """Sample authoritative wall time only after acquiring the SQLite writer lock."""
+        return datetime.now(UTC)
+
     def __init__(self, path: Path) -> None:
         self.path = path
         ensure_private_file(path)
@@ -369,7 +373,10 @@ class SQLiteState:
 
     @staticmethod
     def _claim_execution_authority(
-        c: sqlite3.Connection, verified_execution: VerifiedExecution, reserved_at: datetime
+        c: sqlite3.Connection,
+        verified_execution: VerifiedExecution,
+        reserved_at: datetime,
+        admission_at: datetime,
     ) -> None:
         c.execute(
             "INSERT INTO consumed_nonces(nonce,decision_id,consumed_at) VALUES(?,?,?)",
@@ -380,6 +387,26 @@ class SQLiteState:
             ),
         )
         if verified_execution.authority_lease_id is not None:
+            # Existing databases may contain offsets in these auxiliary TEXT columns.
+            # Read and compare instants under the same writer lock as the claim.
+            expiry_row = c.execute(
+                """
+                SELECT l.expires_at AS lease_expires_at, g.expires_at AS grant_expires_at
+                FROM capability_leases l
+                JOIN authority_grants g ON g.grant_id = l.grant_id
+                WHERE l.lease_id = ? AND l.grant_id = ?
+                """,
+                (
+                    verified_execution.authority_lease_id,
+                    verified_execution.authority_grant_id,
+                ),
+            ).fetchone()
+            if (
+                expiry_row is None
+                or datetime.fromisoformat(str(expiry_row["lease_expires_at"])) <= admission_at
+                or datetime.fromisoformat(str(expiry_row["grant_expires_at"])) <= admission_at
+            ):
+                raise sqlite3.IntegrityError("authority.lease_unavailable")
             lease_update = c.execute(
                 """
                 UPDATE capability_leases
@@ -389,12 +416,10 @@ class SQLiteState:
                   AND grant_id = ?
                   AND status = ?
                   AND remaining_uses > 0
-                  AND expires_at > ?
                   AND EXISTS (
                       SELECT 1 FROM authority_grants g
                       WHERE g.grant_id = capability_leases.grant_id
                         AND g.status = ?
-                        AND g.expires_at > ?
                   )
                 """,
                 (
@@ -402,9 +427,7 @@ class SQLiteState:
                     verified_execution.authority_lease_id,
                     verified_execution.authority_grant_id,
                     CapabilityLeaseStatus.ACTIVE.value,
-                    reserved_at.isoformat(),
                     AuthorityGrantStatus.ACTIVE.value,
-                    reserved_at.isoformat(),
                 ),
             )
             if lease_update.rowcount != 1:
@@ -519,14 +542,18 @@ class SQLiteState:
         """Atomically claim nonce, lease, typed releases, and durable RESERVED execution."""
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
+            admission_at = self._transaction_now()
+            if verified_execution.authorization_expires_at <= admission_at:
+                c.execute("ROLLBACK")
+                return "execution.authorization_expired"
             try:
-                self._claim_execution_authority(c, verified_execution, reserved_at)
+                self._claim_execution_authority(c, verified_execution, reserved_at, admission_at)
                 self._insert_execution(c, verified_execution, reserved_at)
                 c.execute("COMMIT")
                 return None
             except sqlite3.IntegrityError:
                 c.execute("ROLLBACK")
-        return self._reservation_error(verified_execution, reserved_at)
+        return self._reservation_error(verified_execution, admission_at)
 
     def store_prepared_execution(self, prepared: PreparedExecution) -> None:
         with self._connect() as c:
@@ -623,6 +650,7 @@ class SQLiteState:
     ) -> str | None:
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
+            admission_at = self._transaction_now()
             try:
                 row = c.execute(
                     "SELECT * FROM prepared_executions WHERE prepared_id = ?",
@@ -634,10 +662,10 @@ class SQLiteState:
                 if str(row["status"]) != PreparedExecutionStatus.PREPARED.value:
                     c.execute("ROLLBACK")
                     return "execution.prepared_not_active"
-                if datetime.fromisoformat(str(row["commit_not_before"])) > reserved_at:
+                if datetime.fromisoformat(str(row["commit_not_before"])) > admission_at:
                     c.execute("ROLLBACK")
                     return "execution.commit_too_early"
-                if datetime.fromisoformat(str(row["expires_at"])) <= reserved_at:
+                if datetime.fromisoformat(str(row["expires_at"])) <= admission_at:
                     c.execute(
                         "UPDATE prepared_executions SET status = ? WHERE prepared_id = ?",
                         (PreparedExecutionStatus.EXPIRED.value, prepared_id),
@@ -661,7 +689,10 @@ class SQLiteState:
                 ):
                     c.execute("ROLLBACK")
                     return "execution.prepared_binding_mismatch"
-                self._claim_execution_authority(c, verified_execution, reserved_at)
+                if verified_execution.authorization_expires_at <= admission_at:
+                    c.execute("ROLLBACK")
+                    return "execution.authorization_expired"
+                self._claim_execution_authority(c, verified_execution, reserved_at, admission_at)
                 self._insert_execution(c, verified_execution, reserved_at)
                 updated = c.execute(
                     """
@@ -680,7 +711,7 @@ class SQLiteState:
                 return None
             except sqlite3.IntegrityError:
                 c.execute("ROLLBACK")
-        return self._reservation_error(verified_execution, reserved_at)
+        return self._reservation_error(verified_execution, admission_at)
 
     def mark_execution_dispatching(
         self,
@@ -689,7 +720,7 @@ class SQLiteState:
         expected_authority_digest = execution_authority_digest(verified_execution)
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
-            dispatching_at = datetime.now(UTC)
+            dispatching_at = self._transaction_now()
             row = c.execute(
                 """
                 SELECT state,authority_digest,field_integrity_expires_at
@@ -1083,21 +1114,33 @@ class SQLiteState:
     def store_authority_grant(self, grant: AuthorityGrant) -> None:
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
+            admission_at = self._transaction_now()
+            if grant.expires_at <= admission_at:
+                c.execute("ROLLBACK")
+                raise RuntimeError("authority.grant_expired")
             if grant.parent_grant_id is not None:
+                parent = c.execute(
+                    "SELECT expires_at FROM authority_grants WHERE grant_id = ?",
+                    (grant.parent_grant_id,),
+                ).fetchone()
+                if (
+                    parent is None
+                    or datetime.fromisoformat(str(parent["expires_at"])) <= admission_at
+                ):
+                    c.execute("ROLLBACK")
+                    raise RuntimeError("authority.call_budget_exhausted")
                 allocation = c.execute(
                     """
                     UPDATE authority_grants
                     SET remaining_calls = remaining_calls - ?
                     WHERE grant_id = ?
                       AND status = ?
-                      AND expires_at > ?
                       AND remaining_calls >= ?
                     """,
                     (
                         grant.scope.maximum_calls,
                         grant.parent_grant_id,
                         AuthorityGrantStatus.ACTIVE.value,
-                        grant.issued_at.isoformat(),
                         grant.scope.maximum_calls,
                     ),
                 )
@@ -1200,20 +1243,32 @@ class SQLiteState:
     def store_capability_lease(self, lease: CapabilityLease) -> None:
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
+            admission_at = self._transaction_now()
+            if lease.expires_at <= admission_at:
+                c.execute("ROLLBACK")
+                raise RuntimeError("authority.lease_expired")
+            parent = c.execute(
+                "SELECT expires_at FROM authority_grants WHERE grant_id = ?",
+                (lease.grant_id,),
+            ).fetchone()
+            if (
+                parent is None
+                or datetime.fromisoformat(str(parent["expires_at"])) < lease.expires_at
+            ):
+                c.execute("ROLLBACK")
+                raise RuntimeError("authority.call_budget_exhausted")
             allocation = c.execute(
                 """
                 UPDATE authority_grants
                 SET remaining_calls = remaining_calls - ?
                 WHERE grant_id = ?
                   AND status = ?
-                  AND expires_at >= ?
                   AND remaining_calls >= ?
                 """,
                 (
                     lease.maximum_uses,
                     lease.grant_id,
                     AuthorityGrantStatus.ACTIVE.value,
-                    lease.expires_at.isoformat(),
                     lease.maximum_uses,
                 ),
             )
@@ -1309,6 +1364,7 @@ class SQLiteState:
     ) -> str | None:
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
+            admission_at = self._transaction_now()
             try:
                 c.execute(
                     """
@@ -1339,7 +1395,7 @@ class SQLiteState:
                 if row is None or str(row[0]) != decision_id:
                     c.execute("ROLLBACK")
                     return "credential.approval_not_registered"
-                if datetime.fromisoformat(str(row[3])) <= claimed_at:
+                if datetime.fromisoformat(str(row[3])) <= admission_at:
                     c.execute("ROLLBACK")
                     return "credential.approval_expired"
                 if int(row[1]) >= int(row[2]):

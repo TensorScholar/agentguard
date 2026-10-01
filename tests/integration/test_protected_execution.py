@@ -4,6 +4,7 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Event
+from unittest.mock import patch
 
 import pytest
 
@@ -498,10 +499,10 @@ def test_terminal_persistence_failure_leaves_dispatching_for_unknown_recovery(
 
 
 def _reserve_with_expired_authorization(intent, policy, signer, verifier, state, execution_id):
-    """Validate while the receipt is live, then reserve; wall-clock time is past expiry.
+    """Validate and reserve with a controlled live clock, then dispatch after expiry.
 
     Public paths cannot separate validation time from dispatch time, so the backdated
-    fixture is the only way to place a RESERVED record past its authorization expiry.
+    fixture places a RESERVED record past its authorization expiry.
     """
     broker_signer = Ed25519Signer.generate("mock-broker-ed25519")
     broker = MockCredentialBroker(signer=broker_signer)
@@ -542,7 +543,8 @@ def _reserve_with_expired_authorization(intent, policy, signer, verifier, state,
         execution_repository=state,
         now=live_at,
     )
-    assert state.reserve_execution(verified, live_at) is None
+    with patch.object(state, "_transaction_now", return_value=live_at):
+        assert state.reserve_execution(verified, live_at) is None
     service = AgentGuardService(signer, verifier, state, broker.verifier)
     return service, receipt, grant, verified
 
