@@ -175,7 +175,10 @@ jobs:
 
           \`\`\`text
           CI_EXECUTION_CLASS=self-hosted
-          HOSTED_CI_REPLACED=false
+          HOSTED_CI_REPLACED=true
+          HOSTED_CI_REPLACED_MEANING=primary validation path since PR #30; hosted ci.yml/codeql.yml/security.yml are workflow_dispatch-only
+          HOSTED_CI_GREEN_ON_THIS_REF=false
+          CROSS_PLATFORM_MATRIX=false
           TRUST_SCOPE=trusted-owner-same-repository-only
           RUNNER_PERSISTENCE=persistent
           SELF_HOSTED_RUNNER_GENERAL_PR_SAFE=false

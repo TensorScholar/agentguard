@@ -75,9 +75,15 @@ rather say so up front than take a pilot we cannot support.
 ## "Is this production-ready?"
 
 No, and the repository is careful not to imply otherwise. It is `v0.2.0rc4`, an engineering-validated
-release candidate. Specifically missing: an independent security review, a long-duration soak test, a
-controlled production pilot, and a green hosted CI run (`AG-CI-001` — `make check` passes locally,
-hosted CI is blocked on runner capacity). See [Project Status](project-status.md).
+release candidate. Missing: an independent security review, a long-duration soak test, and a
+controlled production pilot.
+
+CI evidence is **partial and we say which part**. Green self-hosted validation exists for this line —
+`make check` at 839 passed, plus `pip_audit` and the MCP security gate. What is missing is green
+*hosted* CI (it is `workflow_dispatch`-only since PR #30) and a cross-platform matrix (the evidence is
+one combination: macOS / ARM64 / CPython 3.12.10). It is also not independent: the runner is our own
+machine. `AG-CI-001` remains open for exactly those three reasons. See
+[Project Status](project-status.md#ci-evidence-status).
 
 ## "Why MIT?"
 

@@ -66,20 +66,39 @@ retained advanced surface that no product claim depends on.
 
 ### CI evidence status
 
-Hosted CI has **not** produced a green run on this line. The PR #14 GitHub Actions runs were
-runner-less infrastructure failures (`steps=[]`, `runner_id=0`) and therefore provide neither
-passing-CI evidence nor code-regression evidence. Until a green run exists on the release commit,
-"cross-platform CI gates" must not be cited as a validated capability.
+**Green self-hosted validation exists for `0.2.0rc4`.** Run
+[`36910522462`](https://github.com/TensorScholar/agentguard/actions/runs/36910522462), commit
+`0ec42a29`, runner `agentguard-mac-arm64` (macOS / ARM64 / CPython 3.12.10), 8m52s:
 
-What *has* been verified is the local execution of the same gate that CI runs: `make check`
-(`ruff format --check`, `ruff check`, `mypy --strict`, `coverage` with the 80% combined
-statement/branch floor, schema drift check, architecture/secret/static security scans, release
-metadata consistency, and `compileall`) passes on the working tree, and the built wheel excludes
-`agentguard.research` and installs and runs clean.
+- `make check` — **PASS** (839 passed, 3 skipped): `ruff format --check`, `ruff check`,
+  `mypy --strict`, `coverage` at the 80% combined statement/branch floor, schema drift, architecture,
+  secret and static security scans, release metadata, `compileall`
+- dependency security audit (`pip_audit`) — **PASS**
+- AgentGuard MCP security gate — **PASS**
+- evidence completeness gate and artifact upload — **PASS**
 
-CodeQL is now configured to publish results with `security-events: write` and no
-`continue-on-error`, so a finding can fail the check. It has not yet been observed failing or
-passing on a hosted run.
+The confirmatory research preflight is scoped to
+`research/authorization-lineage-experiment-v1` and was correctly **not run** on this product line;
+the retained evidence artifact records `Confirmatory Runtime Preflight: NOT_RUN (research-branch-only
+gate)` rather than asserting a pass it did not perform.
+
+**What that evidence is not.** It is self-hosted, single-platform, and owner-run. Specifically:
+
+- **Hosted CI has produced no green run on this line.** The PR #14 GitHub Actions runs were
+  runner-less infrastructure failures (`steps=[]`, `runner_id=0`), and PR #30 subsequently made
+  `ci.yml`, `codeql.yml`, and `security.yml` `workflow_dispatch`-only. "Cross-platform CI gates"
+  must not be cited as a validated capability.
+- **No cross-platform or multi-version matrix.** One combination only. Ubuntu, Windows, and CPython
+  3.11 / 3.13 are unexercised here.
+- **Not independent.** `TRUST_SCOPE=trusted-owner-same-repository-only`; the runner is the
+  maintainer's own machine. It is not third-party attestation.
+- **CodeQL has still never been observed passing or failing on a hosted run**, even though it is now
+  configured with `security-events: write` and no `continue-on-error` so that a finding can fail the
+  check.
+
+`AG-CI-001` therefore remains **open**, narrowed to hosted CI and cross-platform coverage. None of
+this is production certification: there is still no independent security review, no long-duration
+soak test, and no controlled production pilot.
 
 ## Engineering gaps closed on the current line
 
@@ -98,11 +117,19 @@ Open and visible. Nothing below is claimed as done.
 
 - `AG-VAL-001` (Independent Penetration & Pilot) — independent security review, long-duration soak
   testing, and a controlled production pilot. This is the real gate.
-- `AG-CI-001` (Hosted CI Evidence) — a green hosted CI run on the release commit, including the
-  cross-platform `compatibility` and `quality` matrices. The workflow definitions are corrected and
-  CodeQL is able to fail a build, but hosted runs have failed on runner capacity
-  (`steps=[]`, `runner_id=0`). `make check` passes locally on the release commit; that is not the same
-  as green hosted CI and is not described as such.
+- `AG-CI-001` (Hosted and Cross-Platform CI Evidence) — **partially satisfied.** Green **self-hosted**
+  validation evidence now exists for the `0.2.0rc4` product line: run
+  [`36910522462`](https://github.com/TensorScholar/agentguard/actions/runs/36910522462) on commit
+  `0ec42a29` via runner `agentguard-mac-arm64`, where `make check` passed (839 passed, 3 skipped),
+  `pip_audit` passed, and the AgentGuard MCP security gate passed. That is a real engineering signal and
+  it is recorded here rather than claimed vaguely. What remains open:
+  - **No green hosted CI.** PR #30 made `ci.yml`, `codeql.yml`, and `security.yml` `workflow_dispatch`-only,
+    so hosted CI does not run automatically on pushes or pull requests.
+  - **No cross-platform matrix.** The evidence is a single combination: macOS / ARM64 / CPython 3.12.10.
+    Ubuntu, Windows, and CPython 3.11 and 3.13 remain unexercised on this line.
+  - **Not independent.** The runner is registered to the maintainer's own account on the maintainer's own
+    machine, and the run's own evidence records `TRUST_SCOPE=trusted-owner-same-repository-only`. It is a
+    self-hosted signal, not third-party attestation.
 
 **Blocking a production claim about the credential path:**
 

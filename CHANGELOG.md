@@ -5,6 +5,25 @@
 Three stabilization and delivery passes, plus a packaging and positioning pass. Packaging only — no
 enforcement behavior changed in Phase 3.
 
+### CI evidence for 0.2.0rc4
+
+- Green **self-hosted** validation now exists for this line: run `36910522462` on commit `0ec42a29`
+  via runner `agentguard-mac-arm64`, where `make check` passed (839 passed, 3 skipped), `pip_audit`
+  passed, and the AgentGuard MCP security gate passed.
+- `AG-CI-001` is narrowed, **not closed**. Still missing: green hosted CI (`ci.yml`, `codeql.yml`,
+  `security.yml` are `workflow_dispatch`-only since PR #30); a cross-platform matrix (evidence is
+  macOS / ARM64 / CPython 3.12.10 only); and independence (`TRUST_SCOPE=trusted-owner-same-repository-only`,
+  the runner is the maintainer's own machine).
+- The self-hosted workflow previously failed every product PR at the confirmatory research preflight,
+  which freezes the git blob of `pyproject.toml` and therefore cannot pass once packaging or version
+  changes. The step is now scoped to `research/authorization-lineage-experiment-v1`. The research
+  identity file is untouched and the preflight is not weakened on that branch.
+- The evidence artifact no longer asserts `Confirmatory Runtime Preflight: PASS` for a step that did not
+  run, and no longer claims `HOSTED_CI_REPLACED=false`, which PR #30 made untrue.
+
+Still an engineering-validated release candidate: no independent security review, no soak test, no
+controlled production pilot.
+
 ### Phase 3 - packaging and positioning
 
 - Cut `0.2.0rc4`. Phases 0-2 were verified but sat under an "Unreleased" heading above the shipped

@@ -13,8 +13,10 @@
 > a documented credential contract on top of the protected MCP stdio and bounded Streamable HTTP
 > profiles, production credential authority, durable external-effect reconciliation, and single-host
 > multi-process coordination. Production certification still requires an independent security review,
-> long-duration operational validation, and a controlled production pilot. There is also **no green
-> hosted CI run yet** (`AG-CI-001`); `make check` passes locally on the release commit. See
+> long-duration operational validation, and a controlled production pilot. **CI status is partial:** green
+> *self-hosted* validation exists for this line (`make check` 839 passed, `pip_audit`, MCP gate — see
+> [Project Status](docs/project-status.md#ci-evidence-status)), but there is still **no green hosted
+> CI** and **no cross-platform matrix**, so `AG-CI-001` remains open. See
 > [Project Status](docs/project-status.md) and [Known Limitations](docs/limitations.md).
 
 > **Evaluating this project?** Run the demo first — it takes about five seconds:

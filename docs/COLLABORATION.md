@@ -96,9 +96,11 @@ Not roadmap items — boundaries.
   privilege we cannot enforce at the provider.
 - **Sandboxing or egress control.** Deployment responsibility.
 - **Production certification.** No independent penetration test, soak test, or production pilot. There
-  is also **no green hosted CI run** — `make check` (lint, `mypy --strict`, coverage, schema drift,
-  three security scans, release metadata) passes locally on the release commit, and hosted CI is
-  blocked on runner capacity (`AG-CI-001`).
+  is also **no green hosted CI and no cross-platform matrix.** Green *self-hosted* validation does exist
+  for this line (`make check` 839 passed, plus `pip_audit` and the MCP security gate, on one
+  macOS/ARM64/CPython 3.12 runner), which is a real engineering signal — but the runner is the
+  maintainer's own machine, hosted CI is `workflow_dispatch`-only, and Ubuntu, Windows and CPython
+  3.11/3.13 are unexercised. `AG-CI-001` stays open for that reason, not for lack of any evidence.
 - **The capability classifier is keyword-based and advisory.** A provider whose description omits the
   words we look for classifies as unknown and is denied. That is a real ergonomic cost.
 

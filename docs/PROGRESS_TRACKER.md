@@ -396,3 +396,51 @@ Decisions recorded:
 
 Deliberately not done: no tagging or publication of `0.2.0rc4` (that is a separate explicit step), no
 `AG-EVID-001` contract change, no marketing content, and no change to any enforcement behavior.
+
+## CI evidence update — AG-CI-001 narrowed, not closed
+
+The self-hosted runner `agentguard-mac-arm64` (registered on the maintainer's machine, labels
+`self-hosted, macOS, ARM64, agentguard-core`) was installed as a launchd service via its own
+`./svc.sh install && ./svc.sh start` and came online. The queued PR #32 validation then executed and
+failed at the confirmatory runtime preflight, not at any product code.
+
+Cause: `CONFIRMATORY_RUNTIME_IDENTITY.json` freezes the git blob of `pyproject.toml`
+(`75e4afcf…`, which contains `version = "0.2.0rc3"`), and the preflight fails closed on drift. Phase 0
+(`a4604ec`, exclude research from the distribution) and Phase 3 (`a7b2fea`, cut `0.2.0rc4`) both
+changed that file, so the blob is now `c9204147…`. Of the six frozen git objects only
+`project_metadata` drifted. The control is working as designed; it is simply mis-scoped as a gate on
+product commits, and because PR #30 made this workflow the primary path, every product PR failed
+before `make check` could run.
+
+Resolution, approved as workflow scoping only (`49db81d`):
+
+- The preflight step is now conditioned on `research/authorization-lineage-experiment-v1`, verified to
+  be the one branch whose `pyproject.toml` matches the freeze. `github.head_ref` is used because
+  `github.ref` is `refs/pull/N/merge` on pull_request events.
+- The evidence completeness gate no longer asserts the preflight output unconditionally.
+- The evidence summary reports `NOT_RUN (research-branch-only gate)` instead of asserting `PASS` for a
+  step that did not execute.
+
+`CONFIRMATORY_RUNTIME_IDENTITY.json` is untouched; the preflight is not weakened or made
+non-blocking on the research branch.
+
+Result — run `36910522462`, commit `0ec42a29`: **success** in 8m52s, with `make check` at 839 passed /
+3 skipped, `pip_audit` pass, MCP security gate pass. Green self-hosted validation evidence now exists for
+the `0.2.0rc4` product line.
+
+`AG-CI-001` is therefore **partially satisfied and remains open**, narrowed to what is still missing:
+
+- no green hosted CI (`ci.yml`, `codeql.yml`, `security.yml` are `workflow_dispatch`-only);
+- no cross-platform matrix (macOS / ARM64 / CPython 3.12.10 only; Ubuntu, Windows, 3.11 and 3.13
+  unexercised);
+- not independent (`TRUST_SCOPE=trusted-owner-same-repository-only`).
+
+Also corrected here: the self-hosted evidence artifact asserted `HOSTED_CI_REPLACED=false`, which PR #30
+made untrue — self-hosted validation has been the primary path since that merge. It now reports
+`HOSTED_CI_REPLACED=true` with a meaning key, plus explicit `HOSTED_CI_GREEN_ON_THIS_REF=false` and
+`CROSS_PLATFORM_MATRIX=false` so the artifact cannot be read as a hosted-green claim. Note that run
+`36910522462` predates this correction and its retained artifact still contains the old
+`HOSTED_CI_REPLACED=false` string; a subsequent run regenerates it.
+
+No product behavior changed. No production certification is claimed: there is still no independent
+security review, no soak test, and no pilot.
