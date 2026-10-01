@@ -36,8 +36,8 @@ from agentguard.domain import (
     CapabilityScope,
     CredentialRequest,
     EvidenceTrustLevel,
-    PreparedExecution,
     PolicyDocument,
+    PreparedExecution,
     ReconciliationEvidence,
     ReconciliationStatus,
     ReversibilityMode,
@@ -168,8 +168,14 @@ def _unknown(state: SQLiteState) -> None:
                  authority_digest,state,reserved_at
                ) VALUES(?,?,?,?,?,?,?,?,?)""",
             (
-                "exec_unknown", "decision_unknown", "nonce_unknown", "trace_unknown",
-                "request_unknown", digest("intent"), digest("authority"), "unknown",
+                "exec_unknown",
+                "decision_unknown",
+                "nonce_unknown",
+                "trace_unknown",
+                "request_unknown",
+                digest("intent"),
+                digest("authority"),
+                "unknown",
                 START.isoformat(),
             ),
         )
@@ -185,9 +191,23 @@ def _evidence() -> ReconciliationEvidence:
     )
 
 
+def _temporary_directory() -> tempfile.TemporaryDirectory[str]:
+    """A temp directory with no symlinked path component.
+
+    AgentGuard refuses to read or write through symlinked path components, and on
+    macOS the stdlib temp root is /var/folders/... where /var is a symlink to
+    /private/var. Resolving the base keeps the realpath guard satisfied instead of
+    weakening it. This is also the convention the rest of the suite follows via
+    pytest's tmp_path fixture.
+    """
+
+    base = Path(tempfile.gettempdir()).resolve()
+    return tempfile.TemporaryDirectory(dir=str(base))
+
+
 class SerializedTimeTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.directory = tempfile.TemporaryDirectory()
+        self.directory = _temporary_directory()
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name) / "state.sqlite"
         self.clock = _TransactionTime(START)
@@ -214,7 +234,8 @@ class SerializedTimeTests(unittest.TestCase):
         verified = _verified(intent)
 
         error = self._blocked(
-            state, lambda: state.reserve_execution(verified, START),
+            state,
+            lambda: state.reserve_execution(verified, START),
             after=START + timedelta(seconds=6),
         )
         self.assertEqual(error, "authority.lease_unavailable")
@@ -233,13 +254,16 @@ class SerializedTimeTests(unittest.TestCase):
             }
         )
         error = self._blocked(
-            state, lambda: state.reserve_execution(verified, START),
+            state,
+            lambda: state.reserve_execution(verified, START),
             after=START + timedelta(seconds=6),
         )
         self.assertEqual(error, "execution.authorization_expired")
         self.assertIsNone(state.get_execution(verified.execution_id))
         with sqlite3.connect(state.path) as connection:
-            self.assertEqual(connection.execute("SELECT count(*) FROM consumed_nonces").fetchone()[0], 0)
+            self.assertEqual(
+                connection.execute("SELECT count(*) FROM consumed_nonces").fetchone()[0], 0
+            )
 
     def test_concurrent_last_use_still_has_one_reservation_winner(self) -> None:
         state = _State(self.path, self.clock)
@@ -300,9 +324,13 @@ class SerializedTimeTests(unittest.TestCase):
         ceiling = receipt.credential_ceiling
         self.assertIsNotNone(ceiling)
         request = CredentialRequest(
-            request_id="serialized-time-credential", trace_id=receipt.trace_id,
-            decision_id=receipt.decision_id, audience=ceiling.audience,
-            scopes=ceiling.scopes, requested_ttl_seconds=30, tenant_id=ceiling.tenant_id,
+            request_id="serialized-time-credential",
+            trace_id=receipt.trace_id,
+            decision_id=receipt.decision_id,
+            audience=ceiling.audience,
+            scopes=ceiling.scopes,
+            requested_ttl_seconds=30,
+            tenant_id=ceiling.tenant_id,
         )
         credential = service.request_credential(bound, receipt, request, broker)
         executor = DeterministicFakeExecutor()
@@ -316,9 +344,7 @@ class SerializedTimeTests(unittest.TestCase):
                 return str(exc)
             return "dispatched"
 
-        result = self._blocked(
-            state, execute, after=lease.expires_at + timedelta(microseconds=1)
-        )
+        result = self._blocked(state, execute, after=lease.expires_at + timedelta(microseconds=1))
         self.assertEqual(result, "authority.lease_unavailable")
         self.assertEqual(executor.calls, [])
         self.assertEqual(state.list_executions(), ())
@@ -331,17 +357,22 @@ class SerializedTimeTests(unittest.TestCase):
         verified = _verified(intent, prepared=True)
         state.store_prepared_execution(
             PreparedExecution(
-                prepared_id="prep_test", execution_id=verified.execution_id,
-                decision_id=verified.decision_id, request_id=verified.request_id,
-                trace_id=verified.trace_id, intent_digest=verified.intent_digest,
+                prepared_id="prep_test",
+                execution_id=verified.execution_id,
+                decision_id=verified.decision_id,
+                request_id=verified.request_id,
+                trace_id=verified.trace_id,
+                intent_digest=verified.intent_digest,
                 prepared_binding_digest=prepared_execution_binding_digest(verified),
                 reversibility=ReversibilityMode.IRREVERSIBLE,
-                prepared_at=START, commit_not_before=START,
+                prepared_at=START,
+                commit_not_before=START,
                 expires_at=START + timedelta(seconds=30),
             )
         )
         error = self._blocked(
-            state, lambda: state.reserve_prepared_execution("prep_test", verified, START),
+            state,
+            lambda: state.reserve_prepared_execution("prep_test", verified, START),
             after=START + timedelta(seconds=6),
         )
         self.assertEqual(error, "authority.lease_unavailable")
@@ -355,17 +386,22 @@ class SerializedTimeTests(unittest.TestCase):
         verified = _verified(intent, prepared=True)
         state.store_prepared_execution(
             PreparedExecution(
-                prepared_id="prep_test", execution_id=verified.execution_id,
-                decision_id=verified.decision_id, request_id=verified.request_id,
-                trace_id=verified.trace_id, intent_digest=verified.intent_digest,
+                prepared_id="prep_test",
+                execution_id=verified.execution_id,
+                decision_id=verified.decision_id,
+                request_id=verified.request_id,
+                trace_id=verified.trace_id,
+                intent_digest=verified.intent_digest,
                 prepared_binding_digest=prepared_execution_binding_digest(verified),
                 reversibility=ReversibilityMode.IRREVERSIBLE,
-                prepared_at=START, commit_not_before=START,
+                prepared_at=START,
+                commit_not_before=START,
                 expires_at=START + timedelta(seconds=2),
             )
         )
         error = self._blocked(
-            state, lambda: state.reserve_prepared_execution("prep_test", verified, START),
+            state,
+            lambda: state.reserve_prepared_execution("prep_test", verified, START),
             after=START + timedelta(seconds=3),
         )
         self.assertEqual(error, "execution.prepared_expired")
@@ -382,17 +418,22 @@ class SerializedTimeTests(unittest.TestCase):
         )
         state.store_prepared_execution(
             PreparedExecution(
-                prepared_id="prep_test", execution_id=verified.execution_id,
-                decision_id=verified.decision_id, request_id=verified.request_id,
-                trace_id=verified.trace_id, intent_digest=verified.intent_digest,
+                prepared_id="prep_test",
+                execution_id=verified.execution_id,
+                decision_id=verified.decision_id,
+                request_id=verified.request_id,
+                trace_id=verified.trace_id,
+                intent_digest=verified.intent_digest,
                 prepared_binding_digest=prepared_execution_binding_digest(verified),
                 reversibility=ReversibilityMode.IRREVERSIBLE,
-                prepared_at=START, commit_not_before=START,
+                prepared_at=START,
+                commit_not_before=START,
                 expires_at=START + timedelta(seconds=30),
             )
         )
         error = self._blocked(
-            state, lambda: state.reserve_prepared_execution("prep_test", verified, START),
+            state,
+            lambda: state.reserve_prepared_execution("prep_test", verified, START),
             after=START + timedelta(seconds=6),
         )
         self.assertEqual(error, "execution.authorization_expired")
@@ -406,17 +447,22 @@ class SerializedTimeTests(unittest.TestCase):
         )
         state.store_prepared_execution(
             PreparedExecution(
-                prepared_id="prep_test", execution_id=verified.execution_id,
-                decision_id=verified.decision_id, request_id=verified.request_id,
-                trace_id=verified.trace_id, intent_digest=verified.intent_digest,
+                prepared_id="prep_test",
+                execution_id=verified.execution_id,
+                decision_id=verified.decision_id,
+                request_id=verified.request_id,
+                trace_id=verified.trace_id,
+                intent_digest=verified.intent_digest,
                 prepared_binding_digest=prepared_execution_binding_digest(verified),
                 reversibility=ReversibilityMode.IRREVERSIBLE,
-                prepared_at=START, commit_not_before=START + timedelta(seconds=3),
+                prepared_at=START,
+                commit_not_before=START + timedelta(seconds=3),
                 expires_at=START + timedelta(seconds=30),
             )
         )
         error = self._blocked(
-            state, lambda: state.reserve_prepared_execution("prep_test", verified, START),
+            state,
+            lambda: state.reserve_prepared_execution("prep_test", verified, START),
             after=START + timedelta(seconds=4),
         )
         self.assertIsNone(error)
@@ -491,9 +537,10 @@ class SerializedTimeTests(unittest.TestCase):
             start.set()
             leases = [future.result(timeout=5) for future in results]
         self.assertEqual(sum(lease is not None for lease in leases), 1)
-        self.assertEqual(state.get_reconciliation_lease("exec_unknown"), next(
-            lease for lease in leases if lease is not None
-        ))
+        self.assertEqual(
+            state.get_reconciliation_lease("exec_unknown"),
+            next(lease for lease in leases if lease is not None),
+        )
 
     def test_expired_lease_cannot_be_renewed_after_writer_lock(self) -> None:
         state = _FencedState(self.path, self.clock)
@@ -558,16 +605,16 @@ class SerializedTimeTests(unittest.TestCase):
         def issue() -> str:
             try:
                 service.issue_root_authority(
-                    _intent().principal, CapabilityScope(maximum_calls=1),
-                    authority_signer, ttl_seconds=60,
+                    _intent().principal,
+                    CapabilityScope(maximum_calls=1),
+                    authority_signer,
+                    ttl_seconds=60,
                 )
             except AuthorityError as exc:
                 return str(exc)
             return "issued"
 
-        result = self._blocked(
-            state, issue, after=self.clock.value + timedelta(seconds=61)
-        )
+        result = self._blocked(state, issue, after=self.clock.value + timedelta(seconds=61))
         self.assertEqual(result, "authority.grant_expired")
         self.assertEqual(state.list_events(), [])
 
@@ -590,18 +637,27 @@ class SerializedTimeTests(unittest.TestCase):
     def test_expired_approval_cannot_be_consumed_behind_lock(self) -> None:
         state = _State(self.path, self.clock)
         approval = ApprovalReceipt(
-            approval_id="approval_test", decision_id="decision_test", trace_id="trace_test",
-            approver_subject="approver", approved_action_digest=digest("action"),
-            approved_arguments_digest=digest("arguments"), reason="test",
-            issued_at=START, expires_at=START + timedelta(seconds=5),
-            key_id="test-key", signature="test-signature",
+            approval_id="approval_test",
+            decision_id="decision_test",
+            trace_id="trace_test",
+            approver_subject="approver",
+            approved_action_digest=digest("action"),
+            approved_arguments_digest=digest("arguments"),
+            reason="test",
+            issued_at=START,
+            expires_at=START + timedelta(seconds=5),
+            key_id="test-key",
+            signature="test-signature",
         )
         state.register_approval(approval)
         error = self._blocked(
             state,
             lambda: state.claim_credential_issuance(
-                request_id="request_test", decision_id="decision_test",
-                approval_id="approval_test", single_use=True, claimed_at=START,
+                request_id="request_test",
+                decision_id="decision_test",
+                approval_id="approval_test",
+                single_use=True,
+                claimed_at=START,
             ),
             after=START + timedelta(seconds=6),
         )
@@ -618,7 +674,7 @@ class SerializedTimeTests(unittest.TestCase):
 
 class OffsetAuthorityTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.directory = tempfile.TemporaryDirectory()
+        self.directory = _temporary_directory()
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name) / "state.sqlite"
         self.clock = _TransactionTime(START)
@@ -642,8 +698,11 @@ class OffsetAuthorityTests(unittest.TestCase):
     def test_expired_positive_offset_grant_cannot_authorize_reservation(self) -> None:
         signer = Ed25519Signer.generate("positive-offset-signer")
         grant = issue_root_authority(
-            self.intent.principal, CapabilityScope(maximum_calls=2), signer,
-            now=self.offset(START, 5), ttl_seconds=5,
+            self.intent.principal,
+            CapabilityScope(maximum_calls=2),
+            signer,
+            now=self.offset(START, 5),
+            ttl_seconds=5,
         )
         self.state.store_authority_grant(grant)
         self.state.store_capability_lease(
@@ -662,9 +721,7 @@ class OffsetAuthorityTests(unittest.TestCase):
                 ((START + timedelta(seconds=10)).isoformat(), "lease_test"),
             )
         self.clock.value = START + timedelta(seconds=6)
-        verified = _verified(self.intent).model_copy(
-            update={"authority_grant_id": grant.grant_id}
-        )
+        verified = _verified(self.intent).model_copy(update={"authority_grant_id": grant.grant_id})
         self.assertEqual(
             self.state.reserve_execution(verified, START),
             "execution.reservation_conflict",
@@ -673,9 +730,7 @@ class OffsetAuthorityTests(unittest.TestCase):
         self.assertEqual(self.state.list_executions(), ())
 
     def test_existing_offset_lease_cannot_be_consumed_after_real_expiry(self) -> None:
-        self.state.store_authority_grant(
-            self.grant(self.offset(START + timedelta(seconds=20), 5))
-        )
+        self.state.store_authority_grant(self.grant(self.offset(START + timedelta(seconds=20), 5)))
         lease = self.lease(self.offset(START + timedelta(seconds=5), 5))
         self.state.store_capability_lease(lease)
         # Reopening must remain safe even when the auxiliary column was written by
@@ -693,21 +748,21 @@ class OffsetAuthorityTests(unittest.TestCase):
             )
 
     def test_prepared_reservation_uses_same_offset_safe_authority_claim(self) -> None:
-        self.state.store_authority_grant(
-            self.grant(self.offset(START + timedelta(seconds=20), 5))
-        )
-        self.state.store_capability_lease(
-            self.lease(self.offset(START + timedelta(seconds=5), 5))
-        )
+        self.state.store_authority_grant(self.grant(self.offset(START + timedelta(seconds=20), 5)))
+        self.state.store_capability_lease(self.lease(self.offset(START + timedelta(seconds=5), 5)))
         verified = _verified(self.intent, prepared=True)
         self.state.store_prepared_execution(
             PreparedExecution(
-                prepared_id="prep_test", execution_id=verified.execution_id,
-                decision_id=verified.decision_id, request_id=verified.request_id,
-                trace_id=verified.trace_id, intent_digest=verified.intent_digest,
+                prepared_id="prep_test",
+                execution_id=verified.execution_id,
+                decision_id=verified.decision_id,
+                request_id=verified.request_id,
+                trace_id=verified.trace_id,
+                intent_digest=verified.intent_digest,
                 prepared_binding_digest=prepared_execution_binding_digest(verified),
                 reversibility=ReversibilityMode.IRREVERSIBLE,
-                prepared_at=START, commit_not_before=START,
+                prepared_at=START,
+                commit_not_before=START,
                 expires_at=START + timedelta(seconds=30),
             )
         )
@@ -729,9 +784,7 @@ class OffsetAuthorityTests(unittest.TestCase):
         self.assertEqual(self.state.get_capability_lease("lease_test").remaining_uses, 0)
 
     def test_parent_grant_expired_at_real_instant_cannot_allocate_child(self) -> None:
-        self.state.store_authority_grant(
-            self.grant(self.offset(START + timedelta(seconds=5), 5))
-        )
+        self.state.store_authority_grant(self.grant(self.offset(START + timedelta(seconds=5), 5)))
         child = AuthorityGrant.model_validate(
             {
                 **_grant(self.intent, parent="grant_root").model_dump(mode="python"),
@@ -759,8 +812,11 @@ class OffsetAuthorityTests(unittest.TestCase):
         signer = Ed25519Signer.generate("offset-signer")
         verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
         signed = issue_root_authority(
-            self.intent.principal, CapabilityScope(maximum_calls=2), signer,
-            now=self.offset(START, -5), ttl_seconds=10,
+            self.intent.principal,
+            CapabilityScope(maximum_calls=2),
+            signer,
+            now=self.offset(START, -5),
+            ttl_seconds=10,
         )
         original_json = signed.model_dump_json()
         self.state.store_authority_grant(signed)
@@ -782,9 +838,7 @@ class OffsetAuthorityTests(unittest.TestCase):
         )
         self.state.store_capability_lease(lease)
         self.clock.value = START + timedelta(seconds=1)
-        verified = _verified(self.intent).model_copy(
-            update={"authority_grant_id": signed.grant_id}
-        )
+        verified = _verified(self.intent).model_copy(update={"authority_grant_id": signed.grant_id})
         self.assertIsNone(self.state.reserve_execution(verified, START))
 
     def test_utc_grant_and_lease_still_reserve(self) -> None:

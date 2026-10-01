@@ -8,6 +8,8 @@ import pytest
 
 from agentguard.adapters.storage.sqlite import (
     ReconciliationLeaseError,
+)
+from agentguard.adapters.storage.sqlite import (
     SQLiteFencedReconciliationState as _SQLiteFencedReconciliationState,
 )
 from agentguard.application.reconciliation_worker import (
