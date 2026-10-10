@@ -1,10 +1,10 @@
 # Toolchain used to validate the v0.2.0rc2 release candidate.
-build==1.5.0
-coverage==7.15.2
+build==1.6.1
+coverage==7.16.2
 jsonschema==4.26.0
-mypy==1.20.2
+mypy==2.4.0
 pip-audit==2.10.1
 pytest==9.1.1
-ruff==0.15.22
+ruff==0.16.10
 twine==7.0.0
-types-PyYAML==6.0.12.20260724
+types-PyYAML==6.0.12.20260906
