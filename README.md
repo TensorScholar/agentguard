@@ -203,11 +203,11 @@ Stated plainly so nobody buys a control plane:
 
 ---
 
-## AgentGuard Core and AgentGuard Reference
+## AgentGuard Core is the canonical AgentGuard repository
 
 This repository is AgentGuard Core, the canonical runtime, at `v0.2.0rc4`. Production certification is not claimed.
 
-`agentguard-reference` `v1.0.1` is a different artifact. It is a public standard-library example of one guarded callback. It is not a newer version of this core, and it does not carry the MCP, credential, reconciliation, or research record maintained here.
+The former `agentguard-reference` repository — a minimal standard-library example of one guarded callback — has been retired and removed. It was never a newer version of this core and never carried the MCP, credential, reconciliation, or research record maintained here. All AgentGuard development, releases, and documentation live here.
 
 ---
 

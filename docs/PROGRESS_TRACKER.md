@@ -15,7 +15,7 @@ This tracker does not change the Freeze v2 research claim. Production certificat
 - Preserved Q01 commit: `7effe3e203d2123f5e6d4733706f78613b1f7bb8`.
 - Preserved Q02 commit / audited preflight head: `d8c4bccdbdf41cea349cf81acbba63e15611f1d7`.
 - Historical reference-repository Q04-06 pins, not the current reference release: baseline `30b018239d56d600015e6ca2d2baeb0dde193ce6`, head `8ed4632105c4067e7d0c68a0f3e469f4f5a5bca8`.
-- Reference repository: `TensorScholar/agentguard-reference`, package `1.0.1`. That package is a separate public artifact, not a newer core release.
+- Reference repository: `TensorScholar/agentguard-reference`, package `1.0.1` — historical record only. That repository has since been removed; the pins above are retained solely as history.
 - Source divergence: reconciled. The two previously local-only Q01/Q02 commits are now preserved in GitHub history through PR #14.
 
 ## Completed
