@@ -28,7 +28,7 @@ jobs:
         # Results are uploaded to code scanning so that an alert fails this
         # check. This step must not be continue-on-error: a CodeQL failure is a
         # build failure.
-        uses: github/codeql-action/analyze@adfda868f108ac4222129de456ea554034a27db7 # v4
+        uses: github/codeql-action/analyze@3ea37a44b6e4e6847c46edae209410d258d548d1 # v4
         with:
           category: "/language:python"
           output: codeql-results
