@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.audit import AuditLedger, hash_tool_arguments
-from agentguard.mcp_stdio import (
+from decisionlock.audit import AuditLedger, hash_tool_arguments
+from decisionlock.mcp_stdio import (
     APPROVAL_REQUIRED,
     POLICY_DENIED,
     MCPMessageProcessor,
@@ -21,8 +21,8 @@ from agentguard.mcp_stdio import (
     derive_server_id,
     mcp_source_id,
 )
-from agentguard.models import ApprovalGrant, Capability, Decision, RiskLevel, ToolInventoryItem
-from agentguard.policy import Policy
+from decisionlock.models import ApprovalGrant, Capability, Decision, RiskLevel, ToolInventoryItem
+from decisionlock.policy import Policy
 
 _ALLOW_POLICY_PATH = Path(__file__).parent / "fixtures" / "allow_policy.yaml"
 
@@ -436,7 +436,7 @@ def test_mcp_proxy_integrates_with_stdio_server(tmp_path: Path) -> None:
         [
             sys.executable,
             "-m",
-            "agentguard.cli",
+            "decisionlock.cli",
             "mcp-proxy",
             "--policy",
             str(policy_path),
@@ -500,7 +500,7 @@ def test_mcp_proxy_drains_high_volume_server_output(
         [
             sys.executable,
             "-m",
-            "agentguard.cli",
+            "decisionlock.cli",
             "mcp-proxy",
             "--policy",
             str(_ALLOW_POLICY_PATH),
@@ -580,7 +580,7 @@ def test_mcp_proxy_terminates_server_that_ignores_stdin_eof(tmp_path: Path) -> N
         [
             sys.executable,
             "-m",
-            "agentguard.cli",
+            "decisionlock.cli",
             "mcp-proxy",
             "--policy",
             str(_ALLOW_POLICY_PATH),

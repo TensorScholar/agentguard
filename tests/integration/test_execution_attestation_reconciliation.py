@@ -6,32 +6,32 @@ from threading import Barrier
 
 import pytest
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
-from agentguard.adapters.executor import DeterministicFakeExecutor
-from agentguard.adapters.reconciliation import DeterministicReconciler
-from agentguard.application import AgentGuardService
-from agentguard.domain import (
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.adapters.crypto import Ed25519Signer, Ed25519Verifier
+from decisionlock.adapters.executor import DeterministicFakeExecutor
+from decisionlock.adapters.reconciliation import DeterministicReconciler
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import (
     CredentialRequest,
     EvidenceTrustLevel,
     ExecutionState,
     ReconciliationEvidence,
     ReconciliationStatus,
 )
-from agentguard.engine.attestation import (
+from decisionlock.engine.attestation import (
     AttestationVerificationError,
     attestation_metadata,
     issue_execution_attestation,
     verify_attestation_chain,
     verify_execution_attestation,
 )
-from agentguard.engine.canonical import digest
-from agentguard.engine.execution import ExecutionGuardError
+from decisionlock.engine.canonical import digest
+from decisionlock.engine.execution import ExecutionGuardError
 
 
 def _unknown_execution(intent, policy, signer, verifier, state):
     broker = MockCredentialBroker()
-    service = AgentGuardService(signer, verifier, state, broker.verifier)
+    service = DecisionLockService(signer, verifier, state, broker.verifier)
     receipt = service.authorize(intent, policy)
     ceiling = receipt.credential_ceiling
     assert ceiling is not None
@@ -189,7 +189,7 @@ def test_reconciliation_records_supported_non_success_classifications(
 
 def test_reconciliation_refuses_non_unknown_execution(intent, policy, signer, verifier, state):
     broker = MockCredentialBroker()
-    service = AgentGuardService(signer, verifier, state, broker.verifier)
+    service = DecisionLockService(signer, verifier, state, broker.verifier)
     receipt = service.authorize(intent, policy)
     ceiling = receipt.credential_ceiling
     assert ceiling is not None
@@ -249,7 +249,7 @@ def test_confirmed_resolution_cannot_regress_to_weaker_or_escape_conflict(
 @pytest.mark.parametrize(
     "trust_level",
     [
-        EvidenceTrustLevel.AGENTGUARD_SIGNED,
+        EvidenceTrustLevel.DECISIONLOCK_SIGNED,
         EvidenceTrustLevel.PROVIDER_CORRELATED,
     ],
 )
@@ -268,7 +268,7 @@ def test_confirmed_reconciliation_requires_provider_verified_evidence(status, tr
 @pytest.mark.parametrize(
     "trust_level",
     [
-        EvidenceTrustLevel.AGENTGUARD_SIGNED,
+        EvidenceTrustLevel.DECISIONLOCK_SIGNED,
         EvidenceTrustLevel.PROVIDER_CORRELATED,
         EvidenceTrustLevel.PROVIDER_VERIFIED,
     ],

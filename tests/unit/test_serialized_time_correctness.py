@@ -19,16 +19,16 @@ from typing import Iterator
 
 import yaml
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
-from agentguard.adapters.executor import DeterministicFakeExecutor
-from agentguard.adapters.storage.sqlite import (
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.adapters.crypto import Ed25519Signer, Ed25519Verifier
+from decisionlock.adapters.executor import DeterministicFakeExecutor
+from decisionlock.adapters.storage.sqlite import (
     ReconciliationLeaseError,
     SQLiteFencedReconciliationState,
     SQLiteState,
 )
-from agentguard.application import AgentGuardService
-from agentguard.domain import (
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import (
     ActionIntent,
     ApprovalReceipt,
     AuthorityGrant,
@@ -43,16 +43,16 @@ from agentguard.domain import (
     ReversibilityMode,
     VerifiedExecution,
 )
-from agentguard.engine.authority import (
+from decisionlock.engine.authority import (
     AuthorityError,
     issue_root_authority,
     verify_authority_grant_signature,
 )
-from agentguard.engine.canonical import digest
-from agentguard.engine.execution import ExecutionGuardError, prepared_execution_binding_digest
+from decisionlock.engine.canonical import digest
+from decisionlock.engine.execution import ExecutionGuardError, prepared_execution_binding_digest
 
 START = datetime(2026, 9, 2, 20, 0, tzinfo=UTC)
-INTENT_PATH = Path(__file__).parents[2] / "src/agentguard/resources/demo-intent.json"
+INTENT_PATH = Path(__file__).parents[2] / "src/decisionlock/resources/demo-intent.json"
 
 
 class _SignallingConnection(sqlite3.Connection):
@@ -194,7 +194,7 @@ def _evidence() -> ReconciliationEvidence:
 def _temporary_directory() -> tempfile.TemporaryDirectory[str]:
     """A temp directory with no symlinked path component.
 
-    AgentGuard refuses to read or write through symlinked path components, and on
+    DecisionLock refuses to read or write through symlinked path components, and on
     macOS the stdlib temp root is /var/folders/... where /var is a symlink to
     /private/var. Resolving the base keeps the realpath guard satisfied instead of
     weakening it. This is also the convention the rest of the suite follows via
@@ -306,7 +306,7 @@ class SerializedTimeTests(unittest.TestCase):
             {authority_signer.key_id: authority_signer.public_key()}
         )
         broker = MockCredentialBroker()
-        service = AgentGuardService(
+        service = DecisionLockService(
             signer, verifier, state, broker.verifier, authority_verifier=authority_verifier
         )
         scope = CapabilityScope(
@@ -599,7 +599,7 @@ class SerializedTimeTests(unittest.TestCase):
         state = _State(self.path, self.clock)
         signer = Ed25519Signer.generate()
         verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
-        service = AgentGuardService(signer, verifier, state)
+        service = DecisionLockService(signer, verifier, state)
         authority_signer = Ed25519Signer.generate("test-authority")
 
         def issue() -> str:

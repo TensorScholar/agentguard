@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from agentguard.gate import risk_at_or_above, scan_report_fails_gate
-from agentguard.models import RiskLevel, ScanReport, ServerFinding
+from decisionlock.gate import risk_at_or_above, scan_report_fails_gate
+from decisionlock.models import RiskLevel, ScanReport, ServerFinding
 
 
 def test_risk_threshold_ordering() -> None:

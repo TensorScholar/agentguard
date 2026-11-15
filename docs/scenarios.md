@@ -17,7 +17,7 @@ token. A fetched support article contains injected text telling it to also expor
 simply to "correct" the amount. Because the token is broad, one prompt injection reaches everything it
 touches.
 
-**What AgentGuard does.** The decision issues a ceiling scoped to *this* refund — audience, `refund:create`
+**What DecisionLock does.** The decision issues a ceiling scoped to *this* refund — audience, `refund:create`
 scope, tenant `acme`, 60-second TTL. At dispatch the digest is recomputed from the live call, so the
 \$850 variant fails with `execution.arguments_digest_mismatch`. An inflated credential fails with
 `credential.scope_exceeds_decision`. Replaying the consumed receipt fails with
@@ -26,8 +26,8 @@ scope, tenant `acme`, 60-second TTL. At dispatch the digest is recomputed from t
 **Run it.**
 
 ```bash
-agentguard demo --output .agentguard/demo --force
-cat .agentguard/demo/results.json
+decisionlock demo --output .decisionlock/demo --force
+cat .decisionlock/demo/results.json
 ```
 
 ```json
@@ -55,7 +55,7 @@ See [DEMO.md](DEMO.md).
 intermediate result injected from tool output turns that into a bulk delete or a delete against the
 wrong tenant. There is no undo.
 
-**What AgentGuard does.** The same four mechanisms, with the blast-radius limits doing the work: the
+**What DecisionLock does.** The same four mechanisms, with the blast-radius limits doing the work: the
 decision's execution budget caps `deleted_files` and `records_modified`, and those caps are re-checked
 against the live intent at execution time (`_check_budget`, `engine/execution.py:42-58`). Delete is a
 high-impact action, so `production_mutation` in policy routes it to `REQUIRE_APPROVAL` rather than
@@ -63,7 +63,7 @@ auto-allow, and the approval receipt cannot exceed the decision's budget or outl
 
 **Run it.** Model the delete on the refund example — a `production_mutation` capability with
 `deleted_files` and `records_modified` in `effects`, a `require_approval_capabilities` rule, and a
-budget in the policy. The approval step is `agentguard approve`.
+budget in the policy. The approval step is `decisionlock approve`.
 
 **Material:** [`examples/scoped-refund/policy.yaml`](../examples/scoped-refund/policy.yaml) shows the
 approval-gated shape; no separate delete fixture ships yet — see [Phase 2 debt](#phase-2-debt-from-this-scenario-work).
@@ -79,7 +79,7 @@ left but before the response arrived. **The client cannot tell whether it commit
 retries. It now may have moved money twice. This is the failure mode that plain idempotency keys and
 plain audit logs do not solve, because nobody knows what to look up.
 
-**What AgentGuard does.** The effect is bound *before* dispatch. A timeout yields `UNKNOWN`, never a
+**What DecisionLock does.** The effect is bound *before* dispatch. A timeout yields `UNKNOWN`, never a
 guess. `RECONCILE_BEFORE_RETRY` is the default `ReplayDisposition`, so a retry is only permitted once
 stronger evidence exists. Reconciliation never auto-redispatches — it is operator- or
 reconciler-driven.
@@ -93,7 +93,7 @@ python examples/harness/run_demo.py
 
 The harness provider commits the refund, then **drops the connection**. The gateway times out and
 records `UNKNOWN` with `retry_safe: false`; the provider's own ledger shows the refund **did**
-happen. Then `agentguard-reconcile-worker --once` queries the provider's `refund.status` tool and
+happen. Then `decisionlock-reconcile-worker --once` queries the provider's `refund.status` tool and
 resolves the execution to `confirmed_succeeded` at `provider_verified` trust — **without
 redispatching**. The provider ledger still holds exactly two refunds.
 
@@ -101,7 +101,7 @@ redispatching**. The provider ledger still holds exactly two refunds.
 == E. Ambiguous effect stays UNKNOWN and is not retried
    PASS gateway refuses to guess (code -32004, retry_safe false)
    PASS provider actually committed despite the dropped connection -- 1 -> 2
-   PASS AgentGuard recorded the execution as unknown -- exec_... -> unknown
+   PASS DecisionLock recorded the execution as unknown -- exec_... -> unknown
 == F. Reconcile-before-retry via the provider status tool
    PASS resolution is confirmed_succeeded at PROVIDER_VERIFIED trust
    PASS reconciliation did not redispatch -- still exactly 2 refunds

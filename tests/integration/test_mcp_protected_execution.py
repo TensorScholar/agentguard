@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from agentguard.adapters.protocols.mcp import (
+from decisionlock.adapters.protocols.mcp import (
     PROTECTED_OUTCOME_UNKNOWN,
     PROTECTED_PROFILE_UNSUPPORTED,
     PROTECTED_REQUEST_REJECTED,
@@ -21,8 +21,8 @@ from agentguard.adapters.protocols.mcp import (
     MCPServerBinding,
     SessionToolSchemaCache,
 )
-from agentguard.application import AgentGuardService
-from agentguard.domain import (
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import (
     CredentialCeiling,
     Effect,
     ExecutionState,
@@ -30,7 +30,7 @@ from agentguard.domain import (
     Principal,
     ProvenanceLabel,
 )
-from agentguard.domain.policy import (
+from decisionlock.domain.policy import (
     ActionMatcher,
     PolicyDefaults,
     PolicyDocument,
@@ -38,7 +38,7 @@ from agentguard.domain.policy import (
     PolicyRule,
     ProvenanceMatcher,
 )
-from agentguard.ports import AmbiguousExecutionError, DefiniteExecutionFailure
+from decisionlock.ports import AmbiguousExecutionError, DefiniteExecutionFailure
 
 
 def allow_policy(*, credential: bool = False) -> PolicyDocument:
@@ -192,7 +192,7 @@ def test_request_id_reuse_is_always_rejected_and_never_evicted() -> None:
 def test_unsupported_negotiated_profile_blocks_tools_call_before_reservation(
     signer, verifier, state
 ) -> None:
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     proxy = MCPProtectedStdioProxy(
         service, allow_policy(), principal(), "filesystem", ["python", "server.py"]
     )
@@ -243,7 +243,7 @@ def test_schema_wrong_pagination_cursor_invalidates_inventory() -> None:
 
 
 def test_tool_list_change_notification_invalidates_cache(signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     assert proxy.session.schemas.resolve("read_file") is not None
     output = io.BytesIO()
     transport = RelayTransport()
@@ -262,7 +262,7 @@ def test_tool_list_change_notification_invalidates_cache(signer, verifier, state
 def test_dispatch_is_new_request_derived_from_verified_execution_and_omits_progress_token(
     signer, verifier, state
 ) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     transport = FakeTransport({"jsonrpc": "2.0", "result": {"content": [{"text": "ok"}]}})
     message = call_message(extra_params={"_meta": {"progressToken": "client-token"}})
     response = execute_direct(proxy, transport, message)
@@ -285,7 +285,7 @@ def test_dispatch_is_new_request_derived_from_verified_execution_and_omits_progr
 def test_provider_response_is_preserved_except_client_correlation_id(
     signer, verifier, state
 ) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     provider_result = {
         "jsonrpc": "2.0",
         "result": {
@@ -312,13 +312,13 @@ def test_provider_response_is_preserved_except_client_correlation_id(
 def test_provider_results_map_to_durable_terminal_states(
     provider_response, expected_state, signer, verifier, state
 ) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     execute_direct(proxy, FakeTransport(provider_response))
     assert state.list_executions()[0].state == expected_state
 
 
 def test_failed_provider_response_is_not_rewritten_as_retry_safe(signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     response = execute_direct(
         proxy,
         FakeTransport({"jsonrpc": "2.0", "error": {"code": -1, "message": "definite report"}}),
@@ -338,7 +338,7 @@ def test_failed_provider_response_is_not_rewritten_as_retry_safe(signer, verifie
     ],
 )
 def test_ambiguous_transport_failures_map_to_unknown(exc, signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     response = execute_direct(proxy, FakeTransport(exc=exc))
     record = state.list_executions()[0]
     assert record.state == ExecutionState.UNKNOWN
@@ -348,7 +348,7 @@ def test_ambiguous_transport_failures_map_to_unknown(exc, signer, verifier, stat
 def test_definite_prewrite_failure_maps_to_failed_but_not_safe_retry(
     signer, verifier, state
 ) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     response = execute_direct(
         proxy, FakeTransport(exc=DefiniteExecutionFailure("mcp.process_unavailable"))
     )
@@ -358,13 +358,13 @@ def test_definite_prewrite_failure_maps_to_failed_but_not_safe_retry(
 
 
 def test_server_instance_substitution_blocks_dispatch(signer, verifier, state) -> None:
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     proxy = prepared_proxy(service)
     transport = FakeTransport({"jsonrpc": "2.0", "result": {}})
     resolved = proxy.session.schemas.resolve("read_file")
     assert resolved is not None
-    from agentguard.adapters.protocols.mcp.intent import intent_from_tools_call
-    from agentguard.domain import Resource
+    from decisionlock.adapters.protocols.mcp.intent import intent_from_tools_call
+    from decisionlock.domain import Resource
 
     resource = Resource(
         type="mcp_stdio_server",
@@ -399,13 +399,13 @@ def test_server_instance_substitution_blocks_dispatch(signer, verifier, state) -
 
 
 def test_launch_fingerprint_substitution_blocks_dispatch(signer, verifier, state) -> None:
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     proxy = prepared_proxy(service)
     transport = FakeTransport({"jsonrpc": "2.0", "result": {}})
     resolved = proxy.session.schemas.resolve("read_file")
     assert resolved is not None
-    from agentguard.adapters.protocols.mcp.intent import intent_from_tools_call
-    from agentguard.domain import Resource
+    from decisionlock.adapters.protocols.mcp.intent import intent_from_tools_call
+    from decisionlock.domain import Resource
 
     resource = Resource(
         type="mcp_stdio_server",
@@ -442,13 +442,13 @@ def test_launch_fingerprint_substitution_blocks_dispatch(signer, verifier, state
 
 
 def test_final_schema_change_is_detected_before_downstream_write(signer, verifier, state) -> None:
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     proxy = prepared_proxy(service)
     transport = FakeTransport({"jsonrpc": "2.0", "result": {}})
     resolved = proxy.session.schemas.resolve("read_file")
     assert resolved is not None
-    from agentguard.adapters.protocols.mcp.intent import intent_from_tools_call
-    from agentguard.domain import Resource
+    from decisionlock.adapters.protocols.mcp.intent import intent_from_tools_call
+    from decisionlock.domain import Resource
 
     resource = Resource(
         type="mcp_stdio_server",
@@ -487,7 +487,7 @@ def test_final_schema_change_is_detected_before_downstream_write(signer, verifie
 
 def test_credential_bound_call_fails_closed_before_reservation(signer, verifier, state) -> None:
     proxy = prepared_proxy(
-        AgentGuardService(signer, verifier, state), policy=allow_policy(credential=True)
+        DecisionLockService(signer, verifier, state), policy=allow_policy(credential=True)
     )
     response = execute_direct(
         proxy, FakeTransport({"jsonrpc": "2.0", "result": {"secret": "never"}})
@@ -499,7 +499,7 @@ def test_credential_bound_call_fails_closed_before_reservation(signer, verifier,
 
 
 def test_unsupported_execution_metadata_fails_closed(signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     transport = FakeTransport({"jsonrpc": "2.0", "result": {}})
     response = execute_direct(proxy, transport, call_message(extra_params={"task": {"id": "x"}}))
     assert response["error"]["code"] == -32602
@@ -508,7 +508,7 @@ def test_unsupported_execution_metadata_fails_closed(signer, verifier, state) ->
 
 
 def test_custom_method_is_not_passthrough(signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     transport = FakeTransport()
     assert (
         proxy._supported_passthrough(
@@ -521,7 +521,7 @@ def test_custom_method_is_not_passthrough(signer, verifier, state) -> None:
 
 
 def test_batch_containing_tools_call_is_rejected_not_forwarded(signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     transport = FakeTransport()
     output = io.BytesIO()
     workers: list[threading.Thread] = []
@@ -546,7 +546,7 @@ def test_batch_containing_tools_call_is_rejected_not_forwarded(signer, verifier,
 def test_reused_client_id_rejected_by_client_relay_even_after_first_request(
     signer, verifier, state
 ) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     transport = FakeTransport()
     output = io.BytesIO()
     workers: list[threading.Thread] = []
@@ -570,7 +570,7 @@ def test_reused_client_id_rejected_by_client_relay_even_after_first_request(
 
 
 def test_request_registry_exhaustion_fails_closed_in_relay(signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state), capacity=1)
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state), capacity=1)
     transport = FakeTransport()
     output = io.BytesIO()
     done = threading.Event()
@@ -590,7 +590,7 @@ def test_request_registry_exhaustion_fails_closed_in_relay(signer, verifier, sta
 
 
 def test_cancel_notification_translates_client_id_to_execution_id(signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     transport = FakeTransport()
     key = proxy.session.request_key(3)
     proxy.session.bind_execution(key, "exec_bound")
@@ -702,7 +702,7 @@ def test_launch_fingerprint_does_not_expose_secret_flag_value(tmp_path: Path) ->
 
 
 def test_concurrent_duplicate_tools_call_id_dispatches_once(signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     transport = FakeTransport({"jsonrpc": "2.0", "result": {"content": []}})
     output = io.BytesIO()
     workers: list[threading.Thread] = []
@@ -724,7 +724,7 @@ def test_concurrent_duplicate_tools_call_id_dispatches_once(signer, verifier, st
 
 
 def test_top_level_extension_field_fails_closed(signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     transport = FakeTransport({"jsonrpc": "2.0", "result": {}})
     message = call_message()
     message["task"] = {"id": "newer-semantics"}
@@ -734,19 +734,19 @@ def test_top_level_extension_field_fails_closed(signer, verifier, state) -> None
     assert state.list_executions() == ()
 
 
-def test_agentguard_launch_secret_never_enters_execution_state_or_audit(
+def test_decisionlock_launch_secret_never_enters_execution_state_or_audit(
     tmp_path, signer, verifier
 ) -> None:
-    from agentguard.adapters.storage.sqlite import SQLiteState
+    from decisionlock.adapters.storage.sqlite import SQLiteState
 
     state = SQLiteState(tmp_path / "state.sqlite")
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     proxy = MCPProtectedStdioProxy(
         service,
         allow_policy(),
         principal(),
         "filesystem",
-        ["python", "server.py", "--api-key", "agentguard-owned-secret"],
+        ["python", "server.py", "--api-key", "decisionlock-owned-secret"],
     )
     proxy.session.note_initialize_request(1, SUPPORTED_PROTOCOL_PROFILE)
     proxy.session.observe_initialize_response(
@@ -759,8 +759,8 @@ def test_agentguard_launch_secret_never_enters_execution_state_or_audit(
     response = execute_direct(
         proxy, FakeTransport({"jsonrpc": "2.0", "result": {"content": [{"text": "ok"}]}})
     )
-    assert "agentguard-owned-secret" not in json.dumps(response)
-    assert b"agentguard-owned-secret" not in state.path.read_bytes()
+    assert "decisionlock-owned-secret" not in json.dumps(response)
+    assert b"decisionlock-owned-secret" not in state.path.read_bytes()
 
 
 def test_server_binding_rejects_missing_identity_or_command() -> None:
@@ -818,7 +818,7 @@ def test_supported_control_surface_is_reconstructed_and_custom_fields_are_reject
     signer, verifier, state
 ) -> None:
     proxy = MCPProtectedStdioProxy(
-        AgentGuardService(signer, verifier, state),
+        DecisionLockService(signer, verifier, state),
         allow_policy(),
         principal(),
         "filesystem",
@@ -894,7 +894,7 @@ def test_transport_prewrite_dead_process_and_timeout_after_write() -> None:
 
 
 def test_proxy_rejects_invalid_settings_and_is_single_launch(signer, verifier, state) -> None:
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     with pytest.raises(ValueError, match="server command"):
         MCPProtectedStdioProxy(service, allow_policy(), principal(), "server", [])
     with pytest.raises(ValueError, match="execution timeout"):
@@ -913,7 +913,7 @@ def test_proxy_rejects_invalid_settings_and_is_single_launch(signer, verifier, s
 
 
 def test_stdio_provider_result_with_finite_floats(signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     transport = FakeTransport(
         {"jsonrpc": "2.0", "result": {"score": 0.5, "price": 12.34, "ratio": 1e-6}}
     )
@@ -930,7 +930,7 @@ def test_stdio_provider_result_with_finite_floats(signer, verifier, state) -> No
 
 
 def test_stdio_digest_failure_maintains_caller_ledger_consistency(signer, verifier, state) -> None:
-    proxy = prepared_proxy(AgentGuardService(signer, verifier, state))
+    proxy = prepared_proxy(DecisionLockService(signer, verifier, state))
     transport = FakeTransport({"jsonrpc": "2.0", "result": {"non_finite": float("nan")}})
     response = execute_direct(proxy, transport, call_message(request_id=102))
     assert "error" in response

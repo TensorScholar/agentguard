@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentguard.secrets import find_secrets, redact_text
+from decisionlock.secrets import find_secrets, redact_text
 
 
 def test_redacts_common_token_shapes() -> None:

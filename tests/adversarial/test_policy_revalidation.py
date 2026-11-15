@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.storage.sqlite import SQLiteState
-from agentguard.domain import CredentialRequest
-from agentguard.engine.execution import ExecutionGuardError, preflight_execution
-from agentguard.engine.policy import evaluate_policy
-from agentguard.engine.receipts import issue_decision_receipt
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.adapters.storage.sqlite import SQLiteState
+from decisionlock.domain import CredentialRequest
+from decisionlock.engine.execution import ExecutionGuardError, preflight_execution
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.engine.receipts import issue_decision_receipt
 
 
 def _receipt_and_grant(intent, policy, signer):

@@ -86,12 +86,12 @@ jobs:
           set -euo pipefail
           # The build backend is fetched from the network during the build. Pin it
           # by hash so the build does not depend on whatever the index serves.
-          python -m venv /tmp/agentguard-build-venv
-          /tmp/agentguard-build-venv/bin/python -m pip install --upgrade pip
-          /tmp/agentguard-build-venv/bin/python -m pip install \
+          python -m venv /tmp/decisionlock-build-venv
+          /tmp/decisionlock-build-venv/bin/python -m pip install --upgrade pip
+          /tmp/decisionlock-build-venv/bin/python -m pip install \
             --require-hashes -r requirements/build-hashed.txt
           # The pinned backend must be the one pyproject declares.
-          /tmp/agentguard-build-venv/bin/python - <<'PY'
+          /tmp/decisionlock-build-venv/bin/python - <<'PY'
           import pathlib, re, tomllib
           import setuptools
           spec = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
@@ -109,11 +109,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          /tmp/agentguard-build-venv/bin/python -m pip install build twine
+          /tmp/decisionlock-build-venv/bin/python -m pip install build twine
           export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
           rm -rf dist dist-a dist-b release
-          /tmp/agentguard-build-venv/bin/python -m build --no-isolation --outdir dist-a
-          /tmp/agentguard-build-venv/bin/python -m build --no-isolation --outdir dist-b
+          /tmp/decisionlock-build-venv/bin/python -m build --no-isolation --outdir dist-a
+          /tmp/decisionlock-build-venv/bin/python -m build --no-isolation --outdir dist-b
 
           WHEEL_A="$(find dist-a -maxdepth 1 -name '*.whl' -print -quit)"
           WHEEL_B="$(find dist-b -maxdepth 1 -name '*.whl' -print -quit)"
@@ -122,62 +122,62 @@ jobs:
           test -n "$WHEEL_A" && test -n "$WHEEL_B" && test -n "$SDIST_A" && test -n "$SDIST_B"
 
           cmp "$WHEEL_A" "$WHEEL_B"
-          python scripts/normalize_sdist.py "$SDIST_A" /tmp/agentguard-sdist-a.tar.gz
-          python scripts/normalize_sdist.py "$SDIST_B" /tmp/agentguard-sdist-b.tar.gz
-          cmp /tmp/agentguard-sdist-a.tar.gz /tmp/agentguard-sdist-b.tar.gz
+          python scripts/normalize_sdist.py "$SDIST_A" /tmp/decisionlock-sdist-a.tar.gz
+          python scripts/normalize_sdist.py "$SDIST_B" /tmp/decisionlock-sdist-b.tar.gz
+          cmp /tmp/decisionlock-sdist-a.tar.gz /tmp/decisionlock-sdist-b.tar.gz
 
           mkdir -p dist release
           cp "$WHEEL_A" dist/
-          cp /tmp/agentguard-sdist-a.tar.gz "dist/$(basename "$SDIST_A")"
+          cp /tmp/decisionlock-sdist-a.tar.gz "dist/$(basename "$SDIST_A")"
           python -m twine check dist/*
-          python scripts/generate_sbom.py --output release/agentguard.cdx.json
+          python scripts/generate_sbom.py --output release/decisionlock.cdx.json
           python scripts/generate_release_manifest.py \
             --dist dist \
             --commit "$GITHUB_SHA" \
             --output release/release-manifest.json
-          sha256sum dist/* release/agentguard.cdx.json release/release-manifest.json \
+          sha256sum dist/* release/decisionlock.cdx.json release/release-manifest.json \
             > release/SHA256SUMS
       - name: Base-wheel clean-install smoke
         shell: bash
         run: |
           set -euo pipefail
           WHEEL="$(realpath "$(find dist -maxdepth 1 -name '*.whl' -print -quit)")"
-          python -m venv /tmp/agentguard-wheel-smoke
-          /tmp/agentguard-wheel-smoke/bin/python -m pip install "$WHEEL"
-          /tmp/agentguard-wheel-smoke/bin/agentguard --version
-          /tmp/agentguard-wheel-smoke/bin/agentguard --help >/dev/null
-          /tmp/agentguard-wheel-smoke/bin/agentguard-mcp-http --help >/dev/null
-          /tmp/agentguard-wheel-smoke/bin/agentguard-reconcile --help >/dev/null
-          /tmp/agentguard-wheel-smoke/bin/agentguard-reconcile-worker --help >/dev/null
-          /tmp/agentguard-wheel-smoke/bin/agentguard demo --output /tmp/agentguard-demo
-          /tmp/agentguard-wheel-smoke/bin/agentguard evidence-verify /tmp/agentguard-demo/evidence
-          /tmp/agentguard-wheel-smoke/bin/python -m pip check
+          python -m venv /tmp/decisionlock-wheel-smoke
+          /tmp/decisionlock-wheel-smoke/bin/python -m pip install "$WHEEL"
+          /tmp/decisionlock-wheel-smoke/bin/decisionlock --version
+          /tmp/decisionlock-wheel-smoke/bin/decisionlock --help >/dev/null
+          /tmp/decisionlock-wheel-smoke/bin/decisionlock-mcp-http --help >/dev/null
+          /tmp/decisionlock-wheel-smoke/bin/decisionlock-reconcile --help >/dev/null
+          /tmp/decisionlock-wheel-smoke/bin/decisionlock-reconcile-worker --help >/dev/null
+          /tmp/decisionlock-wheel-smoke/bin/decisionlock demo --output /tmp/decisionlock-demo
+          /tmp/decisionlock-wheel-smoke/bin/decisionlock evidence-verify /tmp/decisionlock-demo/evidence
+          /tmp/decisionlock-wheel-smoke/bin/python -m pip check
       - name: HTTP-extra wheel smoke
         shell: bash
         run: |
           set -euo pipefail
           WHEEL="$(realpath "$(find dist -maxdepth 1 -name '*.whl' -print -quit)")"
-          python -m venv /tmp/agentguard-http-wheel-smoke
-          /tmp/agentguard-http-wheel-smoke/bin/python -m pip install "agentguard[http] @ file://$WHEEL"
-          /tmp/agentguard-http-wheel-smoke/bin/agentguard-mcp-http --help >/dev/null
-          /tmp/agentguard-http-wheel-smoke/bin/agentguard-reconcile --help >/dev/null
-          /tmp/agentguard-http-wheel-smoke/bin/agentguard-reconcile-worker --help >/dev/null
-          /tmp/agentguard-http-wheel-smoke/bin/python -m agentguard.http_cli --help >/dev/null
-          /tmp/agentguard-http-wheel-smoke/bin/python -m pip check
+          python -m venv /tmp/decisionlock-http-wheel-smoke
+          /tmp/decisionlock-http-wheel-smoke/bin/python -m pip install "decisionlock[http] @ file://$WHEEL"
+          /tmp/decisionlock-http-wheel-smoke/bin/decisionlock-mcp-http --help >/dev/null
+          /tmp/decisionlock-http-wheel-smoke/bin/decisionlock-reconcile --help >/dev/null
+          /tmp/decisionlock-http-wheel-smoke/bin/decisionlock-reconcile-worker --help >/dev/null
+          /tmp/decisionlock-http-wheel-smoke/bin/python -m decisionlock.http_cli --help >/dev/null
+          /tmp/decisionlock-http-wheel-smoke/bin/python -m pip check
       - name: Container smoke
         shell: bash
         run: |
           set -euo pipefail
-          docker build --tag agentguard-ci .
-          test "$(docker run --rm --entrypoint id agentguard-ci -u)" = "10001"
-          docker run --rm agentguard-ci --version
-          docker run --rm --entrypoint agentguard-mcp-http agentguard-ci --help >/dev/null
-          docker run --rm --entrypoint python agentguard-ci \
-            -c 'import httpx, starlette, uvicorn; import agentguard; print(agentguard.__version__)'
+          docker build --tag decisionlock-ci .
+          test "$(docker run --rm --entrypoint id decisionlock-ci -u)" = "10001"
+          docker run --rm decisionlock-ci --version
+          docker run --rm --entrypoint decisionlock-mcp-http decisionlock-ci --help >/dev/null
+          docker run --rm --entrypoint python decisionlock-ci \
+            -c 'import httpx, starlette, uvicorn; import decisionlock; print(decisionlock.__version__)'
       - name: Upload release-candidate artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: agentguard-release-candidate
+          name: decisionlock-release-candidate
           path: |
             dist/*
             release/*

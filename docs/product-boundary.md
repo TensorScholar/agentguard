@@ -1,17 +1,17 @@
 # Product Boundary & Architecture
 
-AgentGuard is a **decision-bound credential and execution-evidence layer** for high-stakes MCP tool
+DecisionLock is a **decision-bound credential and execution-evidence layer** for high-stakes MCP tool
 calls. It sits between an agent runtime and a tool executor and does four things: it bounds the
 credential to the authorization, revalidates the authorization against the bytes actually dispatched,
 binds the external effect before it happens, and produces evidence a third party can verify offline.
 
-> **Product thesis.** AgentGuard protects high-stakes MCP tool calls by binding a short-lived,
+> **Product thesis.** DecisionLock protects high-stakes MCP tool calls by binding a short-lived,
 > decision-scoped credential ceiling to a signed authorization, resolving the actual secret only at the
 > last moment, preventing replay and argument mutation, and producing independently verifiable evidence
 > of what was authorized versus what was observed — especially for actions that can leave ambiguous
 > external effects.
 
-This document formalizes the boundary separating AgentGuard from adjacent systems. AgentGuard operates
+This document formalizes the boundary separating DecisionLock from adjacent systems. DecisionLock operates
 cooperatively with them across distinct domains rather than replacing them.
 
 ## What this release line leads with
@@ -34,7 +34,7 @@ supported. It is not the product and no claim here depends on it. See the README
 Not roadmap items; boundaries:
 
 - **Multi-host, HA, or distributed consensus.** Single-host multi-process over local SQLite only.
-- **Issuing or verifying identity.** AgentGuard binds identity a trusted integration supplies.
+- **Issuing or verifying identity.** DecisionLock binds identity a trusted integration supplies.
 - **Generic policy-gateway competition.** No policy authoring, simulation, or content filtering.
 - **Secret storage or token minting.** One environment variable, read at dispatch, never persisted.
 - **Process isolation, filesystem MAC, or network egress control.**
@@ -64,7 +64,7 @@ Not roadmap items; boundaries:
                                     │  [Authenticated Principal Context]
                                     ▼
 ==========================================================================
-│  RUNTIME ACTION INTEGRITY LAYER (AgentGuard)                           │
+│  RUNTIME ACTION INTEGRITY LAYER (DecisionLock)                           │
 │                                                                        │
 │  • Normalizes proposed calls into versioned ActionIntent schemas       │
 │  • Deterministic Policy v2 evaluation (default-deny, blast-radius)     │
@@ -110,28 +110,28 @@ Not roadmap items; boundaries:
 
 ## Detailed Boundary Specifications
 
-### 1. Agent Frameworks & Orchestrators vs. AgentGuard
+### 1. Agent Frameworks & Orchestrators vs. DecisionLock
 - **Agent Frameworks (e.g., LangChain, AutoGen, CrewAI):** Own cognitive architecture, prompt engineering, context management, and deciding *which* tool to call.
-- **AgentGuard:** Treats the agent runtime as an **untrusted proposal source** (independent of any specific framework). It does not participate in model evaluation or planning; it deterministically governs whether a proposed action is authorized, credentialed, and untampered before execution.
+- **DecisionLock:** Treats the agent runtime as an **untrusted proposal source** (independent of any specific framework). It does not participate in model evaluation or planning; it deterministically governs whether a proposed action is authorized, credentialed, and untampered before execution.
 
-### 2. Prompt-Level Safety vs. AgentGuard
+### 2. Prompt-Level Safety vs. DecisionLock
 - **Prompt Safety (e.g., Llama Guard, NeMo Guardrails):** Evaluates natural language text, detecting toxicity, prompt injections, or conversational jailbreak patterns.
-- **AgentGuard:** Operates on **structured execution contracts** at the transport and API boundary. It does not inspect natural language conversation semantics; it enforces deterministic schema bounds, cryptographic parameter digests, credential downscoping, and replay prevention.
+- **DecisionLock:** Operates on **structured execution contracts** at the transport and API boundary. It does not inspect natural language conversation semantics; it enforces deterministic schema bounds, cryptographic parameter digests, credential downscoping, and replay prevention.
 
-### 3. Workload Identity vs. AgentGuard
+### 3. Workload Identity vs. DecisionLock
 - **Identity Systems (e.g., SPIFFE, OIDC, IAM):** Issue cryptographic assertions verifying *who* or *what service* is calling.
-- **AgentGuard:** Consumes verified identity tokens through protocol adapters and binds them into normalized `ActionIntent` principals. AgentGuard does not issue root identity proofs; it enforces policy constraints conditioned on those verified identities.
+- **DecisionLock:** Consumes verified identity tokens through protocol adapters and binds them into normalized `ActionIntent` principals. DecisionLock does not issue root identity proofs; it enforces policy constraints conditioned on those verified identities.
 
-### 4. Secret Management vs. AgentGuard
+### 4. Secret Management vs. DecisionLock
 - **Secret Vaults (e.g., HashiCorp Vault, AWS Secrets Manager, KMS):** Own enterprise secret storage, key rotation, and hardware-backed isolation.
-- **AgentGuard:** Enforces **credential ceilings** and late secret resolution. It ensures that a credential request matches the signed authorization decision, resolves the secret late via provider-neutral adapters immediately prior to execution, and ensures raw secrets never touch durable decision receipts, external bindings, or audit ledgers.
-- **Explicit limit:** the current source is one environment variable. Because a static secret cannot be attenuated, AgentGuard requires the requested scope set to **exactly** equal the configured profile's scopes rather than claiming least privilege it cannot enforce at the provider (`adapters/broker/production.py:250-252`). No token minting, no vault, no rotation. See [Credential Contract](credential-contract.md#what-is-still-missing).
+- **DecisionLock:** Enforces **credential ceilings** and late secret resolution. It ensures that a credential request matches the signed authorization decision, resolves the secret late via provider-neutral adapters immediately prior to execution, and ensures raw secrets never touch durable decision receipts, external bindings, or audit ledgers.
+- **Explicit limit:** the current source is one environment variable. Because a static secret cannot be attenuated, DecisionLock requires the requested scope set to **exactly** equal the configured profile's scopes rather than claiming least privilege it cannot enforce at the provider (`adapters/broker/production.py:250-252`). No token minting, no vault, no rotation. See [Credential Contract](credential-contract.md#what-is-still-missing).
 
-### 5. Operating System & Network Infrastructure vs. AgentGuard
+### 5. Operating System & Network Infrastructure vs. DecisionLock
 - **Infrastructure Sandboxing (e.g., Containers, gVisor, eBPF, Firecracker, Linux MAC):** Owns process isolation, memory safety, CPU limits, and network egress firewalls.
-- **AgentGuard:** Operates within user space as an application/service-level integrity layer. It relies on deployment infrastructure for host-level isolation, filesystem permissions (`0600`), and secure network routing. AgentGuard does not provide isolation and does not close alternate-path bypasses.
+- **DecisionLock:** Operates within user space as an application/service-level integrity layer. It relies on deployment infrastructure for host-level isolation, filesystem permissions (`0600`), and secure network routing. DecisionLock does not provide isolation and does not close alternate-path bypasses.
 
-### 6. Observability & SIEM vs. AgentGuard
+### 6. Observability & SIEM vs. DecisionLock
 - **SIEM & Centralized Logging (e.g., Splunk, Datadog, OpenTelemetry):** Long-term multi-system event correlation, visualization, and organization-wide alerting.
-- **AgentGuard:** Generates a local, tamper-evident, hash-chained ledger and portable verifiable evidence bundles (with optional cryptographic attestations). Exported checkpoints can be forwarded to independently controlled external storage or SIEMs for tamper detection.
+- **DecisionLock:** Generates a local, tamper-evident, hash-chained ledger and portable verifiable evidence bundles (with optional cryptographic attestations). Exported checkpoints can be forwarded to independently controlled external storage or SIEMs for tamper detection.
 

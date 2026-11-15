@@ -3,10 +3,10 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
-from agentguard.adapters.storage.sqlite import (
+from decisionlock.adapters.storage.sqlite import (
     SQLiteFencedReconciliationState as _SQLiteFencedReconciliationState,
 )
-from agentguard.domain import (
+from decisionlock.domain import (
     EvidenceTrustLevel,
     ReconciliationEvidence,
     ReconciliationStatus,
@@ -125,7 +125,7 @@ def test_terminal_resolution_is_not_downgraded_by_unknown_evidence(tmp_path) -> 
     assert len(state.list_execution_resolutions("exec_semantics")) == 1
 
 
-def test_conflicting_terminal_provider_evidence_becomes_agentguard_conflict(tmp_path) -> None:
+def test_conflicting_terminal_provider_evidence_becomes_decisionlock_conflict(tmp_path) -> None:
     state = SQLiteFencedReconciliationState(tmp_path / "state.sqlite")
     _insert_unknown(state.path)
     succeeded = _evidence(ReconciliationStatus.CONFIRMED_SUCCEEDED, "6")
@@ -147,8 +147,8 @@ def test_conflicting_terminal_provider_evidence_becomes_agentguard_conflict(tmp_
 
     assert first.status == ReconciliationStatus.CONFIRMED_SUCCEEDED
     assert conflict.status == ReconciliationStatus.CONFLICT
-    assert conflict.source == "agentguard"
-    assert conflict.trust_level == EvidenceTrustLevel.AGENTGUARD_SIGNED
+    assert conflict.source == "decisionlock"
+    assert conflict.trust_level == EvidenceTrustLevel.DECISIONLOCK_SIGNED
     assert conflict.error_code == "reconciliation.conflicting_evidence"
     assert len(state.list_execution_resolutions("exec_semantics")) == 2
 

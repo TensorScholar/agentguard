@@ -1,9 +1,9 @@
 """The research program must not ship inside the product distribution.
 
-``agentguard.research`` is the pre-registered authorization-lineage experiment
+``decisionlock.research`` is the pre-registered authorization-lineage experiment
 retained as the project's research record. Its result is
 ``RESEARCH_CLAIM: NOT_VALIDATED`` and
-``AGENTGUARD_SPECIFIC_DIFFERENTIATION_THESIS: FALSIFIED_WITHIN_PROTOCOL`` (see
+``DECISIONLOCK_SPECIFIC_DIFFERENTIATION_THESIS: FALSIFIED_WITHIN_PROTOCOL`` (see
 docs/research/FREEZE_V2_RESULT_ADJUDICATION.md), so it must not be packaged as
 part of the distributed runtime.
 """
@@ -25,17 +25,17 @@ def _pyproject() -> dict:
 def test_research_package_is_excluded_from_distribution() -> None:
     exclude = _pyproject()["tool"]["setuptools"]["packages"]["find"]["exclude"]
 
-    assert "agentguard.research*" in exclude
+    assert "decisionlock.research*" in exclude
 
 
 def test_research_package_is_present_in_source_checkout() -> None:
     # The record must be retained in the repository; only its distribution is
     # removed. If this fails the exclusion above has also deleted evidence.
-    assert (_REPO_ROOT / "src" / "agentguard" / "research" / "__init__.py").exists()
+    assert (_REPO_ROOT / "src" / "decisionlock" / "research" / "__init__.py").exists()
 
 
 def test_research_directory_is_substantial_enough_to_matter() -> None:
-    research = _REPO_ROOT / "src" / "agentguard" / "research"
+    research = _REPO_ROOT / "src" / "decisionlock" / "research"
     modules = list(research.rglob("*.py"))
     total = sum(len(path.read_text(encoding="utf-8").splitlines()) for path in modules)
 
@@ -46,10 +46,10 @@ def test_research_directory_is_substantial_enough_to_matter() -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "src/agentguard/__init__.py",
-        "src/agentguard/engine/execution.py",
-        "src/agentguard/application/service.py",
-        "src/agentguard/policy.py",
+        "src/decisionlock/__init__.py",
+        "src/decisionlock/engine/execution.py",
+        "src/decisionlock/application/service.py",
+        "src/decisionlock/policy.py",
     ],
 )
 def test_product_modules_do_not_import_research(path: str) -> None:

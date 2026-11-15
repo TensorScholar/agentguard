@@ -6,10 +6,10 @@ from pathlib import Path
 
 from pytest import CaptureFixture
 
-from agentguard.audit import AuditLedger
-from agentguard.cli import main
-from agentguard.models import AuditEvent, ToolCall
-from agentguard.policy import Policy
+from decisionlock.audit import AuditLedger
+from decisionlock.cli import main
+from decisionlock.models import AuditEvent, ToolCall
+from decisionlock.policy import Policy
 
 
 def test_verify_audit_succeeds_for_valid_chain(tmp_path: Path, capsys: CaptureFixture[str]) -> None:

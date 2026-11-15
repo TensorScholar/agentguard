@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from agentguard.domain import (
+from decisionlock.domain import (
     ActionIntent,
     ApprovalReceipt,
     AuditCheckpoint,

@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from agentguard.adapters.protocols.mcp import (
+from decisionlock.adapters.protocols.mcp import (
     AuditLedgerToolSchemaResolver,
     MCPStdioProcessor,
 )
-from agentguard.application import AgentGuardService
-from agentguard.audit import AuditLedger
-from agentguard.engine.canonical import digest
-from agentguard.models import ToolInventoryItem
-from agentguard.ports import ResolvedToolSchema
+from decisionlock.application import DecisionLockService
+from decisionlock.audit import AuditLedger
+from decisionlock.engine.canonical import digest
+from decisionlock.models import ToolInventoryItem
+from decisionlock.ports import ResolvedToolSchema
 
 
 class FixedSchemaResolver:
@@ -68,7 +68,7 @@ def test_v1_inventory_resolves_actual_schema_for_v2(tmp_path):
 
 def test_mcp_denies_unknown_tool(policy, intent, signer, verifier, state):
     processor = MCPStdioProcessor(
-        AgentGuardService(signer, verifier, state),
+        DecisionLockService(signer, verifier, state),
         policy,
         intent.principal,
         "customer-operations",
@@ -76,12 +76,15 @@ def test_mcp_denies_unknown_tool(policy, intent, signer, verifier, state):
     )
     raw = b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"unknown","arguments":{}}}\n'
     result = processor.process_client(raw)
-    assert result.to_server is None and b"AgentGuard denied" in result.to_client
+    assert result.to_server is None and b"DecisionLock denied" in result.to_client
 
 
 def test_mcp_passthrough_non_tool_call(policy, intent, signer, verifier, state):
     processor = MCPStdioProcessor(
-        AgentGuardService(signer, verifier, state), policy, intent.principal, "customer-operations"
+        DecisionLockService(signer, verifier, state),
+        policy,
+        intent.principal,
+        "customer-operations",
     )
     raw = b'{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n'
     assert processor.process_client(raw).to_server == raw
@@ -89,7 +92,10 @@ def test_mcp_passthrough_non_tool_call(policy, intent, signer, verifier, state):
 
 def test_mcp_rejects_notification(policy, intent, signer, verifier, state):
     processor = MCPStdioProcessor(
-        AgentGuardService(signer, verifier, state), policy, intent.principal, "customer-operations"
+        DecisionLockService(signer, verifier, state),
+        policy,
+        intent.principal,
+        "customer-operations",
     )
     raw = b'{"jsonrpc":"2.0","method":"tools/call","params":{"name":"refund.create","arguments":{}}}\n'
     assert b"cannot be audited" in processor.process_client(raw).to_client
@@ -97,24 +103,30 @@ def test_mcp_rejects_notification(policy, intent, signer, verifier, state):
 
 def test_mcp_parse_error(policy, intent, signer, verifier, state):
     processor = MCPStdioProcessor(
-        AgentGuardService(signer, verifier, state), policy, intent.principal, "customer-operations"
+        DecisionLockService(signer, verifier, state),
+        policy,
+        intent.principal,
+        "customer-operations",
     )
     assert b"parse error" in processor.process_client(b"not-json\n").to_client
 
 
 def test_mcp_invalid_params(policy, intent, signer, verifier, state):
     processor = MCPStdioProcessor(
-        AgentGuardService(signer, verifier, state), policy, intent.principal, "customer-operations"
+        DecisionLockService(signer, verifier, state),
+        policy,
+        intent.principal,
+        "customer-operations",
     )
     raw = b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":[]}\n'
     assert b"params must be an object" in processor.process_client(raw).to_client
 
 
 def test_mcp_observe_mode_passes_denied_action(policy, intent, signer, verifier, state):
-    from agentguard.domain import EnforcementMode
+    from decisionlock.domain import EnforcementMode
 
     processor = MCPStdioProcessor(
-        AgentGuardService(signer, verifier, state),
+        DecisionLockService(signer, verifier, state),
         policy,
         intent.principal,
         "customer-operations",
@@ -127,7 +139,7 @@ def test_mcp_observe_mode_passes_denied_action(policy, intent, signer, verifier,
 
 def test_mcp_credential_bound_action_requires_executor(policy, intent, signer, verifier, state):
     processor = MCPStdioProcessor(
-        AgentGuardService(signer, verifier, state),
+        DecisionLockService(signer, verifier, state),
         policy,
         intent.principal,
         "customer-operations",
@@ -140,8 +152,8 @@ def test_mcp_credential_bound_action_requires_executor(policy, intent, signer, v
 
 
 def test_mcp_allows_policy_without_credential(intent, signer, verifier, state):
-    from agentguard.domain import Effect, PolicyDocument, ProvenanceLabel
-    from agentguard.domain.policy import (
+    from decisionlock.domain import Effect, PolicyDocument, ProvenanceLabel
+    from decisionlock.domain.policy import (
         ActionMatcher,
         PolicyDefaults,
         PolicyMetadata,
@@ -163,7 +175,7 @@ def test_mcp_allows_policy_without_credential(intent, signer, verifier, state):
         ),
     )
     processor = MCPStdioProcessor(
-        AgentGuardService(signer, verifier, state),
+        DecisionLockService(signer, verifier, state),
         policy,
         intent.principal,
         "filesystem",
@@ -175,7 +187,7 @@ def test_mcp_allows_policy_without_credential(intent, signer, verifier, state):
 
 def test_mcp_requires_approval_when_schema_unavailable(policy, intent, signer, verifier, state):
     processor = MCPStdioProcessor(
-        AgentGuardService(signer, verifier, state),
+        DecisionLockService(signer, verifier, state),
         policy,
         intent.principal,
         "filesystem",
@@ -191,7 +203,7 @@ def test_mcp_rejects_disabled_schema_freshness(policy, intent, signer, verifier,
 
     with pytest.raises(ValueError, match="greater than zero"):
         MCPStdioProcessor(
-            AgentGuardService(signer, verifier, state),
+            DecisionLockService(signer, verifier, state),
             policy,
             intent.principal,
             "filesystem",
@@ -202,7 +214,7 @@ def test_mcp_rejects_disabled_schema_freshness(policy, intent, signer, verifier,
 
 def test_mcp_requires_approval_when_schema_stale(policy, intent, signer, verifier, state):
     processor = MCPStdioProcessor(
-        AgentGuardService(signer, verifier, state),
+        DecisionLockService(signer, verifier, state),
         policy,
         intent.principal,
         "filesystem",
@@ -218,7 +230,7 @@ def test_mcp_requires_approval_when_schema_stale(policy, intent, signer, verifie
 
 def test_mcp_requires_approval_when_schema_digest_changed(policy, intent, signer, verifier, state):
     processor = MCPStdioProcessor(
-        AgentGuardService(signer, verifier, state),
+        DecisionLockService(signer, verifier, state),
         policy,
         intent.principal,
         "filesystem",
@@ -229,8 +241,8 @@ def test_mcp_requires_approval_when_schema_digest_changed(policy, intent, signer
 
 
 def test_mcp_binds_resolved_schema_to_authorized_intent(intent, signer, verifier, state):
-    from agentguard.domain import Effect, PolicyDocument, ProvenanceLabel
-    from agentguard.domain.policy import (
+    from decisionlock.domain import Effect, PolicyDocument, ProvenanceLabel
+    from decisionlock.domain.policy import (
         ActionMatcher,
         PolicyDefaults,
         PolicyMetadata,
@@ -238,7 +250,7 @@ def test_mcp_binds_resolved_schema_to_authorized_intent(intent, signer, verifier
         ProvenanceMatcher,
     )
 
-    class CapturingService(AgentGuardService):
+    class CapturingService(DecisionLockService):
         captured = None
 
         def authorize(self, action_intent, policy, **kwargs):

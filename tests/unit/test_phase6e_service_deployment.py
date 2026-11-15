@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.service_deployment import (
+from decisionlock.service_deployment import (
     ServiceDeploymentError,
     loopback_listener,
     validate_http_service_deployment,
@@ -63,7 +63,7 @@ def test_remote_listener_requires_tls_and_forbids_wildcard_host(tmp_path) -> Non
     key.write_text("key")
 
     with pytest.raises(ServiceDeploymentError, match="service.remote_tls_required"):
-        _validate(host="0.0.0.0", token="secret", allowed_hosts=("agentguard.example",))
+        _validate(host="0.0.0.0", token="secret", allowed_hosts=("decisionlock.example",))
     with pytest.raises(ServiceDeploymentError, match="service.remote_wildcard_host_forbidden"):
         _validate(
             host="0.0.0.0",
@@ -82,7 +82,7 @@ def test_remote_listener_accepts_explicit_authenticated_tls_configuration(tmp_pa
     _validate(
         host="0.0.0.0",
         token="secret",
-        allowed_hosts=("agentguard.example",),
+        allowed_hosts=("decisionlock.example",),
         cert=cert,
         key=key,
     )
@@ -113,7 +113,7 @@ def test_blank_listener_and_blank_remote_token_are_rejected(tmp_path) -> None:
         _validate(
             host="0.0.0.0",
             token="   ",
-            allowed_hosts=("agentguard.example",),
+            allowed_hosts=("decisionlock.example",),
             cert=cert,
             key=key,
         )

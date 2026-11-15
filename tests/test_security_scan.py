@@ -12,7 +12,7 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "security_scan.py"
 
 def _load_security_scan() -> ModuleType:
     spec = importlib.util.spec_from_file_location(
-        "agentguard_security_scan",
+        "decisionlock_security_scan",
         SCRIPT_PATH,
     )
     assert spec is not None

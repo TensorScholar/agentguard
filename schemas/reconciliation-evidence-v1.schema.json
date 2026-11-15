@@ -2,7 +2,7 @@
   "$defs": {
     "EvidenceTrustLevel": {
       "enum": [
-        "agentguard_signed",
+        "decisionlock_signed",
         "provider_correlated",
         "provider_verified"
       ],
@@ -70,7 +70,7 @@
     },
     "trust_level": {
       "$ref": "#/$defs/EvidenceTrustLevel",
-      "default": "agentguard_signed"
+      "default": "decisionlock_signed"
     }
   },
   "required": [

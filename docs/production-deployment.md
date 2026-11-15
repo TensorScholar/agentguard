@@ -1,6 +1,6 @@
 # Production deployment guide
 
-AgentGuard `0.2.0rc4` is a release candidate. This guide describes the validated deployment boundary; it does not certify a deployment as production-ready.
+DecisionLock `0.2.0rc4` is a release candidate. This guide describes the validated deployment boundary; it does not certify a deployment as production-ready.
 
 ## Promotion gate
 
@@ -48,8 +48,8 @@ All coordinating processes must use the same local filesystem database. Do **not
 Install the HTTP extra and inspect the installed service command:
 
 ```bash
-python -m pip install 'agentguard[http]==0.2.0rc4'
-agentguard-mcp-http --help
+python -m pip install 'decisionlock[http]==0.2.0rc4'
+decisionlock-mcp-http --help
 ```
 
 Loopback is the default. A non-loopback listener is rejected unless all of these are configured:
@@ -59,7 +59,7 @@ Loopback is the default. A non-loopback listener is rejected unless all of these
 - both `--tls-certfile` and `--tls-keyfile` referencing existing files;
 - no wildcard Host entry.
 
-If `--require-origin` is enabled, at least one `--allowed-origin` is also required. TLS termination outside the AgentGuard process is not treated as an equivalent trusted-proxy boundary by this CLI.
+If `--require-origin` is enabled, at least one `--allowed-origin` is also required. TLS termination outside the DecisionLock process is not treated as an equivalent trusted-proxy boundary by this CLI.
 
 Service probes:
 
@@ -75,7 +75,7 @@ Do not place provider secret values in policy, durable grants, reconciliation me
 
 ### Reconciliation worker
 
-`agentguard-reconcile-worker` provides background provider reconciliation. Important controls include:
+`decisionlock-reconcile-worker` provides background provider reconciliation. Important controls include:
 
 - `--owner-id` for a stable operator-selected process identity when desired;
 - `--lease-seconds` for ownership expiry;
@@ -84,7 +84,7 @@ Do not place provider secret values in policy, durable grants, reconciliation me
 - `--once` for one bounded pass;
 - `--health-check` for executable durable-state readiness.
 
-Keep lease duration comfortably above the configured provider timeout; the CLI enforces a safety margin. The one-shot `agentguard-reconcile` command participates in the same lease/fencing protocol and cannot silently race an active worker.
+Keep lease duration comfortably above the configured provider timeout; the CLI enforces a safety margin. The one-shot `decisionlock-reconcile` command participates in the same lease/fencing protocol and cannot silently race an active worker.
 
 ### CI agent gateway
 
@@ -102,9 +102,9 @@ Keep lease duration comfortably above the configured provider timeout; the CLI e
 ## Container
 
 ```bash
-docker build -t agentguard:0.2.0rc4 .
-docker run --rm agentguard:0.2.0rc4 --version
-docker run --rm --entrypoint agentguard-mcp-http agentguard:0.2.0rc4 --help
+docker build -t decisionlock:0.2.0rc4 .
+docker run --rm decisionlock:0.2.0rc4 --version
+docker run --rm --entrypoint decisionlock-mcp-http decisionlock:0.2.0rc4 --help
 ```
 
 The image runs as a non-root user and includes the HTTP extra. Mount only required policy/public-key/state paths. Never mount a host Docker socket or a broad home directory into the container.

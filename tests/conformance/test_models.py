@@ -5,7 +5,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from agentguard.domain import ActionIntent, PolicyDocument
+from decisionlock.domain import ActionIntent, PolicyDocument
 
 
 def test_unknown_intent_field_rejected(intent):

@@ -1,6 +1,6 @@
 # Release process
 
-AgentGuard releases are evidence-bound to an exact Git commit. A green development branch does not transfer validation to a later squash/tag unless the required gates run again on the exact final SHA.
+DecisionLock releases are evidence-bound to an exact Git commit. A green development branch does not transfer validation to a later squash/tag unless the required gates run again on the exact final SHA.
 
 ## Canonical sequence
 
@@ -15,7 +15,7 @@ AgentGuard releases are evidence-bound to an exact Git commit. A green developme
 9. Run `twine check` on the retained distributions.
 10. Generate the deterministic CycloneDX SBOM, release manifest bound to the exact commit, and SHA-256 checksum file.
 11. Install the base wheel in a clean virtual environment and smoke the core CLI, reconciliation entrypoints, demo, evidence verification, and `pip check`.
-12. Install the wheel with the `http` extra in a separate clean environment and smoke `agentguard-mcp-http`, reconciliation entrypoints, HTTP module import, and `pip check`.
+12. Install the wheel with the `http` extra in a separate clean environment and smoke `decisionlock-mcp-http`, reconciliation entrypoints, HTTP module import, and `pip check`.
 13. Build the container, prove it runs as the non-root runtime UID, smoke the core CLI, and prove the HTTP dependencies/service entrypoint are installed.
 14. Preserve the release-candidate distributions and release evidence as workflow artifacts.
 15. Run controlled real-MCP interoperability/failure tests for the deployment-supported profiles; keep protocol/server versions pinned in the evidence.
@@ -26,7 +26,7 @@ AgentGuard releases are evidence-bound to an exact Git commit. A green developme
 
 ## Coverage reporting
 
-Coverage uses branch tracing over `src/agentguard` and enforces a combined source threshold of at least 80%. Release evidence should report statement, branch, and combined values distinctly; the combined metric must not be mislabeled as branch coverage.
+Coverage uses branch tracing over `src/decisionlock` and enforces a combined source threshold of at least 80%. Release evidence should report statement, branch, and combined values distinctly; the combined metric must not be mislabeled as branch coverage.
 
 ## Reproducibility and provenance boundaries
 
@@ -36,10 +36,10 @@ Reproducible build checks establish artifact determinism for the validated envir
 
 ### Cryptographic release authenticity vs provenance attestation
 
-AgentGuard enforces a clear separation between maintainer authenticity and independent build provenance:
+DecisionLock enforces a clear separation between maintainer authenticity and independent build provenance:
 
 - `SSH_SIGNED_TAG=RELEASE_SOURCE_ENDORSEMENT`: Maintainer signs the Git release tag (`git tag -s`) to assert source endorsement using a dedicated release-signing key.
-- `SSHSIG_SHA256SUMS=ARTIFACT_AUTHENTICITY_AND_INTEGRITY`: Maintainer signs `release/SHA256SUMS` with OpenSSH SSHSIG (`ssh-keygen -Y sign -n agentguard-release-v1`) to seal the authenticated release artifact/evidence set (all distribution archives in `dist/`, CycloneDX SBOM, and release manifest).
+- `SSHSIG_SHA256SUMS=ARTIFACT_AUTHENTICITY_AND_INTEGRITY`: Maintainer signs `release/SHA256SUMS` with OpenSSH SSHSIG (`ssh-keygen -Y sign -n decisionlock-release-v1`) to seal the authenticated release artifact/evidence set (all distribution archives in `dist/`, CycloneDX SBOM, and release manifest).
 - `REPRODUCIBLE_BUILD_CHECKS=BUILD_REPRODUCIBILITY_EVIDENCE`: Two-pass clean build comparisons prove build determinism in the validated environment.
 - `BUILD_PROVENANCE_ATTESTATION=UNRESOLVED`: True builder provenance requires an attested, unforgeable build identity from an isolated build system.
   - *GitHub Artifact Attestations* (`GITHUB_ARTIFACT_ATTESTATIONS=PLAN_BLOCKED`): Requires GitHub Enterprise Cloud (GHEC) for private repositories.

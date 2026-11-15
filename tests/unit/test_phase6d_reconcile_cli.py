@@ -7,10 +7,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-import agentguard.reconcile_cli as reconcile_cli
-from agentguard.adapters.protocols.mcp import http_server
-from agentguard.adapters.protocols.mcp.modern import MCPHTTPServerBinding
-from agentguard.domain import (
+import decisionlock.reconcile_cli as reconcile_cli
+from decisionlock.adapters.protocols.mcp import http_server
+from decisionlock.adapters.protocols.mcp.modern import MCPHTTPServerBinding
+from decisionlock.domain import (
     ExecutionAttemptIdentity,
     ExternalEffectBinding,
     ExternalOperationIdentity,
@@ -183,13 +183,13 @@ def test_reconcile_cli_wires_operator_profile_closes_sender_and_uses_fence(
     )
     monkeypatch.setattr(reconcile_cli, "Ed25519Verifier", lambda keys: object())
     monkeypatch.setattr(reconcile_cli, "SQLiteFencedReconciliationState", lambda path: state)
-    monkeypatch.setattr(reconcile_cli, "AgentGuardService", lambda *args: service)
+    monkeypatch.setattr(reconcile_cli, "DecisionLockService", lambda *args: service)
     monkeypatch.setattr(http_server, "HTTPXUpstreamSender", FakeSender)
     monkeypatch.setattr(
         sys,
         "argv",
         [
-            "agentguard-reconcile",
+            "decisionlock-reconcile",
             "--execution-id",
             "exec_cli",
             "--state",
@@ -265,13 +265,13 @@ def test_reconcile_cli_supports_disabling_terminal_recheck(tmp_path, monkeypatch
     )
     monkeypatch.setattr(reconcile_cli, "Ed25519Verifier", lambda keys: object())
     monkeypatch.setattr(reconcile_cli, "SQLiteFencedReconciliationState", lambda path: state)
-    monkeypatch.setattr(reconcile_cli, "AgentGuardService", lambda *args: service)
+    monkeypatch.setattr(reconcile_cli, "DecisionLockService", lambda *args: service)
     monkeypatch.setattr(http_server, "HTTPXUpstreamSender", FakeSender)
     monkeypatch.setattr(
         sys,
         "argv",
         [
-            "agentguard-reconcile",
+            "decisionlock-reconcile",
             "--execution-id",
             "exec_cli",
             "--state",

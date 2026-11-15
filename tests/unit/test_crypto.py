@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-import agentguard.adapters.crypto.ed25519 as ed25519_module
-from agentguard.adapters.crypto import (
+import decisionlock.adapters.crypto.ed25519 as ed25519_module
+from decisionlock.adapters.crypto import (
     Ed25519Signer,
     Ed25519Verifier,
     decode_signature,

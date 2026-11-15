@@ -44,7 +44,9 @@ def _validated_components() -> list[dict[str, object]]:
                 "version": version,
                 "purl": f"pkg:pypi/{quote(normalized)}@{quote(version)}",
                 "scope": "required",
-                "properties": [{"name": "agentguard:validation-scope", "value": "direct-runtime"}],
+                "properties": [
+                    {"name": "decisionlock:validation-scope", "value": "direct-runtime"}
+                ],
             }
         )
     return components
@@ -53,7 +55,7 @@ def _validated_components() -> list[dict[str, object]]:
 def build_sbom() -> dict[str, object]:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     components = _validated_components()
-    project_ref = f"pkg:pypi/agentguard@{project['version']}"
+    project_ref = f"pkg:pypi/decisionlock@{project['version']}"
     dependency_refs = [str(component["bom-ref"]) for component in components]
     fingerprint = hashlib.sha256(
         json.dumps([project["version"], dependency_refs], separators=(",", ":")).encode()
@@ -74,7 +76,7 @@ def build_sbom() -> dict[str, object]:
             },
             "properties": [
                 {
-                    "name": "agentguard:sbom-scope",
+                    "name": "decisionlock:sbom-scope",
                     "value": "project plus validated direct runtime dependencies; not transitive",
                 }
             ],
@@ -86,7 +88,7 @@ def build_sbom() -> dict[str, object]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate the deterministic AgentGuard project SBOM"
+        description="Generate the deterministic DecisionLock project SBOM"
     )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()

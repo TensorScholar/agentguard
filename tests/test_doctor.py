@@ -5,8 +5,8 @@ from pathlib import Path
 
 from pytest import CaptureFixture
 
-from agentguard.cli import main
-from agentguard.doctor import run_doctor
+from decisionlock.cli import main
+from decisionlock.doctor import run_doctor
 
 
 def test_run_doctor_reports_required_local_checks(tmp_path: Path) -> None:

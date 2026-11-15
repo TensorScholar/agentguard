@@ -2,7 +2,7 @@
 
 ## Current phase
 
-AgentGuard `v0.2.0rc4` is an engineering-validated **release candidate**. It implements the product
+DecisionLock `v0.2.0rc4` is an engineering-validated **release candidate**. It implements the product
 wedge — decision-bound credential ceilings with late secret resolution, execution-time digest
 revalidation with single-use claim, durable external-effect binding with reconcile-before-retry, and a
 hash-chained ledger with offline-verifiable evidence — behind protected MCP stdio and bounded
@@ -67,9 +67,9 @@ retained advanced surface that no product claim depends on.
 ### CI evidence status
 
 **Green self-hosted validation exists for `0.2.0rc4`.** Two runs, both on runner
-`agentguard-mac-arm64` (macOS / ARM64 / CPython 3.12.10):
-[`36910522462`](https://github.com/TensorScholar/agentguard/actions/runs/36910522462) on commit `0ec42a29`
-(8m52s), and the superseding [`36916055898`](https://github.com/TensorScholar/agentguard/actions/runs/36916055898)
+`decisionlock-mac-arm64` (macOS / ARM64 / CPython 3.12.10):
+[`36910522462`](https://github.com/TensorScholar/decisionlock/actions/runs/36910522462) on commit `0ec42a29`
+(8m52s), and the superseding [`36916055898`](https://github.com/TensorScholar/decisionlock/actions/runs/36916055898)
 on the final branch head `6f071ed` (7m4s). **`36916055898` is the authoritative artifact** — it is the run
 whose evidence reflects the current `HOSTED_CI_REPLACED` wording. Both are recorded:
 
@@ -77,7 +77,7 @@ whose evidence reflects the current `HOSTED_CI_REPLACED` wording. Both are recor
   `mypy --strict`, `coverage` at the 80% combined statement/branch floor, schema drift, architecture,
   secret and static security scans, release metadata, `compileall`
 - dependency security audit (`pip_audit`) — **PASS**
-- AgentGuard MCP security gate — **PASS**
+- DecisionLock MCP security gate — **PASS**
 - evidence completeness gate and artifact upload — **PASS**
 
 The confirmatory research preflight is scoped to
@@ -110,7 +110,7 @@ soak test, and no controlled production pilot.
 - `AG-RPC-001` (Streamable HTTP Boundary) — bounded protected Streamable HTTP service boundary with fail-closed remote-listener requirements;
 - `AG-ARCH-001` (Single-Host Multi-Process Service) — explicit single-host multi-process service/reconciliation topology with transactional lease fencing.
 
-Closing these engineering gaps does **not** imply that AgentGuard is a production-certified distributed service.
+Closing these engineering gaps does **not** imply that DecisionLock is a production-certified distributed service.
 
 ## Remaining promotion debt
 
@@ -122,10 +122,10 @@ Open and visible. Nothing below is claimed as done.
   testing, and a controlled production pilot. This is the real gate.
 - `AG-CI-001` (Hosted and Cross-Platform CI Evidence) — **partially satisfied.** Green **self-hosted**
   validation evidence now exists for the `0.2.0rc4` product line: runs
-  [`36910522462`](https://github.com/TensorScholar/agentguard/actions/runs/36910522462) and the superseding
-  [`36916055898`](https://github.com/TensorScholar/agentguard/actions/runs/36916055898) (commit `6f071ed`),
-  via runner `agentguard-mac-arm64`, where `make check` passed (839 passed, 3 skipped), `pip_audit`
-  passed, and the AgentGuard MCP security gate passed. That is a real engineering signal and it is
+  [`36910522462`](https://github.com/TensorScholar/decisionlock/actions/runs/36910522462) and the superseding
+  [`36916055898`](https://github.com/TensorScholar/decisionlock/actions/runs/36916055898) (commit `6f071ed`),
+  via runner `decisionlock-mac-arm64`, where `make check` passed (839 passed, 3 skipped), `pip_audit`
+  passed, and the DecisionLock MCP security gate passed. That is a real engineering signal and it is
   recorded here rather than claimed vaguely. What remains open:
   - **No green hosted CI.** PR #30 made `ci.yml`, `codeql.yml`, and `security.yml` `workflow_dispatch`-only,
     so hosted CI does not run automatically on pushes or pull requests.
@@ -185,4 +185,4 @@ Production promotion requires all of the following for the **exact release commi
 9. an independent security review and long-duration soak test complete without unresolved critical findings;
 10. a controlled production pilot completes without unresolved critical findings.
 
-Until those gates pass, AgentGuard must be represented as a release candidate.
+Until those gates pass, DecisionLock must be represented as a release candidate.

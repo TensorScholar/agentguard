@@ -43,7 +43,7 @@ def collect_versions(root: Path = ROOT) -> dict[str, str]:
     project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     return {
         "pyproject": str(project["version"]),
-        "runtime": _module_version(root / "src" / "agentguard" / "_version.py"),
+        "runtime": _module_version(root / "src" / "decisionlock" / "_version.py"),
         "citation": _citation_version(root / "CITATION.cff"),
         "changelog": _changelog_version(root / "CHANGELOG.md"),
     }

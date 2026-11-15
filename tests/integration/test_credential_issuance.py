@@ -5,11 +5,11 @@ from threading import Lock
 
 import pytest
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.application import AgentGuardService
-from agentguard.domain import CredentialCeiling, CredentialRequest, Effect
-from agentguard.domain.policy import ActionMatcher, PolicyRule
-from agentguard.engine.credentials import CredentialVerificationError
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import CredentialCeiling, CredentialRequest, Effect
+from decisionlock.domain.policy import ActionMatcher, PolicyRule
+from decisionlock.engine.credentials import CredentialVerificationError
 
 
 class CountingBroker:
@@ -66,7 +66,7 @@ def test_concurrent_single_use_issuance_has_exactly_one_winner(
 ):
     mock = MockCredentialBroker()
     broker = CountingBroker(mock)
-    service = AgentGuardService(signer, verifier, state, mock.verifier)
+    service = DecisionLockService(signer, verifier, state, mock.verifier)
     receipt = service.authorize(intent, policy)
 
     def issue(index: int) -> bool:
@@ -91,7 +91,7 @@ def test_concurrent_single_use_issuance_has_exactly_one_winner(
 def test_approval_maximum_uses_is_consumed_atomically(intent, policy, signer, verifier, state):
     mock = MockCredentialBroker()
     broker = CountingBroker(mock)
-    service = AgentGuardService(signer, verifier, state, mock.verifier)
+    service = DecisionLockService(signer, verifier, state, mock.verifier)
     receipt = service.authorize(intent, _approval_policy(policy, single_use=False))
     approval = service.approve(
         intent,
@@ -124,7 +124,7 @@ def test_approval_maximum_uses_is_consumed_atomically(intent, policy, signer, ve
 def test_failed_single_use_broker_attempt_is_terminal(intent, policy, signer, verifier, state):
     mock = MockCredentialBroker()
     broker = CountingBroker(mock, fail=True)
-    service = AgentGuardService(signer, verifier, state, mock.verifier)
+    service = DecisionLockService(signer, verifier, state, mock.verifier)
     receipt = service.authorize(intent, policy)
 
     with pytest.raises(RuntimeError, match="simulated broker failure"):
@@ -146,7 +146,7 @@ def test_failed_single_use_broker_attempt_is_terminal(intent, policy, signer, ve
 
 def test_service_rejects_tampered_broker_grant(intent, policy, signer, verifier, state):
     mock = MockCredentialBroker()
-    service = AgentGuardService(signer, verifier, state, mock.verifier)
+    service = DecisionLockService(signer, verifier, state, mock.verifier)
     receipt = service.authorize(intent, policy)
 
     class TamperingBroker:

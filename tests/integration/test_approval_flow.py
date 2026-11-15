@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.executor import DeterministicFakeExecutor
-from agentguard.application import AgentGuardService
-from agentguard.domain import CredentialCeiling, CredentialRequest, Effect
-from agentguard.domain.policy import ActionMatcher, PolicyRule
-from agentguard.engine.execution import ExecutionGuardError
-from agentguard.engine.receipts import ReceiptVerificationError, verify_approval_receipt
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.adapters.executor import DeterministicFakeExecutor
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import CredentialCeiling, CredentialRequest, Effect
+from decisionlock.domain.policy import ActionMatcher, PolicyRule
+from decisionlock.engine.execution import ExecutionGuardError
+from decisionlock.engine.receipts import ReceiptVerificationError, verify_approval_receipt
 
 
 def approval_policy(policy):
@@ -31,7 +31,7 @@ def approval_policy(policy):
 
 def test_signed_approval_enables_broker_and_execution(intent, policy, signer, verifier, state):
     broker = MockCredentialBroker()
-    service = AgentGuardService(signer, verifier, state, broker.verifier)
+    service = DecisionLockService(signer, verifier, state, broker.verifier)
     receipt = service.authorize(intent, approval_policy(policy))
     assert receipt.effect == Effect.REQUIRE_APPROVAL
     approval = service.approve(
@@ -65,7 +65,7 @@ def test_signed_approval_enables_broker_and_execution(intent, policy, signer, ve
 
 
 def test_missing_approval_is_rejected(intent, policy, signer, verifier, state):
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     receipt = service.authorize(intent, approval_policy(policy))
     with pytest.raises(ExecutionGuardError, match="approval_missing"):
         service.guard_execution(
@@ -77,7 +77,7 @@ def test_missing_approval_is_rejected(intent, policy, signer, verifier, state):
 
 
 def test_approval_argument_substitution_rejected(intent, policy, signer, verifier, state):
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     receipt = service.authorize(intent, approval_policy(policy))
     approval = service.approve(intent, receipt, approver_subject="security", reason="approved")
     changed = intent.model_copy(update={"arguments": {**intent.arguments, "amount_minor": 9999}})
@@ -86,7 +86,7 @@ def test_approval_argument_substitution_rejected(intent, policy, signer, verifie
 
 
 def test_tampered_approval_rejected(intent, policy, signer, verifier, state):
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     receipt = service.authorize(intent, approval_policy(policy))
     approval = service.approve(intent, receipt, approver_subject="security", reason="approved")
     tampered = approval.model_copy(update={"reason": "changed"})
@@ -96,7 +96,7 @@ def test_tampered_approval_rejected(intent, policy, signer, verifier, state):
 
 def test_approval_binding_required_for_credential(intent, policy, signer, verifier, state):
     broker = MockCredentialBroker()
-    service = AgentGuardService(signer, verifier, state, broker.verifier)
+    service = DecisionLockService(signer, verifier, state, broker.verifier)
     receipt = service.authorize(intent, approval_policy(policy))
     approval = service.approve(intent, receipt, approver_subject="security", reason="approved")
     ceiling = receipt.credential_ceiling

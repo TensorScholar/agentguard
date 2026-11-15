@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentguard.adapters.protocols.mcp.stdio import (
+from decisionlock.adapters.protocols.mcp.stdio import (
     MCPStdioProxy,
     ProcessResult,
     _bounded_lines,
@@ -123,10 +123,10 @@ def test_proxy_round_trip_and_hanging_server_shutdown(monkeypatch: pytest.Monkey
     incoming = io.BytesIO(b'{"jsonrpc":"2.0"}\n')
     outgoing = io.BytesIO()
     monkeypatch.setattr(
-        "agentguard.adapters.protocols.mcp.stdio.sys.stdin", SimpleNamespace(buffer=incoming)
+        "decisionlock.adapters.protocols.mcp.stdio.sys.stdin", SimpleNamespace(buffer=incoming)
     )
     monkeypatch.setattr(
-        "agentguard.adapters.protocols.mcp.stdio.sys.stdout", SimpleNamespace(buffer=outgoing)
+        "decisionlock.adapters.protocols.mcp.stdio.sys.stdout", SimpleNamespace(buffer=outgoing)
     )
     echo = [
         sys.executable,
@@ -140,7 +140,7 @@ def test_proxy_round_trip_and_hanging_server_shutdown(monkeypatch: pytest.Monkey
     assert outgoing.getvalue() == b'{"jsonrpc":"2.0"}\n'
 
     monkeypatch.setattr(
-        "agentguard.adapters.protocols.mcp.stdio.sys.stdin",
+        "decisionlock.adapters.protocols.mcp.stdio.sys.stdin",
         SimpleNamespace(buffer=io.BytesIO(b"")),
     )
     sleeper = [sys.executable, "-c", "import time; time.sleep(30)"]
@@ -153,11 +153,11 @@ def test_proxy_returns_when_server_exits_while_client_is_blocked(
     release = threading.Event()
     output = io.BytesIO()
     monkeypatch.setattr(
-        "agentguard.adapters.protocols.mcp.stdio.sys.stdin",
+        "decisionlock.adapters.protocols.mcp.stdio.sys.stdin",
         SimpleNamespace(buffer=BlockingInput(release)),
     )
     monkeypatch.setattr(
-        "agentguard.adapters.protocols.mcp.stdio.sys.stdout", SimpleNamespace(buffer=output)
+        "decisionlock.adapters.protocols.mcp.stdio.sys.stdout", SimpleNamespace(buffer=output)
     )
     try:
         assert proxy(command=[sys.executable, "-c", "pass"]).run() == 0

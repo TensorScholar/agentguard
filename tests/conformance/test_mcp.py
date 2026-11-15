@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentguard.adapters.protocols.mcp import (
+from decisionlock.adapters.protocols.mcp import (
     HTTPTransportSecurityError,
     MCPProtocolError,
     parse_message,

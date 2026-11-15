@@ -5,19 +5,19 @@ from datetime import UTC, datetime
 
 from typer.testing import CliRunner
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
-from agentguard.adapters.executor import DeterministicFakeExecutor
-from agentguard.adapters.storage.sqlite import SQLiteState
-from agentguard.application import AgentGuardService
-from agentguard.cli.app import app
-from agentguard.domain import (
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.adapters.crypto import Ed25519Signer, Ed25519Verifier
+from decisionlock.adapters.executor import DeterministicFakeExecutor
+from decisionlock.adapters.storage.sqlite import SQLiteState
+from decisionlock.application import DecisionLockService
+from decisionlock.cli.app import app
+from decisionlock.domain import (
     CredentialRequest,
     EvidenceTrustLevel,
     ReconciliationEvidence,
     ReconciliationStatus,
 )
-from agentguard.engine.canonical import digest
+from decisionlock.engine.canonical import digest
 
 runner = CliRunner()
 
@@ -27,7 +27,7 @@ def _create_unknown(intent, policy, workspace, state_path):
     verifier = Ed25519Verifier({signer.key_id: signer.public_key()})
     broker = MockCredentialBroker()
     state = SQLiteState(state_path)
-    service = AgentGuardService(signer, verifier, state, broker.verifier)
+    service = DecisionLockService(signer, verifier, state, broker.verifier)
     receipt = service.authorize(intent, policy)
     ceiling = receipt.credential_ceiling
     request = CredentialRequest(
@@ -119,7 +119,7 @@ def test_attestation_and_reconciliation_cli_round_trip(tmp_path, intent, policy)
         source="manual-observation",
         evidence_digest=digest({"manual": "still-unknown"}),
         observed_at=datetime.now(UTC),
-        trust_level=EvidenceTrustLevel.AGENTGUARD_SIGNED,
+        trust_level=EvidenceTrustLevel.DECISIONLOCK_SIGNED,
     )
     evidence_path.write_text(manual_evidence.model_dump_json(), encoding="utf-8")
     reconcile = runner.invoke(

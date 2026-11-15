@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "protected-finance": {
-      "command": "agentguard",
+      "command": "decisionlock",
       "args": [
         "mcp-proxy",
         "--server-id",

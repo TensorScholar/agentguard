@@ -17,9 +17,9 @@ from scripts.verify_release import (
 SAMPLE_COMMIT = "5c57bfe6d944cd05d268150277502bb42ca2e198"
 WRONG_COMMIT = "1111111111111111111111111111111111111111"
 SAMPLE_VERSION = "0.2.0rc4"
-SAMPLE_PROJECT = "agentguard"
-SAMPLE_IDENTITY = "release-signer@agentguard.dev"
-SAMPLE_NAMESPACE = "agentguard-release-v1"
+SAMPLE_PROJECT = "decisionlock"
+SAMPLE_IDENTITY = "release-signer@decisionlock.dev"
+SAMPLE_NAMESPACE = "decisionlock-release-v1"
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -44,13 +44,13 @@ def release_bundle(tmp_path: Path):
 
     wheel_content = b"PK-wheel-content-v0.2.0rc4"
     sdist_content = b"tar-gz-sdist-content-v0.2.0rc4"
-    wheel_file = dist_dir / f"agentguard-{SAMPLE_VERSION}-py3-none-any.whl"
-    sdist_file = dist_dir / f"agentguard-{SAMPLE_VERSION}.tar.gz"
+    wheel_file = dist_dir / f"decisionlock-{SAMPLE_VERSION}-py3-none-any.whl"
+    sdist_file = dist_dir / f"decisionlock-{SAMPLE_VERSION}.tar.gz"
     wheel_file.write_bytes(wheel_content)
     sdist_file.write_bytes(sdist_content)
 
     cdx_content = json.dumps({"bomFormat": "CycloneDX", "specVersion": "1.6"}).encode("utf-8")
-    cdx_file = release_dir / "agentguard.cdx.json"
+    cdx_file = release_dir / "decisionlock.cdx.json"
     cdx_file.write_bytes(cdx_content)
 
     manifest_data = {
@@ -78,7 +78,7 @@ def release_bundle(tmp_path: Path):
     checksums_lines = [
         f"{_sha256_bytes(wheel_content)}  dist/{wheel_file.name}",
         f"{_sha256_bytes(sdist_content)}  dist/{sdist_file.name}",
-        f"{_sha256_bytes(cdx_content)}  release/agentguard.cdx.json",
+        f"{_sha256_bytes(cdx_content)}  release/decisionlock.cdx.json",
         f"{_sha256_bytes(manifest_file.read_bytes())}  release/release-manifest.json",
     ]
     checksums_file = release_dir / "SHA256SUMS"

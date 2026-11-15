@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentguard.models import Capability, Decision, ToolCall
-from agentguard.policy import load_policy
-from agentguard.policy_packs import available_policy_packs, get_policy_pack, render_policy_pack
+from decisionlock.models import Capability, Decision, ToolCall
+from decisionlock.policy import load_policy
+from decisionlock.policy_packs import available_policy_packs, get_policy_pack, render_policy_pack
 
 
 def test_policy_pack_catalog_contains_supported_packs() -> None:

@@ -1,6 +1,6 @@
-from agentguard.adapters.crypto import Ed25519Verifier
-from agentguard.adapters.evidence import verify_bundle
-from agentguard.demo import create_demo
+from decisionlock.adapters.crypto import Ed25519Verifier
+from decisionlock.adapters.evidence import verify_bundle
+from decisionlock.demo import create_demo
 
 
 def test_demo_builds_all_artifacts(tmp_path):

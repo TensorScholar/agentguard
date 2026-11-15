@@ -16,7 +16,7 @@ lint:
 	python -m ruff check src tests scripts
 
 typecheck:
-	python -m mypy src/agentguard
+	python -m mypy src/decisionlock
 
 security:
 	PYTHONPATH=src python scripts/check_architecture.py
@@ -30,7 +30,7 @@ check: lint typecheck coverage schemas security release-metadata
 	python -m compileall -q src tests scripts
 
 demo:
-	PYTHONPATH=src python -m agentguard demo --output .agentguard/demo --force
+	PYTHONPATH=src python -m decisionlock demo --output .decisionlock/demo --force
 
 package:
 	python -m build

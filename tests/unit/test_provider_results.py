@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentguard.engine.provider_results import (
+from decisionlock.engine.provider_results import (
     ProviderResultHashingError,
     provider_result_bytes,
     provider_result_digest,

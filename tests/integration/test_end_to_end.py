@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import pytest
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.executor import DeterministicFakeExecutor
-from agentguard.application import AgentGuardService
-from agentguard.domain import CredentialRequest, ExecutionStatus
-from agentguard.engine.execution import ExecutionGuardError, preflight_execution
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.adapters.executor import DeterministicFakeExecutor
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import CredentialRequest, ExecutionStatus
+from decisionlock.engine.execution import ExecutionGuardError, preflight_execution
 
 
 def test_authorize_broker_execute(intent, policy, signer, verifier, state):
     broker = MockCredentialBroker()
-    service = AgentGuardService(signer, verifier, state, broker.verifier)
+    service = DecisionLockService(signer, verifier, state, broker.verifier)
     receipt = service.authorize(intent, policy)
     c = receipt.credential_ceiling
     request = CredentialRequest(
@@ -36,7 +36,7 @@ def test_authorize_broker_execute(intent, policy, signer, verifier, state):
 
 
 def test_replay_is_blocked(intent, policy, signer, verifier, state):
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     receipt = service.authorize(intent, policy)
     c = receipt.credential_ceiling
     request = CredentialRequest(
@@ -49,7 +49,7 @@ def test_replay_is_blocked(intent, policy, signer, verifier, state):
         tenant_id=c.tenant_id,
     )
     broker = MockCredentialBroker()
-    service = AgentGuardService(signer, verifier, state, broker.verifier)
+    service = DecisionLockService(signer, verifier, state, broker.verifier)
     grant = broker.issue(receipt, request)
     executor = DeterministicFakeExecutor()
     service.execute_protected(
@@ -71,7 +71,7 @@ def test_replay_is_blocked(intent, policy, signer, verifier, state):
 
 
 def test_argument_mutation_is_blocked(intent, policy, signer, verifier, state):
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     receipt = service.authorize(intent, policy)
     c = receipt.credential_ceiling
     request = CredentialRequest(

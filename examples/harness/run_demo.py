@@ -1,12 +1,12 @@
-"""Run the AgentGuard happy path end to end against a local fake provider.
+"""Run the DecisionLock happy path end to end against a local fake provider.
 
-Standard library only; not part of the AgentGuard package.
+Standard library only; not part of the DecisionLock package.
 
     python examples/harness/run_demo.py            # scenarios A, B, C
     python examples/harness/run_demo.py --list
 
-This drives the real product commands as subprocesses -- agentguard-mcp-http,
-agentguard-reconcile-worker, evidence-build, evidence-verify -- rather than calling
+This drives the real product commands as subprocesses -- decisionlock-mcp-http,
+decisionlock-reconcile-worker, evidence-build, evidence-verify -- rather than calling
 the library, so what you see is what an operator would get.
 
 Scenarios
@@ -184,7 +184,7 @@ def sql(db: Path, query: str) -> list[tuple]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the AgentGuard happy-path demo")
+    parser = argparse.ArgumentParser(description="Run the DecisionLock happy-path demo")
     parser.add_argument("--list", action="store_true", help="list scenarios and exit")
     parser.add_argument("--keep", action="store_true", help="keep the demo workspace")
     args = parser.parse_args()
@@ -201,37 +201,37 @@ def main() -> int:
             print("  " + item)
         return 0
 
-    workdir = Path.cwd() / ".agentguard-demo"
+    workdir = Path.cwd() / ".decisionlock-demo"
     if workdir.exists():
         shutil.rmtree(workdir)
     (workdir / "provider").mkdir(parents=True)
     ledger = workdir / "provider" / "provider-ledger.jsonl"
 
     env = dict(os.environ)
-    env["AGENTGUARD_HTTP_ACCESS_TOKEN"] = ACCESS_TOKEN
+    env["DECISIONLOCK_HTTP_ACCESS_TOKEN"] = ACCESS_TOKEN
     env["PAYMENTS_TOKEN"] = PAYMENTS_TOKEN
-    agentguard = shutil.which("agentguard")
-    mcp_http = shutil.which("agentguard-mcp-http")
-    reconcile_worker = shutil.which("agentguard-reconcile-worker")
+    decisionlock = shutil.which("decisionlock")
+    mcp_http = shutil.which("decisionlock-mcp-http")
+    reconcile_worker = shutil.which("decisionlock-reconcile-worker")
 
     # ---------------------------------------------------------------- setup
     step("Setup")
-    if agentguard is None or mcp_http is None or reconcile_worker is None:
+    if decisionlock is None or mcp_http is None or reconcile_worker is None:
         bad(
-            "agentguard entrypoints on PATH",
-            "pip install -e '.[http]' first (the http extra provides agentguard-mcp-http)",
+            "decisionlock entrypoints on PATH",
+            "pip install -e '.[http]' first (the http extra provides decisionlock-mcp-http)",
         )
         return 1
-    ok("agentguard on PATH", agentguard)
-    ok("agentguard-mcp-http on PATH", mcp_http)
-    ok("agentguard-reconcile-worker on PATH", reconcile_worker)
+    ok("decisionlock on PATH", decisionlock)
+    ok("decisionlock-mcp-http on PATH", mcp_http)
+    ok("decisionlock-reconcile-worker on PATH", reconcile_worker)
 
-    demo = run([agentguard, "demo", "--output", str(workdir / "demo"), "--force"], workdir, env)
-    expect("agentguard demo generates fixtures", demo.returncode == 0, demo.stderr.strip()[:120])
+    demo = run([decisionlock, "demo", "--output", str(workdir / "demo"), "--force"], workdir, env)
+    expect("decisionlock demo generates fixtures", demo.returncode == 0, demo.stderr.strip()[:120])
 
-    init = run([agentguard, "init", "--output", str(workdir / "ws")], workdir, env)
+    init = run([decisionlock, "init", "--output", str(workdir / "ws")], workdir, env)
     expect(
-        "agentguard init creates the production credential broker key",
+        "decisionlock init creates the production credential broker key",
         init.returncode == 0 and (workdir / "ws" / "credential-broker-private.pem").is_file(),
     )
 
@@ -329,7 +329,7 @@ def main() -> int:
         intent = json.loads((workdir / "demo" / "intent.json").read_text())
         decision = run(
             [
-                agentguard,
+                decisionlock,
                 "authorize",
                 str(workdir / "demo" / "intent.json"),
                 str(policy),
@@ -354,7 +354,7 @@ def main() -> int:
 
         mutated_result = run(
             [
-                agentguard,
+                decisionlock,
                 "verify-execution",
                 str(mutated_path),
                 str(workdir / "decision.json"),
@@ -418,7 +418,7 @@ def main() -> int:
         bundle = workdir / "evidence"
         build = run(
             [
-                agentguard,
+                decisionlock,
                 "evidence-build",
                 str(workdir / "demo" / "intent.json"),
                 str(workdir / "decision.json"),
@@ -433,7 +433,7 @@ def main() -> int:
         expect("evidence-build produces a signed bundle", build.returncode == 0)
         verify = run(
             [
-                agentguard,
+                decisionlock,
                 "evidence-verify",
                 str(bundle),
                 "--public-key",
@@ -468,7 +468,7 @@ def main() -> int:
         receipt_file.write_text(json.dumps(doc, indent=2), encoding="utf-8")
         tamper = run(
             [
-                agentguard,
+                decisionlock,
                 "evidence-verify",
                 str(tampered),
                 "--public-key",
@@ -509,7 +509,7 @@ def main() -> int:
             )
         )
         expect(
-            "AgentGuard recorded the execution as unknown",
+            "DecisionLock recorded the execution as unknown",
             states.get(execution_id) == "unknown",
             f"{execution_id} -> {states.get(execution_id)}",
         )
@@ -598,7 +598,7 @@ def main() -> int:
         )
         refused = run(
             [
-                agentguard,
+                decisionlock,
                 "reconcile-execution",
                 "--execution-id",
                 execution_id,

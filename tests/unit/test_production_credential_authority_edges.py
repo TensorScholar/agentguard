@@ -4,15 +4,15 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from agentguard.adapters.broker import (
+from decisionlock.adapters.broker import (
     BrokeredCredentialAuthority,
     CredentialAuthorityError,
     EnvironmentCredentialSource,
     SQLiteCredentialProfileRepository,
     credential_profile_binding_digest,
 )
-from agentguard.adapters.crypto import Ed25519Signer
-from agentguard.domain import (
+from decisionlock.adapters.crypto import Ed25519Signer
+from decisionlock.domain import (
     CredentialAuthorityProfile,
     CredentialAuthorityProfileRecord,
     CredentialProfileStatus,
@@ -20,9 +20,9 @@ from agentguard.domain import (
     ProviderIdentity,
     VerifiedCredentialAuthority,
 )
-from agentguard.engine.canonical import digest
-from agentguard.engine.policy import evaluate_policy
-from agentguard.engine.receipts import issue_decision_receipt
+from decisionlock.engine.canonical import digest
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.engine.receipts import issue_decision_receipt
 
 
 class MutableCredentialSource:
@@ -101,14 +101,14 @@ def test_environment_source_rejects_invalid_variable_names(name: str) -> None:
 
 
 def test_environment_source_is_bound_by_name_and_reads_lazily(monkeypatch) -> None:
-    source = EnvironmentCredentialSource("AGENTGUARD_EDGE_SECRET")
+    source = EnvironmentCredentialSource("DECISIONLOCK_EDGE_SECRET")
     assert source.binding_digest == digest(
-        {"kind": "environment", "name": "AGENTGUARD_EDGE_SECRET"}
+        {"kind": "environment", "name": "DECISIONLOCK_EDGE_SECRET"}
     )
-    monkeypatch.delenv("AGENTGUARD_EDGE_SECRET", raising=False)
+    monkeypatch.delenv("DECISIONLOCK_EDGE_SECRET", raising=False)
     with pytest.raises(CredentialAuthorityError, match="source_unavailable"):
         source.read()
-    monkeypatch.setenv("AGENTGUARD_EDGE_SECRET", "rotated-secret")
+    monkeypatch.setenv("DECISIONLOCK_EDGE_SECRET", "rotated-secret")
     assert source.read() == "rotated-secret"
 
 

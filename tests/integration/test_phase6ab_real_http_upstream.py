@@ -5,9 +5,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from typing import Any
 
-from agentguard.adapters.protocols.mcp.http_gateway import MCPProtectedHTTPGateway
-from agentguard.adapters.protocols.mcp.http_server import HTTPXUpstreamSender
-from agentguard.adapters.protocols.mcp.modern import (
+from decisionlock.adapters.protocols.mcp.http_gateway import MCPProtectedHTTPGateway
+from decisionlock.adapters.protocols.mcp.http_server import HTTPXUpstreamSender
+from decisionlock.adapters.protocols.mcp.modern import (
     CLIENT_CAPABILITIES_META_KEY,
     CLIENT_INFO_META_KEY,
     MODERN_PROTOCOL_PROFILE,
@@ -16,9 +16,9 @@ from agentguard.adapters.protocols.mcp.modern import (
     decode_mcp_header_value,
     encode_mcp_header_value,
 )
-from agentguard.application import AgentGuardService
-from agentguard.domain import Effect, ExecutionState, Principal, ProvenanceLabel
-from agentguard.domain.policy import (
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import Effect, ExecutionState, Principal, ProvenanceLabel
+from decisionlock.domain.policy import (
     ActionMatcher,
     PolicyDefaults,
     PolicyDocument,
@@ -152,7 +152,7 @@ def test_protected_call_crosses_real_loopback_http_boundary(signer, verifier, st
         max_response_bytes=100_000,
     )
     subject = MCPProtectedHTTPGateway(
-        AgentGuardService(signer, verifier, state),
+        DecisionLockService(signer, verifier, state),
         _allow_policy(),
         _principal(),
         binding,

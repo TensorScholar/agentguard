@@ -2,7 +2,7 @@
 
 ## Protected properties
 
-AgentGuard is designed to preserve the following properties on traffic that actually crosses a protected adapter:
+DecisionLock is designed to preserve the following properties on traffic that actually crosses a protected adapter:
 
 - the dispatched normalized action must match the signed authorization decision, and credential use must remain within the decision's permitted authority;
 - approval, delegated authority, typed releases, and capability leases must not expand their signed bounds;
@@ -14,7 +14,7 @@ AgentGuard is designed to preserve the following properties on traffic that actu
 - a non-loopback HTTP listener must not start without the required TLS/authentication/Host controls;
 - a potentially committed external effect must remain ambiguous until stronger reconciliation evidence is obtained;
 - an expired or superseded reconciliation worker must not commit authoritative resolution state;
-- raw credentials and common secret values must not enter AgentGuard-owned retained audit/evidence artifacts;
+- raw credentials and common secret values must not enter DecisionLock-owned retained audit/evidence artifacts;
 - audit truncation/replacement must be detectable when signed checkpoints are retained independently;
 - evidence authenticity must be verifiable when the corresponding trusted public key/provider verification contract is available.
 
@@ -33,14 +33,14 @@ The threat set includes argument/action substitution, confused deputy behavior, 
 7. **Provider reconciler** — trusted only to the assurance level it is configured to emit; `PROVIDER_VERIFIED` requires an independently trusted provider verification contract. Local signed evidence does not independently establish external provider business truth.
 8. **SQLite state** — trusted local transactional/durability boundary for replay, reservations, execution state, and single-host lease fencing.
 9. **Independent checkpoint store** — required to detect complete local-ledger replacement/truncation beyond the retained anchor.
-10. **Operating system/network** — outside AgentGuard's control; deployment controls must provide process, filesystem, secret, and egress isolation.
+10. **Operating system/network** — outside DecisionLock's control; deployment controls must provide process, filesystem, secret, and egress isolation.
 
 ## Explicit assumptions
 
-- Protected traffic actually enters an AgentGuard adapter; hidden alternate routes cannot be ruled out by the library alone.
+- Protected traffic actually enters an DecisionLock adapter; hidden alternate routes cannot be ruled out by the library alone.
 - The adapter labels identity/provenance/provider binding accurately and does not substitute a different operation after verification.
 - Private signing keys and provider secret material are inaccessible to the model and untrusted tools.
-- The environment-backed credential source is populated by a deployment mechanism appropriate to the environment; AgentGuard is not the secret vault.
+- The environment-backed credential source is populated by a deployment mechanism appropriate to the environment; DecisionLock is not the secret vault.
 - SQLite coordination participants run on one host against the same local filesystem database with ordinary SQLite locking/durability semantics.
 - Provider evidence classified `PROVIDER_VERIFIED` comes only from a reconciler whose provider truth-check contract is independently trusted.
 - `mcp-posture` receives every configuration artifact the operator expects it to inspect.
@@ -56,7 +56,7 @@ For the protected execution path, `RESERVED → DISPATCHING` is the local extern
 
 ### Ambiguous provider commit
 
-A transport failure after a side-effecting write may mean the provider committed the operation even though AgentGuard did not receive a response. The execution remains `UNKNOWN`; blind retry is forbidden unless the provider contract proves replay safety. Reconciliation is required before retry under the default policy.
+A transport failure after a side-effecting write may mean the provider committed the operation even though DecisionLock did not receive a response. The execution remains `UNKNOWN`; blind retry is forbidden unless the provider contract proves replay safety. Reconciliation is required before retry under the default policy.
 
 ### Worker pause beyond lease expiry
 
@@ -68,12 +68,12 @@ Binding the service to a non-loopback interface increases the attack surface. St
 
 ### Evidence forgery versus business truth
 
-A valid AgentGuard signature proves that AgentGuard signed the recorded canonical evidence. It does not prove an unsigned provider's external business truth. Provider-confirmed outcomes therefore require the stronger configured provider verification contract.
+A valid DecisionLock signature proves that DecisionLock signed the recorded canonical evidence. It does not prove an unsigned provider's external business truth. Provider-confirmed outcomes therefore require the stronger configured provider verification contract.
 
 ### Dispatcher liveness and ambient startup takeover
 
-AgentGuard cannot establish process or executor liveness from shared SQLite state alone. Startup of another process sharing the database is not evidence that the original dispatcher is dead; an in-flight execution may still be communicating with an external provider. Ambient startup takeover is therefore prohibited. Explicit recovery depends on external operational assurance that the active dispatcher is no longer live.
+DecisionLock cannot establish process or executor liveness from shared SQLite state alone. Startup of another process sharing the database is not evidence that the original dispatcher is dead; an in-flight execution may still be communicating with an external provider. Ambient startup takeover is therefore prohibited. Explicit recovery depends on external operational assurance that the active dispatcher is no longer live.
 
 ## Residual risk
 
-AgentGuard cannot prove that an application did not invoke an uninstrumented executor, and hidden bypass routes around the enforcement boundary cannot be disproven by AgentGuard alone. It cannot infer hidden dependencies or provider semantics absent from the trusted integration. A crashed executor may leave a record in `DISPATCHING` indefinitely until controlled operator recovery occurs, because shared database state alone cannot determine executor liveness. Process-local reconciliation fairness within a running worker daemon does not provide distributed or cross-restart fairness. Hash chains without independently retained checkpoints cannot prove tail completeness. Local SQLite lease fencing does not become distributed consensus across hosts. File-level hardening does not replace kernel isolation, network policy, identity infrastructure, secret-manager policy, external penetration testing, soak testing, or production validation.
+DecisionLock cannot prove that an application did not invoke an uninstrumented executor, and hidden bypass routes around the enforcement boundary cannot be disproven by DecisionLock alone. It cannot infer hidden dependencies or provider semantics absent from the trusted integration. A crashed executor may leave a record in `DISPATCHING` indefinitely until controlled operator recovery occurs, because shared database state alone cannot determine executor liveness. Process-local reconciliation fairness within a running worker daemon does not provide distributed or cross-restart fairness. Hash chains without independently retained checkpoints cannot prove tail completeness. Local SQLite lease fencing does not become distributed consensus across hosts. File-level hardening does not replace kernel isolation, network policy, identity infrastructure, secret-manager policy, external penetration testing, soak testing, or production validation.

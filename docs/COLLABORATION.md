@@ -47,7 +47,7 @@ exit 0. It drives the real CLIs, not mocks, against a local fake MCP provider.
   `decision_receipt.replayed`; scope inflation with `credential.scope_exceeds_decision`.
 - An evidence bundle verifies offline with only the public key, and an escalated credential ceiling
   edited into the signed bundle is detected.
-- The central case: the provider **commits a refund and then drops the connection**. AgentGuard records
+- The central case: the provider **commits a refund and then drops the connection**. DecisionLock records
   `UNKNOWN` with `retry_safe: false` instead of guessing — while the provider's own ledger shows the
   refund happened. The reconciler then resolves it to `confirmed_succeeded` at `provider_verified`
   trust via the provider's status tool, **without resending the refund**. The provider ledger still
@@ -61,7 +61,7 @@ whether this design differentiates from a competently implemented baseline. **It
 
 ```
 RESEARCH_CLAIM                            = NOT_VALIDATED
-AGENTGUARD_SPECIFIC_DIFFERENTIATION_THESIS = FALSIFIED_WITHIN_PROTOCOL
+DECISIONLOCK_SPECIFIC_DIFFERENTIATION_THESIS = FALSIFIED_WITHIN_PROTOCOL
 ```
 
 Both arms recorded **0 primary violations** (3,600 retained trials each); the completion difference was
@@ -108,7 +108,7 @@ Not roadmap items — boundaries.
 
 **A design partner on one high-stakes tool path.** Concretely: a team with a real MCP tool where a
 duplicate or over-scoped side effect would actually cost something — payments, data deletion, bulk
-export, permission changes. We would like to wire AgentGuard in front of exactly one tool, agree a
+export, permission changes. We would like to wire DecisionLock in front of exactly one tool, agree a
 credential ceiling and a provider status tool, and find out what breaks.
 
 What we would want to learn, and cannot learn alone:

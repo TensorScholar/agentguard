@@ -7,7 +7,7 @@ htmlcov/
 build/
 dist/
 *.egg-info/
-.agentguard/
+.decisionlock/
 *.sqlite
 *.pem
 

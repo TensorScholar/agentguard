@@ -9,24 +9,24 @@ from typing import Iterator
 
 import pytest
 
-from agentguard.adapters.storage.sqlite import SQLiteState
-from agentguard.research.authorization_lineage.canonical import (
+from decisionlock.adapters.storage.sqlite import SQLiteState
+from decisionlock.research.authorization_lineage.canonical import (
     CanonicalStudySession,
     ConfirmatorySessionError,
     ReplacementExhaustedError,
     ReplacementRequiredError,
     _hash_tree,
 )
-from agentguard.research.authorization_lineage.harness import DevTrialHarness
-from agentguard.research.authorization_lineage.ledger import AuthorizationInstanceLedger
-from agentguard.research.authorization_lineage.models import (
+from decisionlock.research.authorization_lineage.harness import DevTrialHarness
+from decisionlock.research.authorization_lineage.ledger import AuthorizationInstanceLedger
+from decisionlock.research.authorization_lineage.models import (
     Arm,
     ProviderStratum,
     Schedule,
     TrialObservation,
     TrialSpec,
 )
-from agentguard.research.authorization_lineage.trace import (
+from decisionlock.research.authorization_lineage.trace import (
     HarnessInvalidReason,
     TrialTraceRecorder,
     invalid_observation,
@@ -256,9 +256,9 @@ def test_real_wal_trial_is_settled_and_authoritative_rehash_is_stable(
     for attempt_root, expected in commitments:
         assert _hash_tree(attempt_root)[0] == expected
 
-    agentguard_rows = sum(
+    decisionlock_rows = sum(
         _row_count(original_connect, path, "authority_grants")
-        for path in study_root.rglob("agentguard.sqlite")
+        for path in study_root.rglob("decisionlock.sqlite")
     )
     provider_rows = sum(
         _row_count(original_connect, path, "operations")
@@ -272,7 +272,7 @@ def test_real_wal_trial_is_settled_and_authoritative_rehash_is_stable(
         _row_count(original_connect, path, "effects") for path in study_root.rglob("oracle.sqlite")
     )
 
-    assert agentguard_rows > 0
+    assert decisionlock_rows > 0
     assert provider_rows > 0
     assert lineage_rows > 0
     assert oracle_rows > 0

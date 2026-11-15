@@ -6,7 +6,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-import agentguard
+import decisionlock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def test_package_version_matches_pyproject() -> None:
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
-    assert agentguard.__version__ == pyproject["project"]["version"]
+    assert decisionlock.__version__ == pyproject["project"]["version"]
 
 
 def test_python_module_entrypoint_reports_version() -> None:
@@ -22,7 +22,7 @@ def test_python_module_entrypoint_reports_version() -> None:
     env["PYTHONPATH"] = str(REPO_ROOT / "src")
 
     process = subprocess.run(
-        [sys.executable, "-m", "agentguard", "--version"],
+        [sys.executable, "-m", "decisionlock", "--version"],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
@@ -32,11 +32,11 @@ def test_python_module_entrypoint_reports_version() -> None:
     )
 
     assert process.returncode == 0
-    assert process.stdout.strip().startswith("agentguard ")
+    assert process.stdout.strip().startswith("decisionlock ")
 
 
 def test_entrypoint_mcp_posture_exit_codes() -> None:
-    from agentguard.cli import entrypoint
+    from decisionlock.cli import entrypoint
 
     bypass_code = entrypoint(
         [
@@ -67,7 +67,7 @@ def test_python_module_entrypoint_mcp_posture_exit_codes() -> None:
         [
             sys.executable,
             "-m",
-            "agentguard",
+            "decisionlock",
             "mcp-posture",
             "--config",
             str(REPO_ROOT / "examples/mcp_posture_bypass.json"),
@@ -86,7 +86,7 @@ def test_python_module_entrypoint_mcp_posture_exit_codes() -> None:
         [
             sys.executable,
             "-m",
-            "agentguard",
+            "decisionlock",
             "mcp-posture",
             "--config",
             str(REPO_ROOT / "examples/mcp_posture_protected.json"),

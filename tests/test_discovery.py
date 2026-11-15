@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentguard.discovery import scan_configs
-from agentguard.models import Capability, RiskLevel
+from decisionlock.discovery import scan_configs
+from decisionlock.models import Capability, RiskLevel
 
 
 def test_scan_classifies_filesystem_and_credential_risk(tmp_path: Path) -> None:

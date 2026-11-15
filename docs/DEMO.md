@@ -1,4 +1,4 @@
-# AgentGuard Demo: the Wedge Happy Path
+# DecisionLock Demo: the Wedge Happy Path
 
 The invariant this walkthrough demonstrates:
 
@@ -64,7 +64,7 @@ The sections below walk the same path by hand.
 ## 1. Fixtures and the attack suite
 
 ```bash
-agentguard demo --output .agentguard/demo --force
+decisionlock demo --output .decisionlock/demo --force
 ```
 
 This runs the bounded-refund scenario ([Scenario 1](scenarios.md#scenario-1--bounded-refund-the-canonical-case))
@@ -72,7 +72,7 @@ through the kernel: golden path, then argument mutation, then scope inflation, t
 then evidence packaging.
 
 ```bash
-cat .agentguard/demo/results.json
+cat .decisionlock/demo/results.json
 ```
 
 ```json
@@ -93,12 +93,12 @@ the contract; the demo prints them.
 ## 2. Authorize
 
 ```bash
-agentguard authorize \
+decisionlock authorize \
   examples/scoped-refund/request.json \
   examples/scoped-refund/policy.yaml \
-  --key .agentguard/demo/private.pem \
-  --ledger .agentguard/demo/audit.sqlite \
-  --output .agentguard/demo/manual-decision.json
+  --key .decisionlock/demo/private.pem \
+  --ledger .decisionlock/demo/audit.sqlite \
+  --output .decisionlock/demo/manual-decision.json
 ```
 
 Produces a signed `DecisionReceipt` carrying the canonical SHA-256 intent digest **and the
@@ -113,41 +113,41 @@ caller's request, is what bounds the credential. See
 ```bash
 export PAYMENTS_API_TOKEN='...'
 
-agentguard-mcp-http \
+decisionlock-mcp-http \
   --policy examples/scoped-refund/policy.yaml \
-  --key .agentguard/demo/private.pem \
+  --key .decisionlock/demo/private.pem \
   --server-id customer-operations \
   --upstream-url https://payments.internal/mcp \
   --credential-env PAYMENTS_API_TOKEN \
   --credential-audience payments \
   --credential-scope refund:create \
-  --access-token-env AGENTGUARD_HTTP_ACCESS_TOKEN
+  --access-token-env DECISIONLOCK_HTTP_ACCESS_TOKEN
 ```
 
 **Contract-test path** (no secret source) — for demos and tests only:
 
 ```bash
-agentguard broker-demo \
+decisionlock broker-demo \
   examples/scoped-refund/request.json \
-  .agentguard/demo/manual-decision.json \
-  --output .agentguard/demo/manual-grant.json
+  .decisionlock/demo/manual-decision.json \
+  --output .decisionlock/demo/manual-grant.json
 ```
 
 > `broker-demo` uses the **mock broker**. It exercises grant signing and ceiling enforcement without a
 > secret source and **must not be treated as a production credential provider**. The production
-> credential authority is reachable only via `agentguard-mcp-http --credential-env`. Full contract:
+> credential authority is reachable only via `decisionlock-mcp-http --credential-env`. Full contract:
 > [credential-contract.md](credential-contract.md).
 
 ## 4. Preflight (does **not** execute)
 
 ```bash
-agentguard verify-execution \
+decisionlock verify-execution \
   examples/scoped-refund/request.json \
-  .agentguard/demo/manual-decision.json \
+  .decisionlock/demo/manual-decision.json \
   examples/scoped-refund/policy.yaml \
-  --grant .agentguard/demo/manual-grant.json \
-  --public-key .agentguard/demo/public.pem \
-  --state .agentguard/demo/audit.sqlite
+  --grant .decisionlock/demo/manual-grant.json \
+  --public-key .decisionlock/demo/public.pem \
+  --state .decisionlock/demo/audit.sqlite
 ```
 
 This re-derives the canonical digest, verifies the receipt signature, checks the grant does not exceed
@@ -169,11 +169,11 @@ nothing and consumes no nonce, so it provides no replay protection. Use it to de
 This is the real execution sink, and the only step that claims single-use authority:
 
 ```bash
-agentguard mcp-proxy-v2 \
+decisionlock mcp-proxy-v2 \
   --policy examples/scoped-refund/policy.yaml \
   --server-id customer-operations \
-  --key .agentguard/demo/private.pem \
-  --state .agentguard/demo/action-integrity.sqlite \
+  --key .decisionlock/demo/private.pem \
+  --state .decisionlock/demo/action-integrity.sqlite \
   -- <your-mcp-server-command>
 ```
 
@@ -190,15 +190,15 @@ For every call the proxy, in one `BEGIN IMMEDIATE` transaction:
 ## 6. Export and verify evidence offline
 
 ```bash
-agentguard evidence-build \
+decisionlock evidence-build \
   examples/scoped-refund/request.json \
-  .agentguard/demo/manual-decision.json \
-  --grant .agentguard/demo/manual-grant.json \
-  --key .agentguard/demo/private.pem \
-  --output .agentguard/demo/evidence-bundle
+  .decisionlock/demo/manual-decision.json \
+  --grant .decisionlock/demo/manual-grant.json \
+  --key .decisionlock/demo/private.pem \
+  --output .decisionlock/demo/evidence-bundle
 
-agentguard evidence-verify .agentguard/demo/evidence-bundle \
-  --public-key .agentguard/demo/public.pem \
+decisionlock evidence-verify .decisionlock/demo/evidence-bundle \
+  --public-key .decisionlock/demo/public.pem \
   --require-signature
 ```
 
@@ -208,12 +208,12 @@ agentguard evidence-verify .agentguard/demo/evidence-bundle \
 
 A third party holding only the bundle and the public key can confirm that the digests match, the
 manifest was signed by the trusted decision key, and nothing was altered or detached. They do not need
-access to AgentGuard, the ledger, or the provider.
+access to DecisionLock, the ledger, or the provider.
 
 To prove no secret leaked into the bundle:
 
 ```bash
-grep -R "$PAYMENTS_API_TOKEN" .agentguard/demo/evidence-bundle \
+grep -R "$PAYMENTS_API_TOKEN" .decisionlock/demo/evidence-bundle \
   && echo "LEAK" || echo "no secret in bundle"
 ```
 
@@ -226,10 +226,10 @@ If a dispatch times out, the execution is `UNKNOWN` and is **never auto-retried*
 
 ```bash
 # Find it
-agentguard audit-verify --ledger .agentguard/demo/audit.sqlite
+decisionlock audit-verify --ledger .decisionlock/demo/audit.sqlite
 
 # Only a trusted provider-specific reconciler may resolve it
-agentguard reconcile-execution --execution-id <id> --evidence provider-evidence.json
+decisionlock reconcile-execution --execution-id <id> --evidence provider-evidence.json
 ```
 
 `reconcile-execution` rejects file-supplied evidence claiming `PROVIDER_VERIFIED` or `CONFIRMED_*`.
@@ -248,14 +248,14 @@ cannot be established from shared local state. See [Limitations](limitations.md)
 in the configuration you give it; it cannot prove none exist.
 
 ```bash
-agentguard mcp-posture --config examples/mcp_posture_protected.json --fail-on-bypass  # 0 bypasses
-agentguard mcp-posture --config examples/mcp_posture_bypass.json    --fail-on-bypass  # exits non-zero
+decisionlock mcp-posture --config examples/mcp_posture_protected.json --fail-on-bypass  # 0 bypasses
+decisionlock mcp-posture --config examples/mcp_posture_bypass.json    --fail-on-bypass  # exits non-zero
 ```
 
 ---
 
 ## Legacy fixtures
 
-`agentguard demo` also exports v0.1 compatibility fixtures to `.agentguard/demo/v1-compat/`. The v0.1
+`decisionlock demo` also exports v0.1 compatibility fixtures to `.decisionlock/demo/v1-compat/`. The v0.1
 commands (`scan`, `gate`, …) remain available and are documented in the README's
 [Advanced Surface](../README.md#advanced-surface-not-part-of-the-wedge).

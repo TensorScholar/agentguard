@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.models import Capability, Decision, ToolCall
-from agentguard.policy import ApprovalException, Policy, load_policy
+from decisionlock.models import Capability, Decision, ToolCall
+from decisionlock.policy import ApprovalException, Policy, load_policy
 
 
 def test_policy_blocks_sensitive_env_file() -> None:

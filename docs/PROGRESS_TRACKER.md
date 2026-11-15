@@ -1,4 +1,4 @@
-# AgentGuard Progress Tracker
+# DecisionLock Progress Tracker
 
 ## Current Phase
 
@@ -69,7 +69,7 @@ Automatic startup recovery was removed because liveness of previous executors ca
 
 Once an UNKNOWN execution has an authoritative terminal resolution (`CONFIRMED_SUCCEEDED`, `CONFIRMED_FAILED`, `CONFLICT`), it is excluded from automatic candidate selection by background reconciliation workers and rejected by default lease acquisition. This prevents terminal work from repeatedly consuming bounded worker capacity and starving pending executions.
 
-Explicit operator-directed reconciliation retains the ability to re-check `CONFIRMED_SUCCEEDED` and `CONFIRMED_FAILED` resolutions via `claim_reconciliation_lease(..., allow_terminal_recheck=True)` (opted into by default in the one-shot operator CLI `agentguard-reconcile`). This preserves the core AgentGuard invariant that later contradictory `PROVIDER_VERIFIED` evidence can synthesize `CONFLICT` rather than relying on last-write-wins. Once an execution reaches `CONFLICT`, both background worker ticks and operator re-checks reject further lease acquisition. Non-terminal resolutions (`STILL_UNKNOWN`, `UNSUPPORTED`) remain eligible for future reconciliation. `executions.state` remains `UNKNOWN` permanently to preserve dispatch history.
+Explicit operator-directed reconciliation retains the ability to re-check `CONFIRMED_SUCCEEDED` and `CONFIRMED_FAILED` resolutions via `claim_reconciliation_lease(..., allow_terminal_recheck=True)` (opted into by default in the one-shot operator CLI `decisionlock-reconcile`). This preserves the core DecisionLock invariant that later contradictory `PROVIDER_VERIFIED` evidence can synthesize `CONFLICT` rather than relying on last-write-wins. Once an execution reaches `CONFLICT`, both background worker ticks and operator re-checks reject further lease acquisition. Non-terminal resolutions (`STILL_UNKNOWN`, `UNSUPPORTED`) remain eligible for future reconciliation. `executions.state` remains `UNKNOWN` permanently to preserve dispatch history.
 
 Enforcement uses defense in depth:
 - Authoritative atomic lease enforcement: `SQLiteFencedReconciliationState.claim_reconciliation_lease()` inspects the latest `execution_resolutions` within `BEGIN IMMEDIATE`. It unconditionally rejects `CONFLICT`, and rejects `CONFIRMED_SUCCEEDED` / `CONFIRMED_FAILED` unless `allow_terminal_recheck=True`.
@@ -139,7 +139,7 @@ The project does **not** currently establish:
 The product thesis was narrowed in Phase 1. It remains a **HYPOTHESIS** — narrowing a thesis does not
 validate it:
 
-> **Product thesis.** AgentGuard protects high-stakes MCP tool calls by binding a short-lived,
+> **Product thesis.** DecisionLock protects high-stakes MCP tool calls by binding a short-lived,
 > decision-scoped credential ceiling to a signed authorization, resolving the actual secret only at the
 > last moment, preventing replay and argument mutation, and producing independently verifiable evidence
 > of what was authorized versus what was observed — especially for actions that can leave ambiguous
@@ -188,7 +188,7 @@ Issue #12 remains open. Promotion debt includes:
 - Stale or orphaned `DISPATCHING` records require explicit reconciliation or controlled operator recovery; automatic startup recovery was removed.
 - Background reconciliation worker fairness is process-local and resets to canonical storage order on worker restart or one-shot invocation; multi-host or durable fairness is not established.
 - Trusted normalization remains a fundamental TCB boundary.
-- Stable logical business-operation identity can diverge from fresh AgentGuard authorization identity.
+- Stable logical business-operation identity can diverge from fresh DecisionLock authorization identity.
 - Current repository CI capacity/governance debt limits hosted evidence quality.
 
 ## Decision Log
@@ -209,7 +209,7 @@ Decisions recorded for the stabilization pass. Each is a correction to existing 
 documentation; none adds a product feature.
 
 - Publish the research outcome in `README.md` rather than only in `docs/research/`. The repository
-  now states `RESEARCH_CLAIM: NOT_VALIDATED`, `AGENTGUARD_SPECIFIC_DIFFERENTIATION_THESIS:
+  now states `RESEARCH_CLAIM: NOT_VALIDATED`, `DECISIONLOCK_SPECIFIC_DIFFERENTIATION_THESIS:
   FALSIFIED_WITHIN_PROTOCOL`, the 6.45 slot-hold ratio favoring the no-guard baseline, the §6 scope
   exclusions, and the unestablished product claims, above the fold.
 - Close the v1 fail-open policy default. `load_policy` and the `Policy` dataclass now default
@@ -219,7 +219,7 @@ documentation; none adds a product feature.
 - Rename `authorize_execution` to `preflight_execution` and keep the old name only as a deprecated
   wrapper that emits a `DeprecationWarning`. The function has been non-consuming since the Q02
   supersession; the old name implied single-use enforcement it never performed.
-- Exclude `agentguard.research` from the wheel and sdist. The pre-registered experiment is retained
+- Exclude `decisionlock.research` from the wheel and sdist. The pre-registered experiment is retained
   in the repository as the research record but is not shipped as unreferenced product code. Coverage
   measurement is aligned to the distributed package, which restores a real margin above the 80%
   combined statement/branch floor.
@@ -263,7 +263,7 @@ Decisions recorded:
   [Advanced Surface](../README.md#advanced-surface-not-part-of-the-wedge) table in the README with a
   statement that no product claim depends on them. `project-status.md` splits "validated engineering
   capabilities" into product wedge versus advanced surface. All code, tests, and support remain.
-- **Collapse the happy path to four steps.** `authorize` → `mcp-proxy-v2` (or `agentguard-mcp-http`) →
+- **Collapse the happy path to four steps.** `authorize` → `mcp-proxy-v2` (or `decisionlock-mcp-http`) →
   `evidence-build` → `evidence-verify`, with `reconcile-execution` as an operator-only branch. The
   advanced commands are removed from the quick-start flow in both the README and `docs/DEMO.md`.
 - **Correct a documentation error found while doing this.** The README and DEMO both described
@@ -278,7 +278,7 @@ Decisions recorded:
   scope equality is required rather than claiming unenforceable least privilege
   (`adapters/broker/production.py:250-252`); that there is no audience proof and no upstream revocation
   call; and that `broker-demo` uses the non-production mock broker while the production authority is
-  reachable only via `agentguard-mcp-http --credential-env`.
+  reachable only via `decisionlock-mcp-http --credential-env`.
 - **Add three concrete scenarios.** New `docs/scenarios.md`: bounded refund, irreversible delete, and an
   external effect that goes `UNKNOWN`. Each states which mechanisms it exercises and links to the
   existing `examples/` material, including the honest admission that the `UNKNOWN` path has no fixture
@@ -315,11 +315,11 @@ not by reading it.
 2. **No MCP adapter ever supplied provenance.** All three protected adapters called
    `intent_from_tools_call` without `provenance`/`provenance_verified`, so every live MCP intent was
    `(unverified, False)` and any policy with `unknown_provenance != allow` refused every call.
-   Added `--provenance` / `--provenance-verified` to `mcp-proxy-v2` and `agentguard-mcp-http`, defaulting
+   Added `--provenance` / `--provenance-verified` to `mcp-proxy-v2` and `decisionlock-mcp-http`, defaulting
    to `unverified`. The parser lives in `cli/io.py` and rejects unknown labels and the contradictory
    `unverified` + trusted mix.
-3. **`agentguard init` never created the key `agentguard-mcp-http` expects.** The gateway defaults
-   `--credential-key` to `.agentguard/credential-broker-private.pem` with key id
+3. **`decisionlock init` never created the key `decisionlock-mcp-http` expects.** The gateway defaults
+   `--credential-key` to `.decisionlock/credential-broker-private.pem` with key id
    `credential-broker-ed25519`, but `init` only wrote `broker-private.pem` (`mock-broker-ed25519`).
    Following the documented setup made the production credential path fail immediately. `init` now
    writes both.
@@ -330,13 +330,13 @@ not by reading it.
 5. **The gateway swallowed the credential reason code.** It reported only
    `CredentialAuthorityError`, making eight distinct credential failures indistinguishable. It now
    includes `error.data.reason_code`, e.g. `credential.profile_scope_mismatch`. A missing
-   `--credential-key` file is caught at startup with a message naming `agentguard init`.
+   `--credential-key` file is caught at startup with a message naming `decisionlock init`.
 6. **The documented execution sink needed an MCP server the reader did not have.** `-- <your-mcp-server-command>`
    made the primary path unrunnable without an existing server. Added `examples/harness/`: a
    stdlib-only fake provider with its own durable ledger, a strict default-deny demo policy, and a
    driver that exercises the real CLIs as subprocesses. Not installed by `pip`; lives in `examples/`.
-7. **The provider must key effects on the AgentGuard execution id.** The reconciler queries by
-   `binding.attempt.execution_id`, and AgentGuard sets the downstream JSON-RPC `id` to exactly that
+7. **The provider must key effects on the DecisionLock execution id.** The reconciler queries by
+   `binding.attempt.execution_id`, and DecisionLock sets the downstream JSON-RPC `id` to exactly that
    value. The harness provider records and looks up on that id, so reconciliation needs no
    out-of-band shared state. Its `refund.status` returns `structuredContent`, which is the channel
    the reconciler reads.
@@ -374,14 +374,14 @@ Decisions recorded:
   by `*.md *.json *.jsonl *.yaml` but not `*.py`, so an sdist consumer received the harness README
   telling them to run `run_demo.py` without receiving `run_demo.py`. Added `*.py`. Verified: the
   sdist now carries all four harness files, the wheel still carries none of them, and
-  `src/agentguard/research` remains excluded from both.
+  `src/decisionlock/research` remains excluded from both.
 - **Rebuilt and verified rather than assumed.** Wheel byte-identical across two `--no-isolation`
   builds; normalized sdist byte-identical; `twine check` PASSED on both; a clean install from the
-  sdist reports `0.2.0rc4`, cannot import `agentguard.research`, and exposes `--provenance`.
+  sdist reports `0.2.0rc4`, cannot import `decisionlock.research`, and exposes `--provenance`.
 - **Added a cold-start evaluation path** to the README as the first section an outsider meets: install,
   run the demo, verify evidence and detect tampering, then read the credential contract and
   limitations. Fixed two defects in my own instructions while writing it: the evidence commands wrote
-  to `/tmp`, which AgentGuard correctly refuses on macOS because `/tmp` is a symlink, and the failure
+  to `/tmp`, which DecisionLock correctly refuses on macOS because `/tmp` is a symlink, and the failure
   cascaded confusingly. Both steps were then executed verbatim from a clean virtualenv.
 - **Added `docs/COLLABORATION.md`** — problem, four mechanisms, what is demonstrably working, the
   falsified-thesis result and what survives it, non-goals, the collaboration we want, and what we are
@@ -399,8 +399,8 @@ Deliberately not done: no tagging or publication of `0.2.0rc4` (that is a separa
 
 ## CI evidence update — AG-CI-001 narrowed, not closed
 
-The self-hosted runner `agentguard-mac-arm64` (registered on the maintainer's machine, labels
-`self-hosted, macOS, ARM64, agentguard-core`) was installed as a launchd service via its own
+The self-hosted runner `decisionlock-mac-arm64` (registered on the maintainer's machine, labels
+`self-hosted, macOS, ARM64, decisionlock-core`) was installed as a launchd service via its own
 `./svc.sh install && ./svc.sh start` and came online. The queued PR #32 validation then executed and
 failed at the confirmatory runtime preflight, not at any product code.
 

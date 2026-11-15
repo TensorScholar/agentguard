@@ -6,7 +6,7 @@
 
 ## Context
 
-AgentGuard policy can already constrain credential audience, scopes, tenant, TTL, and single-use
+DecisionLock policy can already constrain credential audience, scopes, tenant, TTL, and single-use
 issuance. Phase 5 also authenticates credential grants and binds verified credential metadata into
 protected execution authority. The missing production boundary was the provider secret itself:
 protected MCP HTTP execution could not turn verified authority into provider authentication without
@@ -53,7 +53,7 @@ Endpoint or provider substitution therefore fails before the secret source is re
 
 ### 4. Static/external secrets do not imply fake attenuation
 
-For an environment-backed or otherwise static provider credential, AgentGuard cannot prove that a
+For an environment-backed or otherwise static provider credential, DecisionLock cannot prove that a
 request for a subset of scopes has produced a provider credential with fewer privileges. Therefore
 production issuance requires the requested scope set to equal the configured profile scope set.
 
@@ -106,7 +106,7 @@ The CLI requires an existing credential-broker private key; it does not silently
 ## Security invariants
 
 - No provider secret is serialized into a domain model intended for durable storage.
-- No provider secret is written to AgentGuard execution/audit SQLite state by the credential path.
+- No provider secret is written to DecisionLock execution/audit SQLite state by the credential path.
 - No provider secret is written to the credential-profile SQLite state.
 - Client-supplied `Authorization` is not forwarded to the protected provider dispatch.
 - Revocation and provider substitution fail before secret-source reads.
@@ -129,7 +129,7 @@ no credential authority is configured.
 ### Authenticated schema discovery
 
 Phase 6C keeps pre-authorization `tools/list` schema discovery credentialless. This avoids a circular
-trust path in which an action credential is exposed before AgentGuard has authorized the action.
+trust path in which an action credential is exposed before DecisionLock has authorized the action.
 An upstream that requires authentication for schema discovery therefore needs a separately governed,
 read-only discovery authority; that is not implemented in this phase.
 
@@ -138,7 +138,7 @@ read-only discovery authority; that is not implemented in this phase.
 The Phase 6C production credential resolver is integrated with the protected modern MCP HTTP
 executor. Other `ProtectedExecutor` implementations do not automatically gain provider credential
 resolution. They must implement an equivalent trusted dispatch-time resolver before being used for
-brokered provider credentials. AgentGuard does not claim universal credential injection for arbitrary
+brokered provider credentials. DecisionLock does not claim universal credential injection for arbitrary
 third-party executors in Phase 6C.
 
 ### Memory zeroization
@@ -157,7 +157,7 @@ ports later without changing the frozen external-effect contracts.
 
 ## Consequences
 
-This phase closes the production execution gap without turning AgentGuard into a credential vault or
+This phase closes the production execution gap without turning DecisionLock into a credential vault or
 embedding provider secrets in authorization artifacts. The tradeoff is deliberate conservatism:
 static credentials are treated as having their configured real privilege, schema discovery remains
 unauthenticated, and stronger process-isolation/zeroization guarantees are deferred rather than

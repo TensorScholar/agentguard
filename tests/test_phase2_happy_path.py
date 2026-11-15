@@ -11,18 +11,18 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.adapters.crypto import Ed25519Signer
-from agentguard.adapters.protocols.mcp.intent import intent_from_tools_call
-from agentguard.adapters.protocols.mcp.modern import (
+from decisionlock.adapters.crypto import Ed25519Signer
+from decisionlock.adapters.protocols.mcp.intent import intent_from_tools_call
+from decisionlock.adapters.protocols.mcp.modern import (
     CLIENT_CAPABILITIES_META_KEY,
     CLIENT_INFO_META_KEY,
     MODERN_PROTOCOL_PROFILE,
     PROTOCOL_VERSION_META_KEY,
 )
-from agentguard.cli.io import parse_provenance
-from agentguard.domain import Effect, Principal, ProvenanceLabel
-from agentguard.engine.policy import evaluate_policy
-from agentguard.risk import classify_tool_definition
+from decisionlock.cli.io import parse_provenance
+from decisionlock.domain import Effect, Principal, ProvenanceLabel
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.risk import classify_tool_definition
 
 # ---------------------------------------------------------------------------
 # Gap 1: MCP adapters discarded the tool description before classification.
@@ -97,7 +97,7 @@ def test_default_deny_unknown_capability_admits_a_classified_tool() -> None:
         provenance=(ProvenanceLabel.AUTHENTICATED_USER_INPUT,),
         provenance_verified=True,
     )
-    from agentguard.domain import PolicyDocument
+    from decisionlock.domain import PolicyDocument
 
     document = PolicyDocument.model_validate_json(
         json.dumps(
@@ -169,8 +169,8 @@ def test_parse_provenance_rejects_contradictory_mix() -> None:
 def test_protected_adapters_expose_provenance_with_unverified_default() -> None:
     import inspect
 
-    from agentguard.adapters.protocols.mcp.http_gateway import MCPProtectedHTTPGateway
-    from agentguard.adapters.protocols.mcp.protected import MCPProtectedSession
+    from decisionlock.adapters.protocols.mcp.http_gateway import MCPProtectedHTTPGateway
+    from decisionlock.adapters.protocols.mcp.protected import MCPProtectedSession
 
     for cls in (MCPProtectedSession, MCPProtectedHTTPGateway):
         params = inspect.signature(cls.__init__).parameters
@@ -179,9 +179,9 @@ def test_protected_adapters_expose_provenance_with_unverified_default() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Gap 3: `agentguard init` never created the key agentguard-mcp-http expects.
+# Gap 3: `decisionlock init` never created the key decisionlock-mcp-http expects.
 #
-# http_cli defaults --credential-key to .agentguard/credential-broker-private.pem with
+# http_cli defaults --credential-key to .decisionlock/credential-broker-private.pem with
 # key id credential-broker-ed25519, but init only wrote broker-private.pem with key id
 # mock-broker-ed25519. Following the documented setup made the production credential
 # path fail immediately.
@@ -191,7 +191,7 @@ def test_protected_adapters_expose_provenance_with_unverified_default() -> None:
 def test_init_creates_the_production_credential_broker_key(tmp_path: Path) -> None:
     from typer.testing import CliRunner
 
-    from agentguard.cli.app import app
+    from decisionlock.cli.app import app
 
     result = CliRunner().invoke(app, ["init", "--output", str(tmp_path)])
 
@@ -206,7 +206,7 @@ def test_init_credential_broker_key_is_loadable_at_the_default_path(tmp_path: Pa
     """The key material `init` writes must load, and http_cli supplies the key_id.
 
     Ed25519 private PEMs do not embed a key id -- load_private defaults to
-    "local-ed25519" and callers pass the key_id explicitly. agentguard-mcp-http does
+    "local-ed25519" and callers pass the key_id explicitly. decisionlock-mcp-http does
     pass --credential-key-id, so the invariant that matters is that the file exists at
     the default path, loads as an Ed25519 key, and that the gateway's default key_id
     is stable.
@@ -214,8 +214,8 @@ def test_init_credential_broker_key_is_loadable_at_the_default_path(tmp_path: Pa
 
     from typer.testing import CliRunner
 
-    from agentguard.cli.app import app
-    from agentguard.http_cli import build_parser
+    from decisionlock.cli.app import app
+    from decisionlock.http_cli import build_parser
 
     CliRunner().invoke(app, ["init", "--output", str(tmp_path)])
     signer = Ed25519Signer.load_private(
@@ -231,11 +231,11 @@ def test_init_credential_broker_key_is_loadable_at_the_default_path(tmp_path: Pa
 
 
 def test_http_cli_default_credential_key_matches_init_output() -> None:
-    from agentguard.http_cli import build_parser
+    from decisionlock.http_cli import build_parser
 
     default = next(action for action in build_parser()._actions if action.dest == "credential_key")
 
-    assert default.default == Path(".agentguard/credential-broker-private.pem")
+    assert default.default == Path(".decisionlock/credential-broker-private.pem")
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +260,7 @@ def test_http_cli_default_credential_key_matches_init_output() -> None:
 def test_entrypoint_reports_denial_without_traceback(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], command: list[str]
 ) -> None:
-    from agentguard.cli import entrypoint
+    from decisionlock.cli import entrypoint
 
     # Missing files would raise a filesystem error, so point at real minimal inputs.
     # The assertion here is that a denial-class error prints "<Type>: <reason>" and
@@ -286,7 +286,7 @@ def test_entrypoint_reports_denial_without_traceback(
 
 
 def test_denial_error_tuple_covers_expected_types() -> None:
-    from agentguard.cli import _DENIAL_ERRORS
+    from decisionlock.cli import _DENIAL_ERRORS
 
     names = {cls.__name__ for cls in _DENIAL_ERRORS}
 
@@ -317,7 +317,7 @@ def test_demo_policy_fixture_is_valid_and_default_deny() -> None:
 
     import yaml
 
-    from agentguard.domain import PolicyDocument
+    from decisionlock.domain import PolicyDocument
 
     path = Path(__file__).resolve().parents[1] / "examples" / "harness" / "policy.yaml"
     document = PolicyDocument.model_validate_json(json.dumps(yaml.safe_load(path.read_text())))

@@ -8,11 +8,11 @@ from pathlib import Path
 
 import yaml
 
-from agentguard.adapters.crypto import Ed25519Signer
-from agentguard.adapters.storage.sqlite import SQLiteState
-from agentguard.cli import _V1_ONLY_COMMANDS
-from agentguard.domain import Effect, ExecutionState, PolicyDocument, ProvenanceLabel
-from agentguard.domain.policy import (
+from decisionlock.adapters.crypto import Ed25519Signer
+from decisionlock.adapters.storage.sqlite import SQLiteState
+from decisionlock.cli import _V1_ONLY_COMMANDS
+from decisionlock.domain import Effect, ExecutionState, PolicyDocument, ProvenanceLabel
+from decisionlock.domain.policy import (
     ActionMatcher,
     PolicyDefaults,
     PolicyMetadata,
@@ -115,7 +115,7 @@ for raw in sys.stdin:
         [
             sys.executable,
             "-m",
-            "agentguard.cli",
+            "decisionlock.cli",
             "mcp-proxy-v2",
             "--policy",
             str(policy_path),

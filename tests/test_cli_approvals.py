@@ -5,8 +5,8 @@ from pathlib import Path
 
 from pytest import CaptureFixture, MonkeyPatch
 
-from agentguard.audit import AuditLedger
-from agentguard.cli import main
+from decisionlock.audit import AuditLedger
+from decisionlock.cli import main
 
 
 def test_approve_call_creates_scoped_grant(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
@@ -91,7 +91,7 @@ def test_approvals_lists_active_grants(tmp_path: Path, capsys: CaptureFixture[st
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "AgentGuard Approval Grants" in captured.out
+    assert "DecisionLock Approval Grants" in captured.out
     assert "run_command" in captured.out
     assert "local repository status" in captured.out
 

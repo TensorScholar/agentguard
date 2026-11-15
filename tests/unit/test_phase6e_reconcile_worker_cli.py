@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-import agentguard.reconcile_worker_cli as worker_cli
-from agentguard.application import (
+import decisionlock.reconcile_worker_cli as worker_cli
+from decisionlock.application import (
     ReconciliationTickResult,
     ReconciliationWorkerHealth,
 )
@@ -110,7 +110,7 @@ def test_worker_cli_rejects_lease_that_cannot_cover_provider_timeout(
         sys,
         "argv",
         [
-            "agentguard-reconcile-worker",
+            "decisionlock-reconcile-worker",
             "--server-id",
             "filesystem",
             "--upstream-url",

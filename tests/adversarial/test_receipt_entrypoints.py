@@ -4,12 +4,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from agentguard.adapters.crypto import Ed25519Signer
-from agentguard.application import AgentGuardService
-from agentguard.domain import CredentialRequest, Effect
-from agentguard.engine.credentials import CredentialVerificationError
-from agentguard.engine.policy import evaluate_policy
-from agentguard.engine.receipts import (
+from decisionlock.adapters.crypto import Ed25519Signer
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import CredentialRequest, Effect
+from decisionlock.engine.credentials import CredentialVerificationError
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.engine.receipts import (
     ReceiptVerificationError,
     issue_decision_receipt,
 )
@@ -49,7 +49,7 @@ def _request(receipt):
 def test_credential_entrypoint_rejects_untrusted_receipts_without_broker_call(
     intent, policy, signer, verifier, state, mutation
 ):
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     trusted = service.authorize(intent, policy)
     forged = mutation(trusted)
     broker = BrokerSpy()
@@ -79,7 +79,7 @@ def test_credential_entrypoint_rejects_validly_signed_out_of_window_receipt(
     broker = BrokerSpy()
 
     with pytest.raises(CredentialVerificationError, match=expected):
-        AgentGuardService(signer, verifier, state).request_credential(
+        DecisionLockService(signer, verifier, state).request_credential(
             intent, receipt, _request(receipt), broker
         )
     assert broker.calls == 0
@@ -88,7 +88,7 @@ def test_credential_entrypoint_rejects_validly_signed_out_of_window_receipt(
 def test_credential_entrypoint_rejects_changed_intent_without_broker_call(
     intent, policy, signer, verifier, state
 ):
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     receipt = service.authorize(intent, policy)
     changed = intent.model_copy(update={"request_id": "changed"})
     broker = BrokerSpy()
@@ -101,7 +101,7 @@ def test_credential_entrypoint_rejects_changed_intent_without_broker_call(
 def test_approval_entrypoint_rejects_forged_require_approval_receipt(
     intent, policy, signer, verifier, state
 ):
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     allowed = service.authorize(intent, policy)
     forged = allowed.model_copy(update={"effect": Effect.REQUIRE_APPROVAL})
 
@@ -128,7 +128,7 @@ def test_approval_entrypoint_rejects_expired_require_approval_receipt(
     )
 
     with pytest.raises(ReceiptVerificationError, match="receipt.expired"):
-        AgentGuardService(signer, verifier, state).approve(
+        DecisionLockService(signer, verifier, state).approve(
             intent,
             expired,
             approver_subject="security",
@@ -141,7 +141,7 @@ def test_credential_entrypoint_rejects_forged_allow_receipt(
 ):
     pending_rule = policy.rules[1].model_copy(update={"effect": Effect.REQUIRE_APPROVAL})
     pending_policy = policy.model_copy(update={"rules": (pending_rule,)})
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     pending = service.authorize(intent, pending_policy)
     assert pending.effect == Effect.REQUIRE_APPROVAL
     forged = pending.model_copy(update={"effect": Effect.ALLOW})
@@ -155,8 +155,8 @@ def test_credential_entrypoint_rejects_forged_allow_receipt(
 def test_approval_entrypoint_rejects_receipt_from_unknown_key(
     intent, policy, signer, verifier, state
 ):
-    service = AgentGuardService(signer, verifier, state)
-    other_service = AgentGuardService(Ed25519Signer.generate("unknown"), verifier, state)
+    service = DecisionLockService(signer, verifier, state)
+    other_service = DecisionLockService(Ed25519Signer.generate("unknown"), verifier, state)
     receipt = other_service.authorize(intent, policy)
     forged = receipt.model_copy(update={"effect": Effect.REQUIRE_APPROVAL})
 

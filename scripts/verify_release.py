@@ -281,7 +281,7 @@ def verify_manifest(
             f"manifest file {manifest_rel_path!r} is missing from SHA256SUMS"
         )
 
-    expected_cdx_rel = Path("release/agentguard.cdx.json").as_posix()
+    expected_cdx_rel = Path("release/decisionlock.cdx.json").as_posix()
     if expected_cdx_rel not in checksum_map:
         raise ReleaseVerificationError(f"SBOM file {expected_cdx_rel!r} is missing from SHA256SUMS")
 
@@ -347,8 +347,8 @@ def verify_release(
     artifact_root: Path,
     allowed_signers_path: Path,
     signer_identity: str,
-    namespace: str = "agentguard-release-v1",
-    expected_project: str = "agentguard",
+    namespace: str = "decisionlock-release-v1",
+    expected_project: str = "decisionlock",
     expected_version: str,
     expected_commit: str,
 ) -> dict[str, Any]:
@@ -431,7 +431,7 @@ def verify_release(
     checksums_path = release_dir / "SHA256SUMS"
     signature_path = release_dir / "SHA256SUMS.sig"
     manifest_path = release_dir / "release-manifest.json"
-    sbom_path = release_dir / "agentguard.cdx.json"
+    sbom_path = release_dir / "decisionlock.cdx.json"
 
     for ctl_name, ctl_path in [
         ("checksums", checksums_path),
@@ -493,7 +493,7 @@ def verify_release(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Verify AgentGuard release authenticity and checksums via OpenSSH SSHSIG"
+        description="Verify DecisionLock release authenticity and checksums via OpenSSH SSHSIG"
     )
     parser.add_argument(
         "--artifact-root",
@@ -514,13 +514,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--namespace",
-        default="agentguard-release-v1",
-        help="SSHSIG namespace (default: agentguard-release-v1)",
+        default="decisionlock-release-v1",
+        help="SSHSIG namespace (default: decisionlock-release-v1)",
     )
     parser.add_argument(
         "--expected-project",
-        default="agentguard",
-        help="Expected project name in manifest (default: agentguard)",
+        default="decisionlock",
+        help="Expected project name in manifest (default: decisionlock)",
     )
     parser.add_argument(
         "--expected-version",

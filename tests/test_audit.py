@@ -4,8 +4,8 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from agentguard.audit import AuditLedger, hash_tool_arguments
-from agentguard.models import (
+from decisionlock.audit import AuditLedger, hash_tool_arguments
+from decisionlock.models import (
     ApprovalGrant,
     AuditEvent,
     Capability,
@@ -13,7 +13,7 @@ from agentguard.models import (
     ToolCall,
     ToolInventoryItem,
 )
-from agentguard.policy import Policy
+from decisionlock.policy import Policy
 
 
 def test_audit_ledger_round_trip(tmp_path: Path) -> None:

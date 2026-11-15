@@ -56,7 +56,7 @@ It proves the plumbing works, end to end, with no mocks in the enforcement path:
 
 **It does not prove anything about a real provider.** The fake provider confirms outcomes from its own
 ledger. That is not an attestation by Stripe or anyone else, and the reconciler is only as trustworthy
-as the status tool you configure — AgentGuard cannot verify that a provider tells the truth. It is also
+as the status tool you configure — DecisionLock cannot verify that a provider tells the truth. It is also
 not a benchmark, a penetration test, a soak test, or a production pilot, and the capability classifier
 it relies on is keyword-based and advisory.
 

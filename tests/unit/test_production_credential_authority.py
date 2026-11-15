@@ -4,22 +4,22 @@ from datetime import UTC, datetime
 
 import pytest
 
-from agentguard.adapters.broker import (
+from decisionlock.adapters.broker import (
     BrokeredCredentialAuthority,
     CredentialAuthorityError,
     SQLiteCredentialProfileRepository,
 )
-from agentguard.adapters.crypto import Ed25519Signer
-from agentguard.domain import (
+from decisionlock.adapters.crypto import Ed25519Signer
+from decisionlock.domain import (
     CredentialAuthorityProfile,
     CredentialRequest,
     ProviderIdentity,
     VerifiedCredentialAuthority,
 )
-from agentguard.engine.canonical import digest
-from agentguard.engine.credentials import verify_credential_grant
-from agentguard.engine.policy import evaluate_policy
-from agentguard.engine.receipts import issue_decision_receipt
+from decisionlock.engine.canonical import digest
+from decisionlock.engine.credentials import verify_credential_grant
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.engine.receipts import issue_decision_receipt
 
 
 class MutableCredentialSource:

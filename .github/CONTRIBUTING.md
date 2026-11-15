@@ -1,6 +1,6 @@
 # Contributing
 
-AgentGuard is security-sensitive software. Small changes can alter authorization, replay, credential, and audit semantics.
+DecisionLock is security-sensitive software. Small changes can alter authorization, replay, credential, and audit semantics.
 
 ## Development setup
 

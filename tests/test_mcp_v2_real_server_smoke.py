@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agentguard.adapters.crypto import Ed25519Signer
-from agentguard.adapters.storage.sqlite import SQLiteState
-from agentguard.domain import Effect, ExecutionState, PolicyDocument, ProvenanceLabel
-from agentguard.domain.policy import (
+from decisionlock.adapters.crypto import Ed25519Signer
+from decisionlock.adapters.storage.sqlite import SQLiteState
+from decisionlock.domain import Effect, ExecutionState, PolicyDocument, ProvenanceLabel
+from decisionlock.domain.policy import (
     ActionMatcher,
     PolicyDefaults,
     PolicyMetadata,
@@ -21,7 +21,7 @@ from agentguard.domain.policy import (
     ProvenanceMatcher,
 )
 
-REAL_MCP_V2_SMOKE_ENV = "AGENTGUARD_RUN_REAL_MCP_V2_SMOKE"
+REAL_MCP_V2_SMOKE_ENV = "DECISIONLOCK_RUN_REAL_MCP_V2_SMOKE"
 FILESYSTEM_PACKAGE = "@modelcontextprotocol/server-filesystem"
 FILESYSTEM_VERSION = "2026.1.14"
 SUPPORTED_PROFILE = "2025-03-26"
@@ -88,7 +88,7 @@ def test_protected_v2_proxy_with_pinned_filesystem_server(tmp_path: Path) -> Non
         [
             sys.executable,
             "-m",
-            "agentguard.cli",
+            "decisionlock.cli",
             "mcp-proxy-v2",
             "--policy",
             str(policy_path),
@@ -134,7 +134,7 @@ def test_protected_v2_proxy_with_pinned_filesystem_server(tmp_path: Path) -> Non
             "params": {
                 "protocolVersion": SUPPORTED_PROFILE,
                 "capabilities": {},
-                "clientInfo": {"name": "agentguard-v2-smoke", "version": "0.1.0"},
+                "clientInfo": {"name": "decisionlock-v2-smoke", "version": "0.1.0"},
             },
         }
     )

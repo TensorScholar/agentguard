@@ -3,25 +3,25 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
-from agentguard.adapters.protocols.mcp.http_gateway import MCPProtectedHTTPGateway
-from agentguard.adapters.protocols.mcp.http_gateway_types import (
+from decisionlock.adapters.protocols.mcp.http_gateway import MCPProtectedHTTPGateway
+from decisionlock.adapters.protocols.mcp.http_gateway_types import (
     HTTPExchangeResponse,
     UpstreamTransportError,
 )
-from agentguard.adapters.protocols.mcp.modern import (
+from decisionlock.adapters.protocols.mcp.modern import (
     CLIENT_CAPABILITIES_META_KEY,
     MODERN_PROTOCOL_PROFILE,
     PROTOCOL_VERSION_META_KEY,
     MCPHTTPServerBinding,
     encode_mcp_header_value,
 )
-from agentguard.adapters.reconciliation import (
+from decisionlock.adapters.reconciliation import (
     MCPHTTPProviderStatusProfile,
     MCPHTTPProviderStatusReconciler,
     SQLiteProviderEffectRepository,
 )
-from agentguard.application import AgentGuardService, ProviderBoundExecutionReconciler
-from agentguard.domain import (
+from decisionlock.application import DecisionLockService, ProviderBoundExecutionReconciler
+from decisionlock.domain import (
     Effect,
     EvidenceTrustLevel,
     ExecutionState,
@@ -29,7 +29,7 @@ from agentguard.domain import (
     ProvenanceLabel,
     ReconciliationStatus,
 )
-from agentguard.domain.policy import (
+from decisionlock.domain.policy import (
     ActionMatcher,
     PolicyDefaults,
     PolicyDocument,
@@ -37,7 +37,7 @@ from agentguard.domain.policy import (
     PolicyRule,
     ProvenanceMatcher,
 )
-from agentguard.engine.provider_contracts import external_effect_binding_digest
+from decisionlock.engine.provider_contracts import external_effect_binding_digest
 
 
 def _policy() -> PolicyDocument:
@@ -152,7 +152,7 @@ def test_ambiguous_mcp_dispatch_reconciles_from_exact_durable_binding(
     server_binding = MCPHTTPServerBinding.for_url("filesystem", "http://127.0.0.1:9010/mcp")
     provider_effects = SQLiteProviderEffectRepository(tmp_path / "provider-effects.sqlite")
     sender = AmbiguousThenStatusSender()
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     gateway = MCPProtectedHTTPGateway(
         service,
         _policy(),
@@ -219,7 +219,7 @@ def test_opposite_provider_confirmations_promote_core_resolution_to_conflict(
     server_binding = MCPHTTPServerBinding.for_url("filesystem", "http://127.0.0.1:9010/mcp")
     provider_effects = SQLiteProviderEffectRepository(tmp_path / "provider-effects.sqlite")
     sender = AmbiguousThenStatusSender()
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     gateway = MCPProtectedHTTPGateway(
         service,
         _policy(),
@@ -253,7 +253,7 @@ def test_opposite_provider_confirmations_promote_core_resolution_to_conflict(
     sender.status_value = "failed"
     second = service.reconcile_execution(execution.execution_id, reconciler)
     assert second.status == ReconciliationStatus.CONFLICT
-    assert second.trust_level == EvidenceTrustLevel.AGENTGUARD_SIGNED
+    assert second.trust_level == EvidenceTrustLevel.DECISIONLOCK_SIGNED
     assert second.error_code == "reconciliation.conflicting_evidence"
     assert (
         len(
@@ -287,7 +287,7 @@ def test_binding_persistence_failure_blocks_side_effecting_provider_send(
 ) -> None:
     server_binding = MCPHTTPServerBinding.for_url("filesystem", "http://127.0.0.1:9010/mcp")
     sender = AmbiguousThenStatusSender()
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     gateway = MCPProtectedHTTPGateway(
         service,
         _policy(),

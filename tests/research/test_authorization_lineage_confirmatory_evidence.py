@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.research.authorization_lineage.analysis import analyze_trial
-from agentguard.research.authorization_lineage.confirmatory import (
+from decisionlock.research.authorization_lineage.analysis import analyze_trial
+from decisionlock.research.authorization_lineage.confirmatory import (
     ConfirmatoryEvidenceError,
     TrialExecutionEvidence,
     block_sequence_filename,
@@ -18,8 +18,8 @@ from agentguard.research.authorization_lineage.confirmatory import (
     validate_block_records,
     verify_supplied_analysis,
 )
-from agentguard.research.authorization_lineage.harness import DevTrialHarness
-from agentguard.research.authorization_lineage.models import (
+from decisionlock.research.authorization_lineage.harness import DevTrialHarness
+from decisionlock.research.authorization_lineage.models import (
     AnalyzedTrial,
     Arm,
     ProviderStratum,
@@ -27,8 +27,8 @@ from agentguard.research.authorization_lineage.models import (
     TrialObservation,
     TrialSpec,
 )
-from agentguard.research.authorization_lineage.provider import IndependentEffectOracleReader
-from agentguard.research.authorization_lineage.trace import HarnessInvalidReason
+from decisionlock.research.authorization_lineage.provider import IndependentEffectOracleReader
+from decisionlock.research.authorization_lineage.trace import HarnessInvalidReason
 
 
 def _spec(

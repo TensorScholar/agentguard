@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from agentguard.domain import (
+from decisionlock.domain import (
     DelegationContext,
     Effect,
     EffectProjection,
@@ -14,8 +14,8 @@ from agentguard.domain import (
     PolicyDocument,
     ProvenanceLabel,
 )
-from agentguard.domain.policy import EffectMatcher
-from agentguard.engine.policy import evaluate_policy
+from decisionlock.domain.policy import EffectMatcher
+from decisionlock.engine.policy import evaluate_policy
 
 
 def test_bounded_refund_allows(intent, policy):
@@ -128,7 +128,7 @@ def test_tool_mismatch_denied(intent, policy):
 
 
 def test_deny_precedence(policy, intent):
-    from agentguard.domain.policy import ActionMatcher, PolicyRule
+    from decisionlock.domain.policy import ActionMatcher, PolicyRule
 
     deny = PolicyRule(
         id="deny",

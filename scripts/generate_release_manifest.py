@@ -50,7 +50,7 @@ def build_manifest(dist: Path, commit: str) -> dict[str, object]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate deterministic AgentGuard release manifest"
+        description="Generate deterministic DecisionLock release manifest"
     )
     parser.add_argument("--dist", type=Path, required=True)
     parser.add_argument("--commit", required=True)

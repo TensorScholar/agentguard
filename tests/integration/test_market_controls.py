@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
-from agentguard.adapters.storage.sqlite import SQLiteState
-from agentguard.domain import AuditEvent, AuditEventType
-from agentguard.engine.checkpoints import (
+from decisionlock.adapters.crypto import Ed25519Signer, Ed25519Verifier
+from decisionlock.adapters.storage.sqlite import SQLiteState
+from decisionlock.domain import AuditEvent, AuditEventType
+from decisionlock.engine.checkpoints import (
     AuditCheckpointError,
     issue_audit_checkpoint,
     verify_audit_checkpoint_signature,
 )
-from agentguard.posture import EnforcementStatus, scan_enforcement_posture
+from decisionlock.posture import EnforcementStatus, scan_enforcement_posture
 
 
 def test_signed_audit_checkpoint_survives_growth_and_detects_replacement(
@@ -88,7 +88,7 @@ def test_mcp_posture_finds_parallel_direct_bypass(tmp_path: Path) -> None:
             {
                 "mcpServers": {
                     "guarded": {
-                        "command": "agentguard",
+                        "command": "decisionlock",
                         "args": ["mcp-proxy", "--", "npx", "example-mcp"],
                     },
                     "unguarded": {"command": "npx", "args": ["example-mcp"]},
@@ -110,7 +110,7 @@ def test_mcp_posture_finds_parallel_direct_bypass(tmp_path: Path) -> None:
     assert len(report.duplicate_bypass_fingerprints) == 1
 
 
-def test_mcp_posture_does_not_trust_agentguard_tokens_inside_direct_server_args(
+def test_mcp_posture_does_not_trust_decisionlock_tokens_inside_direct_server_args(
     tmp_path: Path,
 ) -> None:
     config = tmp_path / "mcp.json"
@@ -123,7 +123,7 @@ def test_mcp_posture_does_not_trust_agentguard_tokens_inside_direct_server_args(
                         "args": [
                             "server.py",
                             "--description",
-                            "agentguard",
+                            "decisionlock",
                             "mcp-proxy",
                             "--",
                             "target",
@@ -137,7 +137,7 @@ def test_mcp_posture_does_not_trust_agentguard_tokens_inside_direct_server_args(
 
     route = scan_enforcement_posture([config]).routes[0]
     assert route.status == EnforcementStatus.DIRECT
-    assert route.reason_codes == ("mcp.direct_connection_bypasses_agentguard",)
+    assert route.reason_codes == ("mcp.direct_connection_bypasses_decisionlock",)
 
 
 def test_mcp_posture_recognizes_python_module_entrypoint(tmp_path: Path) -> None:
@@ -148,7 +148,7 @@ def test_mcp_posture_recognizes_python_module_entrypoint(tmp_path: Path) -> None
                 "mcpServers": {
                     "guarded": {
                         "command": "python",
-                        "args": ["-m", "agentguard", "mcp-proxy", "--", "npx", "server"],
+                        "args": ["-m", "decisionlock", "mcp-proxy", "--", "npx", "server"],
                     }
                 }
             }

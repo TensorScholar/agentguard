@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.models import Decision, ToolCall
-from agentguard.policy import load_policy
-from agentguard.policy_packs import available_policy_packs, render_policy_pack
+from decisionlock.models import Decision, ToolCall
+from decisionlock.policy import load_policy
+from decisionlock.policy_packs import available_policy_packs, render_policy_pack
 
 _REPO_ROOT = Path(__file__).parents[1]
 _V1_EXAMPLE_POLICIES = sorted(
@@ -23,7 +23,7 @@ _V1_EXAMPLE_POLICIES = sorted(
 _V2_EXAMPLE_POLICIES = sorted((_REPO_ROOT / "examples").glob("*/policy.yaml"))
 
 # A tool name that is not in any shipped example allowlist.
-UNMATCHED_TOOL = ToolCall(tool_name="__agentguard_unmatched_probe__", arguments={})
+UNMATCHED_TOOL = ToolCall(tool_name="__decisionlock_unmatched_probe__", arguments={})
 
 
 def _load_v1(path: Path) -> Decision:

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from starlette.testclient import TestClient
 
-from agentguard.adapters.protocols.mcp.http_server import create_protected_mcp_http_app
+from decisionlock.adapters.protocols.mcp.http_server import create_protected_mcp_http_app
 
 
 class FakeSender:

@@ -4,22 +4,22 @@ import json
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
-from agentguard.adapters.broker import (
+from decisionlock.adapters.broker import (
     BrokeredCredentialAuthority,
     SQLiteCredentialProfileRepository,
 )
-from agentguard.adapters.crypto import Ed25519Signer
-from agentguard.adapters.protocols.mcp.http_gateway import MCPProtectedHTTPGateway
-from agentguard.adapters.protocols.mcp.http_gateway_types import HTTPExchangeResponse
-from agentguard.adapters.protocols.mcp.modern import (
+from decisionlock.adapters.crypto import Ed25519Signer
+from decisionlock.adapters.protocols.mcp.http_gateway import MCPProtectedHTTPGateway
+from decisionlock.adapters.protocols.mcp.http_gateway_types import HTTPExchangeResponse
+from decisionlock.adapters.protocols.mcp.modern import (
     CLIENT_CAPABILITIES_META_KEY,
     MODERN_PROTOCOL_PROFILE,
     PROTOCOL_VERSION_META_KEY,
     MCPHTTPServerBinding,
     encode_mcp_header_value,
 )
-from agentguard.application import AgentGuardService
-from agentguard.domain import (
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import (
     CredentialAuthorityProfile,
     CredentialCeiling,
     Effect,
@@ -28,7 +28,7 @@ from agentguard.domain import (
     ProvenanceLabel,
     ProviderIdentity,
 )
-from agentguard.domain.policy import (
+from decisionlock.domain.policy import (
     ActionMatcher,
     PolicyDefaults,
     PolicyDocument,
@@ -36,7 +36,7 @@ from agentguard.domain.policy import (
     PolicyRule,
     ProvenanceMatcher,
 )
-from agentguard.engine.canonical import digest
+from decisionlock.engine.canonical import digest
 
 
 class MutableSource:
@@ -177,7 +177,7 @@ def test_credential_bound_http_call_injects_only_dispatch_secret(
         sources={profile.profile_id: source},
     )
     sender = CredentialCheckingSender("provider-secret-v1")
-    service = AgentGuardService(
+    service = DecisionLockService(
         signer,
         verifier,
         state,
@@ -247,7 +247,7 @@ def test_revoked_profile_blocks_call_before_external_dispatch(
         sources={profile.profile_id: source},
     )
     sender = CredentialCheckingSender("provider-secret-v1")
-    service = AgentGuardService(
+    service = DecisionLockService(
         signer,
         verifier,
         state,

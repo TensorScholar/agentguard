@@ -1,6 +1,6 @@
 # Security Policy
 
-AgentGuard is prerelease security software. It is not production-certified and must be deployed behind independent identity, secret-management, network, process, and operating-system controls.
+DecisionLock is prerelease security software. It is not production-certified and must be deployed behind independent identity, secret-management, network, process, and operating-system controls.
 
 ## Supported versions
 
@@ -34,4 +34,4 @@ There is no commercial support or response-time SLA. Reports will be triaged acc
 
 ## Deployment responsibility
 
-AgentGuard does not replace process isolation, network egress controls, secret-manager policy, identity proofing, centralized transactional state, or an independent audit/checkpoint store.
+DecisionLock does not replace process isolation, network egress controls, secret-manager policy, identity proofing, centralized transactional state, or an independent audit/checkpoint store.

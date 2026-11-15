@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.audit import AuditLedger
-from agentguard.mcp_stdio import APPROVAL_REQUIRED
-from agentguard.models import Decision
+from decisionlock.audit import AuditLedger
+from decisionlock.mcp_stdio import APPROVAL_REQUIRED
+from decisionlock.models import Decision
 
-REAL_MCP_SMOKE_ENV = "AGENTGUARD_RUN_REAL_MCP_SMOKE"
+REAL_MCP_SMOKE_ENV = "DECISIONLOCK_RUN_REAL_MCP_SMOKE"
 FILESYSTEM_PACKAGE = "@modelcontextprotocol/server-filesystem"
 FILESYSTEM_VERSION = "2026.1.14"
 
@@ -82,7 +82,7 @@ def test_mcp_proxy_with_pinned_filesystem_server(tmp_path: Path) -> None:
                 "params": {
                     "protocolVersion": "2025-03-26",
                     "capabilities": {},
-                    "clientInfo": {"name": "agentguard-smoke", "version": "0.1.0"},
+                    "clientInfo": {"name": "decisionlock-smoke", "version": "0.1.0"},
                 },
             },
             {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
@@ -112,7 +112,7 @@ def test_mcp_proxy_with_pinned_filesystem_server(tmp_path: Path) -> None:
         [
             sys.executable,
             "-m",
-            "agentguard.cli",
+            "decisionlock.cli",
             "mcp-proxy",
             "--policy",
             str(policy_path),

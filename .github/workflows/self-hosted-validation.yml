@@ -23,7 +23,7 @@ jobs:
       - self-hosted
       - macOS
       - ARM64
-      - agentguard-core
+      - decisionlock-core
     timeout-minutes: 20
     if: >-
       github.actor == 'TensorScholar' &&
@@ -49,10 +49,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VENV="$RUNNER_TEMP/agentguard-q05-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          VENV="$RUNNER_TEMP/decisionlock-q05-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           python -m venv "$VENV"
           echo "$VENV/bin" >> "$GITHUB_PATH"
-          echo "AGENTGUARD_Q05_VENV=$VENV" >> "$GITHUB_ENV"
+          echo "DECISIONLOCK_Q05_VENV=$VENV" >> "$GITHUB_ENV"
 
       - name: Safe environment provenance
         shell: bash
@@ -102,7 +102,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p evidence
-          python -m agentguard.research.authorization_lineage.preflight \
+          python -m decisionlock.research.authorization_lineage.preflight \
             --expected-git-commit "$GITHUB_SHA" \
             --output evidence/confirmatory-preflight.json
 
@@ -127,21 +127,21 @@ jobs:
           mkdir -p evidence
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_REF="${{ github.event.pull_request.base.sha }}"
-            python -m agentguard.cli gate \
+            python -m decisionlock.cli gate \
               --changed-from "$BASE_REF" \
               --fail-on-risk high \
               --format findings-json \
-              --output evidence/agentguard-findings.json \
-              --summary-output evidence/agentguard-summary.md
+              --output evidence/decisionlock-findings.json \
+              --summary-output evidence/decisionlock-summary.md
           else
-            python -m agentguard.cli scan \
+            python -m decisionlock.cli scan \
               --format findings-json \
-              --output evidence/agentguard-findings.json \
-              --summary-output evidence/agentguard-summary.md
+              --output evidence/decisionlock-findings.json \
+              --summary-output evidence/decisionlock-summary.md
           fi
 
-          if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f evidence/agentguard-summary.md ]; then
-            cat evidence/agentguard-summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f evidence/decisionlock-summary.md ]; then
+            cat evidence/decisionlock-summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Generate safe evidence summary
@@ -171,7 +171,7 @@ jobs:
           - **Confirmatory Runtime Preflight**: ${CONFIRMATORY_PREFLIGHT_STATUS}
           - **Make Check**: PASS
           - **Dependency Audit**: PASS
-          - **AgentGuard Gate**: PASS
+          - **DecisionLock Gate**: PASS
 
           \`\`\`text
           CI_EXECUTION_CLASS=self-hosted
@@ -194,8 +194,8 @@ jobs:
         run: |
           set -euo pipefail
           test -s evidence/self-hosted-evidence.md
-          test -s evidence/agentguard-findings.json
-          test -s evidence/agentguard-summary.md
+          test -s evidence/decisionlock-findings.json
+          test -s evidence/decisionlock-summary.md
           # The confirmatory preflight only runs on the research branch (see its
           # `if:` above), so its output is only required there. Asserting it
           # unconditionally would fail every product run.
@@ -215,8 +215,8 @@ jobs:
           path: |
             evidence/self-hosted-evidence.md
             evidence/confirmatory-preflight.json
-            evidence/agentguard-findings.json
-            evidence/agentguard-summary.md
+            evidence/decisionlock-findings.json
+            evidence/decisionlock-summary.md
           if-no-files-found: error
 
       - name: Cleanup isolated virtual environment
@@ -224,18 +224,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "${AGENTGUARD_Q05_VENV:-}" ] && [ -n "${RUNNER_TEMP:-}" ]; then
-            case "$AGENTGUARD_Q05_VENV" in
-              "$RUNNER_TEMP"/agentguard-q05-*)
-                if [ -d "$AGENTGUARD_Q05_VENV" ]; then
-                  echo "Safely removing isolated venv: $AGENTGUARD_Q05_VENV"
-                  rm -rf "$AGENTGUARD_Q05_VENV"
+          if [ -n "${DECISIONLOCK_Q05_VENV:-}" ] && [ -n "${RUNNER_TEMP:-}" ]; then
+            case "$DECISIONLOCK_Q05_VENV" in
+              "$RUNNER_TEMP"/decisionlock-q05-*)
+                if [ -d "$DECISIONLOCK_Q05_VENV" ]; then
+                  echo "Safely removing isolated venv: $DECISIONLOCK_Q05_VENV"
+                  rm -rf "$DECISIONLOCK_Q05_VENV"
                 else
-                  echo "Venv directory does not exist: $AGENTGUARD_Q05_VENV"
+                  echo "Venv directory does not exist: $DECISIONLOCK_Q05_VENV"
                 fi
                 ;;
               *)
-                echo "Refusing to delete unverified path: $AGENTGUARD_Q05_VENV" >&2
+                echo "Refusing to delete unverified path: $DECISIONLOCK_Q05_VENV" >&2
                 exit 1
                 ;;
             esac

@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.adapters.storage.sqlite import (
+from decisionlock.adapters.storage.sqlite import (
     IncompatibleStateDatabaseError,
     SQLiteState,
 )
-from agentguard.audit import AuditLedger
-from agentguard.domain import AuditEvent, AuditEventType
+from decisionlock.audit import AuditLedger
+from decisionlock.domain import AuditEvent, AuditEventType
 
 
 def test_nonce_single_use(state):
@@ -86,11 +86,11 @@ def test_existing_v2_action_integrity_schema_upgrades_in_place(tmp_path: Path) -
                 previous_hash TEXT NOT NULL,
                 event_hash TEXT NOT NULL
             );
-            CREATE TABLE agentguard_schema(
+            CREATE TABLE decisionlock_schema(
                 component TEXT PRIMARY KEY,
                 version INTEGER NOT NULL
             );
-            INSERT INTO agentguard_schema(component, version)
+            INSERT INTO decisionlock_schema(component, version)
             VALUES('action_integrity', 3);
             """
         )
@@ -98,7 +98,7 @@ def test_existing_v2_action_integrity_schema_upgrades_in_place(tmp_path: Path) -
     state = SQLiteState(path)
     with sqlite3.connect(state.path) as connection:
         version = connection.execute(
-            "SELECT version FROM agentguard_schema WHERE component = 'action_integrity'"
+            "SELECT version FROM decisionlock_schema WHERE component = 'action_integrity'"
         ).fetchone()
         execution_table = connection.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'executions'"
@@ -152,11 +152,11 @@ def test_phase5cd_migrates_existing_v4_execution_columns_without_losing_state(
                 'unknown','2026-08-29T10:00:00+00:00',NULL,'2026-08-29T10:00:01+00:00',
                 NULL,NULL,'execution.test_unknown'
             );
-            CREATE TABLE agentguard_schema(
+            CREATE TABLE decisionlock_schema(
                 component TEXT PRIMARY KEY,
                 version INTEGER NOT NULL
             );
-            INSERT INTO agentguard_schema(component, version)
+            INSERT INTO decisionlock_schema(component, version)
             VALUES('action_integrity', 4);
             """
         )
@@ -165,7 +165,7 @@ def test_phase5cd_migrates_existing_v4_execution_columns_without_losing_state(
     with sqlite3.connect(state.path) as connection:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(executions)").fetchall()}
         version = connection.execute(
-            "SELECT version FROM agentguard_schema WHERE component = 'action_integrity'"
+            "SELECT version FROM decisionlock_schema WHERE component = 'action_integrity'"
         ).fetchone()
 
     existing = state.get_execution("exec-existing")

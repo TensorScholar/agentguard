@@ -2,15 +2,25 @@
 
 ## 0.2.0rc4
 
+### Rename: AgentGuard -> DecisionLock
+
+The project was renamed ahead of the first PyPI release; no code or behavior changed.
+Package, CLI entry points (decisionlock, decisionlock-mcp-http, decisionlock-reconcile,
+decisionlock-reconcile-worker), URLs, and docs now use the DecisionLock name. The
+pre-registered research record under research/ is intentionally unchanged: it pins
+git blob hashes of the implementation as frozen at pre-registration time, and rewriting
+it would falsify the record. The historical agentguard-reference artifact name and the
+agentguard-mac-arm64 runner name are likewise retained as historical facts.
+
 Three stabilization and delivery passes, plus a packaging and positioning pass. Packaging only — no
 enforcement behavior changed in Phase 3.
 
 ### CI evidence for 0.2.0rc4
 
-- Green **self-hosted** validation now exists for this line: runs [`36910522462`](https://github.com/TensorScholar/agentguard/actions/runs/36910522462)
-  and, superseding it on the final branch head, [`36916055898`](https://github.com/TensorScholar/agentguard/actions/runs/36916055898)
+- Green **self-hosted** validation now exists for this line: runs [`36910522462`](https://github.com/TensorScholar/decisionlock/actions/runs/36910522462)
+  and, superseding it on the final branch head, [`36916055898`](https://github.com/TensorScholar/decisionlock/actions/runs/36916055898)
   (commit `6f071ed`), both via runner `agentguard-mac-arm64`, where `make check` passed
-  (839 passed, 3 skipped), `pip_audit` passed, and the AgentGuard MCP security gate passed. `36916055898`
+  (839 passed, 3 skipped), `pip_audit` passed, and the DecisionLock MCP security gate passed. `36916055898`
   is the authoritative artifact: it is the one whose evidence reflects the current
   `HOSTED_CI_REPLACED` wording.
 - `AG-CI-001` is narrowed, **not closed**. Still missing: green hosted CI (`ci.yml`, `codeql.yml`,
@@ -35,7 +45,7 @@ controlled production pilot.
   metadata, CITATION, and the changelog heading move together.
 - **Fix an sdist packaging defect.** `MANIFEST.in` included `examples/` without `*.py`, so an sdist
   consumer received the harness README instructing them to run `run_demo.py` without receiving it.
-  The wheel still carries no harness files and `src/agentguard/research` remains excluded from both.
+  The wheel still carries no harness files and `src/decisionlock/research` remains excluded from both.
 - Add a cold-start evaluation path to the README: install, run the demo, verify evidence and detect
   tampering, then read the credential contract and limitations. Every command in it was executed
   verbatim from a clean virtualenv.
@@ -71,10 +81,10 @@ user. Each was found by executing the documented path, not by reading it.
 - **No MCP adapter ever supplied provenance.** All three protected adapters called
   `intent_from_tools_call` without provenance, so every live MCP intent was `(unverified, False)` and
   any policy with `unknown_provenance != allow` refused every call. Added `--provenance` and
-  `--provenance-verified` to `mcp-proxy-v2` and `agentguard-mcp-http`, defaulting to `unverified`.
+  `--provenance-verified` to `mcp-proxy-v2` and `decisionlock-mcp-http`, defaulting to `unverified`.
   The parser rejects unknown labels and the contradictory `unverified` + trusted-label mix.
-- **`agentguard init` never created the key `agentguard-mcp-http` expects.** The gateway defaults
-  `--credential-key` to `.agentguard/credential-broker-private.pem`; `init` only wrote
+- **`decisionlock init` never created the key `decisionlock-mcp-http` expects.** The gateway defaults
+  `--credential-key` to `.decisionlock/credential-broker-private.pem`; `init` only wrote
   `broker-private.pem`. Following the documented setup made the production credential path fail
   immediately. `init` now writes both.
 - **Stable reason codes were rendered as Rich tracebacks.** The entrypoint now prints
@@ -82,7 +92,7 @@ user. Each was found by executing the documented path, not by reading it.
   `EvidenceVerificationError`, `ServiceDeploymentError`, and related denial classes.
 - **The gateway swallowed the credential reason code.** It now includes `error.data.reason_code`, for
   example `credential.profile_scope_mismatch`. A missing `--credential-key` file is caught at startup
-  with a message naming `agentguard init`.
+  with a message naming `decisionlock init`.
 
 ### Added: runnable demo harness
 
@@ -127,7 +137,7 @@ to what the project leads with and what a reader is shown first.
 - Add a 5-minute grasp / 30-minute evaluation path to the README, naming who the product is for and
   stating that the core single-use admission-ticket pattern is prior art.
 - Collapse the documented happy path to four steps: `authorize`, execute through `mcp-proxy-v2` (or
-  `agentguard-mcp-http`), `evidence-build`, `evidence-verify`, with `reconcile-execution` as an
+  `decisionlock-mcp-http`), `evidence-build`, `evidence-verify`, with `reconcile-execution` as an
   operator-only branch.
 - Demote causal graphs, field provenance and typed releases, policy counterfactuals, delegated
   authority trees, approval receipts, checkpoint signing, attestations, the reconciliation worker, and
@@ -138,7 +148,7 @@ to what the project leads with and what a reader is shown first.
   honest limit that a static secret cannot be attenuated so exact scope equality is required, the
   absence of audience proof and upstream revocation, and that `broker-demo` uses the non-production
   mock broker while the production authority is reachable only via
-  `agentguard-mcp-http --credential-env`.
+  `decisionlock-mcp-http --credential-env`.
 - Add `docs/scenarios.md` with three concrete high-stakes scenarios (bounded refund, irreversible
   delete, external effect that goes `UNKNOWN`), each mapped to the mechanisms it exercises and to the
   existing `examples/` material.
@@ -162,7 +172,7 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
 
 - Add a `Research Status` section to `README.md` above the fold recording
   `RESEARCH_CLAIM: NOT_VALIDATED` and
-  `AGENTGUARD_SPECIFIC_DIFFERENTIATION_THESIS: FALSIFIED_WITHIN_PROTOCOL`, the 6.45 slot-hold ratio
+  `DECISIONLOCK_SPECIFIC_DIFFERENTIATION_THESIS: FALSIFIED_WITHIN_PROTOCOL`, the 6.45 slot-hold ratio
   favoring the no-guard baseline, the scope exclusions from
   `docs/research/FREEZE_V2_RESULT_ADJUDICATION.md` §6, and the unestablished product claims.
 - State in the README that the core single-use-receipt / digest-revalidation pattern is not unique to
@@ -170,7 +180,7 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
 
 ### Breaking: v1 policy default is now deny
 
-- **Breaking change.** `agentguard.policy.load_policy` and the `Policy` dataclass now default
+- **Breaking change.** `decisionlock.policy.load_policy` and the `Policy` dataclass now default
   `default_action` to `deny` instead of `allow`. A v1 policy that relied on the implicit
   allow-by-default must now declare `default_action: allow` explicitly, or (preferred) declare a
   non-empty `allowed_tools` allowlist, which is checked first and denies every tool it does not
@@ -186,7 +196,7 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
 
 ### Execution API safety
 
-- Rename `agentguard.engine.execution.authorize_execution` to `preflight_execution`. The function
+- Rename `decisionlock.engine.execution.authorize_execution` to `preflight_execution`. The function
   performs validation only and does not consume the decision nonce; the previous name implied
   single-use enforcement it does not perform.
 - Keep `authorize_execution` as a deprecated wrapper that emits `DeprecationWarning` and delegates
@@ -194,7 +204,7 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
 
 ### Packaging
 
-- Exclude `agentguard.research` from the wheel and sdist. The pre-registered authorization-lineage
+- Exclude `decisionlock.research` from the wheel and sdist. The pre-registered authorization-lineage
   research program is retained in the repository as the research record and is importable from a
   source checkout or editable install, but is not distributed as unreferenced product code.
 - Align coverage measurement with the distributed package so the 80% combined statement/branch floor
@@ -233,7 +243,7 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
 - Freeze provider/external-effect contracts so ambiguous outcomes remain `UNKNOWN` until trusted
   provider reconciliation establishes stronger evidence; blind retry remains forbidden by default.
 - Add provider-neutral production credential authority with late secret resolution, exact provider
-  binding, durable revocation, and no provider secret in grants or AgentGuard durable state.
+  binding, durable revocation, and no provider secret in grants or DecisionLock durable state.
 - Persist external-effect bindings before side-effecting dispatch and add provider-specific durable
   reconciliation with explicit `PROVIDER_VERIFIED` evidence semantics.
 - Add single-host multi-process reconciliation leases with monotonic fencing tokens, crash-safe
@@ -249,7 +259,7 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
   `PYSEC-2026-3552` dependency-audit ignore after upgrading beyond its fixed version.
 - Add reproducible wheel/normalized-sdist checks, deterministic SBOM and release-manifest generation,
   package checksums, base-wheel and HTTP-extra clean-install smoke, and container smoke validation.
-- Package the existing protected HTTP service CLI as the `agentguard-mcp-http` console entrypoint and
+- Package the existing protected HTTP service CLI as the `decisionlock-mcp-http` console entrypoint and
   exercise it from clean-installed wheels and the release-candidate container.
 - Synchronize public architecture, threat, deployment, limitation, project-status, and release
   documentation with the validated Phase 6 boundary while retaining the non-production-certified
@@ -287,7 +297,7 @@ documented in [the v1 to v2 migration guide](docs/migration-v1-to-v2.md).
 
 ## 0.2.0rc1
 
-- Reframed AgentGuard as a provider-neutral action-integrity kernel.
+- Reframed DecisionLock as a provider-neutral action-integrity kernel.
 - Added strict ActionIntent and Policy v2 schemas with default deny.
 - Added provenance-aware policy, tenant binding and blast-radius budgets.
 - Added Ed25519-signed decision receipts and execution-time digest binding.

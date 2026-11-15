@@ -8,28 +8,28 @@ from pathlib import Path
 
 import pytest
 
-import agentguard.adapters.storage.sqlite.state as sqlite_state_module
-import agentguard.audit as audit_module
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.crypto import Ed25519Signer
-from agentguard.adapters.storage.sqlite import SQLiteState
-from agentguard.audit import AuditLedger
-from agentguard.domain import CredentialRequest, Effect, ExecutionBudget
-from agentguard.domain.policy import ActionMatcher, PolicyRule
-from agentguard.engine.credentials import (
+import decisionlock.adapters.storage.sqlite.state as sqlite_state_module
+import decisionlock.audit as audit_module
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.adapters.crypto import Ed25519Signer
+from decisionlock.adapters.storage.sqlite import SQLiteState
+from decisionlock.audit import AuditLedger
+from decisionlock.domain import CredentialRequest, Effect, ExecutionBudget
+from decisionlock.domain.policy import ActionMatcher, PolicyRule
+from decisionlock.engine.credentials import (
     CredentialVerificationError,
     attest_credential_grant,
     verify_credential_grant,
 )
-from agentguard.engine.policy import evaluate_policy
-from agentguard.engine.receipts import (
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.engine.receipts import (
     ReceiptVerificationError,
     issue_approval_receipt,
     issue_decision_receipt,
 )
-from agentguard.models import AuditEvent, Decision, ToolCall
-from agentguard.policy import Policy, load_policy
-from agentguard.secrets import redact_mapping
+from decisionlock.models import AuditEvent, Decision, ToolCall
+from decisionlock.policy import Policy, load_policy
+from decisionlock.secrets import redact_mapping
 
 
 def test_legacy_deny_never_persists_raw_secret_and_ledger_is_private(

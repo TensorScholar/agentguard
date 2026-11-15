@@ -2,7 +2,7 @@
   "$defs": {
     "EvidenceTrustLevel": {
       "enum": [
-        "agentguard_signed",
+        "decisionlock_signed",
         "provider_correlated",
         "provider_verified"
       ],

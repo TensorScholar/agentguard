@@ -48,16 +48,16 @@ select `SQLiteFencedReconciliationState` explicitly opt into mandatory ownership
 Provider-specific evidence remains an append-only evidence record in the Phase 6D sidecar. A stale
 worker may have already observed and persisted provider evidence before losing its lease; that
 record is evidence, not authoritative execution state. Only a currently fenced resolution commit
-changes the durable reconciliation history used by AgentGuard.
+changes the durable reconciliation history used by DecisionLock.
 
 ### 3. One-shot operator reconciliation uses the same ownership protocol
 
-`agentguard-reconcile` claims a lease before provider reconciliation and performs its resolution
+`decisionlock-reconcile` claims a lease before provider reconciliation and performs its resolution
 inside the fenced scope. It therefore cannot silently race an active background worker.
 
 ### 4. Background workers are bounded and restart-safe
 
-`agentguard-reconcile-worker`:
+`decisionlock-reconcile-worker`:
 
 - excludes automatic startup recovery to prevent taking over live dispatches (operator recovery is explicit);
 - considers UNKNOWN executions and processes only those with durable external-effect bindings;
@@ -152,7 +152,7 @@ idempotency evidence proves a different policy.
 
 ## Consequences
 
-AgentGuard can run a protected HTTP service and one or more reconciliation processes on one host
+DecisionLock can run a protected HTTP service and one or more reconciliation processes on one host
 without duplicate authoritative resolution ownership. Crash recovery and takeover are explicit and
 testable. The cost is a bounded lease delay after abrupt worker death and a deliberate limitation:
 this phase does not claim distributed HA, distributed consensus, or cross-region failover.

@@ -1,12 +1,12 @@
-# Migration from AgentGuard v0.1 to v0.2
+# Migration from DecisionLock v0.1 to v0.2
 
 The public repository currently contains a working MCP stdio proxy, tool inventory, local approval grants and a hash-chained audit ledger. Those capabilities must be preserved during migration; this package must not be force-pushed over the public history.
 
 ## Safe migration
 
 ```bash
-git clone https://github.com/TensorScholar/agentguard.git
-cd agentguard
+git clone https://github.com/TensorScholar/decisionlock.git
+cd decisionlock
 git fetch origin
 test "$(git rev-parse origin/main)" = "5b76b0ef8694db0181ac47cc52d0662333b6ebc6"
 git switch --create rebuild/action-integrity-v2 origin/main

@@ -3,7 +3,7 @@ metadata:
   id: demo-refund
   revision: 1
   description: >
-    Demo policy for the AgentGuard happy path. Default-deny at every axis:
+    Demo policy for the DecisionLock happy path. Default-deny at every axis:
     unknown provenance, unknown capability, and unmatched tools are all denied.
     This is intentionally strict -- nothing here is relaxed to make the demo pass.
 defaults:

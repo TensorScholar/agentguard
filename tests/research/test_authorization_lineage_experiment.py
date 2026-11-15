@@ -5,31 +5,31 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from agentguard.research.authorization_lineage.analysis import analyze_trial, summarize
-from agentguard.research.authorization_lineage.arms import A0Arm
-from agentguard.research.authorization_lineage.fence import ConventionalReconciliationFence
-from agentguard.research.authorization_lineage.harness import DevTrialHarness
-from agentguard.research.authorization_lineage.ledger import (
+from decisionlock.research.authorization_lineage.analysis import analyze_trial, summarize
+from decisionlock.research.authorization_lineage.arms import A0Arm
+from decisionlock.research.authorization_lineage.fence import ConventionalReconciliationFence
+from decisionlock.research.authorization_lineage.harness import DevTrialHarness
+from decisionlock.research.authorization_lineage.ledger import (
     AuthorizationInstanceLedger,
     LineageLedgerError,
 )
-from agentguard.research.authorization_lineage.models import (
+from decisionlock.research.authorization_lineage.models import (
     Arm,
     ProviderStratum,
     Schedule,
     TrialSpec,
 )
-from agentguard.research.authorization_lineage.provider import (
+from decisionlock.research.authorization_lineage.provider import (
     IndependentEffectOracleProcess,
     IndependentEffectOracleReader,
     SimulatedProvider,
 )
-from agentguard.research.authorization_lineage.statistics import (
+from decisionlock.research.authorization_lineage.statistics import (
     exact_binomial_interval,
     exact_mcnemar_pvalue,
     holm_adjust,
 )
-from agentguard.research.authorization_lineage.trace import validate_trace
+from decisionlock.research.authorization_lineage.trace import validate_trace
 
 
 def _spec(arm: Arm, provider: ProviderStratum, schedule: Schedule, suffix: str) -> TrialSpec:
@@ -266,8 +266,8 @@ def test_frozen_decision_rules_accept_b4_equivalence_as_research_falsifier(tmp_p
     assert hypotheses["H1_A1_lineage_safety_pass"] is True
     assert hypotheses["H2_B4_competent_ledger_safety_pass"] is True
     assert hypotheses["H3_A0_gap_reproduced_and_A1_prevents"] is True
-    assert hypotheses["H4_AgentGuard_specific_differentiation_pass"] is False
-    assert falsification["AgentGuard_specific_lineage_thesis_falsified"] is True
+    assert hypotheses["H4_DecisionLock_specific_differentiation_pass"] is False
+    assert falsification["DecisionLock_specific_lineage_thesis_falsified"] is True
 
 
 def test_schedule_matrix_rejects_non_preregistered_pair():

@@ -6,12 +6,12 @@ from typing import Any, Mapping
 import httpx
 from starlette.testclient import TestClient
 
-from agentguard.adapters.protocols.mcp.http_gateway import (
+from decisionlock.adapters.protocols.mcp.http_gateway import (
     HTTPExchangeResponse,
     MCPProtectedHTTPGateway,
 )
-from agentguard.adapters.protocols.mcp.http_server import create_protected_mcp_http_app
-from agentguard.adapters.protocols.mcp.modern import (
+from decisionlock.adapters.protocols.mcp.http_server import create_protected_mcp_http_app
+from decisionlock.adapters.protocols.mcp.modern import (
     CLIENT_CAPABILITIES_META_KEY,
     CLIENT_INFO_META_KEY,
     MODERN_HEADER_MISMATCH,
@@ -21,9 +21,9 @@ from agentguard.adapters.protocols.mcp.modern import (
     decode_mcp_header_value,
     encode_mcp_header_value,
 )
-from agentguard.application import AgentGuardService
-from agentguard.domain import Effect, ExecutionState, Principal, ProvenanceLabel
-from agentguard.domain.policy import (
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import Effect, ExecutionState, Principal, ProvenanceLabel
+from decisionlock.domain.policy import (
     ActionMatcher,
     PolicyDefaults,
     PolicyDocument,
@@ -154,7 +154,7 @@ class FakeSender:
 def gateway(signer, verifier, state, sender: FakeSender) -> MCPProtectedHTTPGateway:
     binding = MCPHTTPServerBinding.for_url("filesystem", "http://127.0.0.1:9010/mcp")
     return MCPProtectedHTTPGateway(
-        AgentGuardService(signer, verifier, state),
+        DecisionLockService(signer, verifier, state),
         allow_policy(),
         principal(),
         binding,

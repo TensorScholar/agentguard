@@ -4,18 +4,18 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
-from agentguard.adapters.executor import DeterministicFakeExecutor
-from agentguard.application import AgentGuardService
-from agentguard.domain import (
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.adapters.crypto import Ed25519Signer, Ed25519Verifier
+from decisionlock.adapters.executor import DeterministicFakeExecutor
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import (
     CapabilityLeaseStatus,
     CapabilityScope,
     CredentialRequest,
     Principal,
 )
-from agentguard.engine.authority import AuthorityError
-from agentguard.engine.execution import ExecutionGuardError, validate_execution_authority
+from decisionlock.engine.authority import AuthorityError
+from decisionlock.engine.execution import ExecutionGuardError, validate_execution_authority
 
 
 def _scope(*, calls: int = 2, delegable: bool = True, depth: int = 2) -> CapabilityScope:
@@ -37,7 +37,7 @@ def _authority_service(signer, verifier, state, authority_signer):
     authority_verifier = Ed25519Verifier({authority_signer.key_id: authority_signer.public_key()})
     broker = MockCredentialBroker()
     return (
-        AgentGuardService(
+        DecisionLockService(
             signer,
             verifier,
             state,
@@ -307,7 +307,7 @@ def test_require_authority_mode_fails_closed_without_reference(
     authority_signer = Ed25519Signer.generate("authority-ed25519")
     authority_verifier = Ed25519Verifier({authority_signer.key_id: authority_signer.public_key()})
     broker = MockCredentialBroker()
-    service = AgentGuardService(
+    service = DecisionLockService(
         signer,
         verifier,
         state,

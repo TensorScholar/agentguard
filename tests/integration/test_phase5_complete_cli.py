@@ -6,8 +6,8 @@ from pathlib import Path
 import yaml
 from typer.testing import CliRunner
 
-from agentguard.cli.app import app
-from agentguard.domain import (
+from decisionlock.cli.app import app
+from decisionlock.domain import (
     CapabilityScope,
     FieldIntegrityConstraint,
     FieldProvenanceStatement,

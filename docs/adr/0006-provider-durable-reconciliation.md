@@ -14,7 +14,7 @@
 
 ## Context
 
-AgentGuard already classifies ambiguous protected dispatches as `UNKNOWN` and forbids blind automatic
+DecisionLock already classifies ambiguous protected dispatches as `UNKNOWN` and forbids blind automatic
 retry. The generic Phase 5 reconciliation lifecycle can append durable resolution evidence, but it
 predates the frozen provider/external-effect contract and does not itself prove that provider evidence
 belongs to the exact dispatch attempt that became ambiguous.
@@ -45,7 +45,7 @@ attestation.
 
 ### 2. The external-effect binding is durable before provider dispatch
 
-For protected MCP HTTP execution, AgentGuard records the exact `ExternalEffectBinding` after the core
+For protected MCP HTTP execution, DecisionLock records the exact `ExternalEffectBinding` after the core
 execution has entered durable `DISPATCHING` state but before provider credential resolution and before
 the first side-effecting provider `send`.
 
@@ -84,7 +84,7 @@ Mismatch fails closed and no generic resolution is recorded.
 
 Provider-specific evidence is first appended to the provider sidecar. Only then is it adapted to the
 existing generic `ReconciliationEvidence` contract and passed through
-`AgentGuardService.reconcile_execution`.
+`DecisionLockService.reconcile_execution`.
 
 The provider adapter cannot directly assert `CONFLICT`. Conflict promotion remains owned by the
 existing core resolution store when two opposite confirmed outcomes are observed.
@@ -100,7 +100,7 @@ level is `provider_verified`. Phase 6D preserves that requirement end to end.
 Transport failure, HTTP failure, malformed JSON-RPC, missing structured status, unknown provider state,
 or unavailable status service produce `still_unknown`, never a confirmed outcome.
 
-AgentGuard-signed observations may explain why reconciliation remains unknown but cannot upgrade an
+DecisionLock-signed observations may explain why reconciliation remains unknown but cannot upgrade an
 ambiguous external effect into provider truth.
 
 ### 6. First concrete provider profile: read-only MCP status tool
@@ -109,7 +109,7 @@ The first provider-specific adapter supports a configured MCP `tools/call` statu
 same fixed provider endpoint.
 
 The trusted provider profile must guarantee that one configured lookup argument identifies the
-original provider request by its JSON-RPC request id. AgentGuard protected MCP HTTP dispatch uses the
+original provider request by its JSON-RPC request id. DecisionLock protected MCP HTTP dispatch uses the
 durable `execution_id` as that request id, allowing reconciliation without storing a raw provider
 response or provider-generated operation identifier.
 
@@ -179,7 +179,7 @@ coordination remain Phase 6E.
 
 ## Consequences
 
-AgentGuard can now preserve an exact provider-effect identity before dispatch and later reconcile an
+DecisionLock can now preserve an exact provider-effect identity before dispatch and later reconcile an
 ambiguous MCP HTTP action with durable, provider-bound evidence without mutating the original execution
 history or pretending transport correlation is provider truth.
 

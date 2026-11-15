@@ -12,8 +12,8 @@ import warnings
 
 import pytest
 
-from agentguard.engine import execution as execution_module
-from agentguard.engine.execution import authorize_execution, preflight_execution
+from decisionlock.engine import execution as execution_module
+from decisionlock.engine.execution import authorize_execution, preflight_execution
 
 
 def test_new_name_is_the_canonical_entry_point() -> None:
@@ -73,9 +73,9 @@ def test_preflight_does_not_mutate_nonce_state() -> None:
 @pytest.mark.parametrize(
     "module",
     [
-        "agentguard.cli.app",
-        "agentguard.application.service",
-        "agentguard.demo",
+        "decisionlock.cli.app",
+        "decisionlock.application.service",
+        "decisionlock.demo",
     ],
 )
 def test_product_modules_do_not_call_the_deprecated_name(module: str) -> None:

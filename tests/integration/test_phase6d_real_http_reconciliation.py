@@ -6,13 +6,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from typing import Any
 
-from agentguard.adapters.protocols.mcp.http_server import HTTPXUpstreamSender
-from agentguard.adapters.protocols.mcp.modern import MCPHTTPServerBinding
-from agentguard.adapters.reconciliation import (
+from decisionlock.adapters.protocols.mcp.http_server import HTTPXUpstreamSender
+from decisionlock.adapters.protocols.mcp.modern import MCPHTTPServerBinding
+from decisionlock.adapters.reconciliation import (
     MCPHTTPProviderStatusProfile,
     MCPHTTPProviderStatusReconciler,
 )
-from agentguard.domain import (
+from decisionlock.domain import (
     EvidenceTrustLevel,
     ExecutionAttemptIdentity,
     ExternalEffectBinding,
@@ -21,7 +21,7 @@ from agentguard.domain import (
     ProviderIdentity,
     ReconciliationStatus,
 )
-from agentguard.engine.provider_contracts import external_effect_binding_digest
+from decisionlock.engine.provider_contracts import external_effect_binding_digest
 
 
 def test_provider_status_reconciliation_crosses_real_loopback_http_boundary() -> None:

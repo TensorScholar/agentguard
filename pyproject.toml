@@ -3,7 +3,7 @@ requires = ["setuptools==83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentguard"
+name = "decisionlock"
 version = "0.2.0rc4"
 description = "Provider-neutral action integrity for AI agents"
 readme = "README.md"
@@ -30,10 +30,10 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/TensorScholar/agentguard"
-Issues = "https://github.com/TensorScholar/agentguard/issues"
-Changelog = "https://github.com/TensorScholar/agentguard/blob/main/CHANGELOG.md"
-Security = "https://github.com/TensorScholar/agentguard/blob/main/.github/SECURITY.md"
+Repository = "https://github.com/TensorScholar/decisionlock"
+Issues = "https://github.com/TensorScholar/decisionlock/issues"
+Changelog = "https://github.com/TensorScholar/decisionlock/blob/main/CHANGELOG.md"
+Security = "https://github.com/TensorScholar/decisionlock/blob/main/.github/SECURITY.md"
 
 [project.optional-dependencies]
 http = ["starlette>=1.3.1,<2", "httpx>=0.27,<1", "uvicorn>=0.30,<1"]
@@ -48,10 +48,10 @@ dev = [
 ]
 
 [project.scripts]
-agentguard = "agentguard.cli:entrypoint"
-agentguard-mcp-http = "agentguard.http_cli:entrypoint"
-agentguard-reconcile = "agentguard.reconcile_cli:entrypoint"
-agentguard-reconcile-worker = "agentguard.reconcile_worker_cli:entrypoint"
+decisionlock = "decisionlock.cli:entrypoint"
+decisionlock-mcp-http = "decisionlock.http_cli:entrypoint"
+decisionlock-reconcile = "decisionlock.reconcile_cli:entrypoint"
+decisionlock-reconcile-worker = "decisionlock.reconcile_worker_cli:entrypoint"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -61,14 +61,14 @@ where = ["src"]
 # The pre-registered authorization-lineage research program is retained in the
 # repository as the project's research record, but it is not part of the
 # distributed runtime. Its result is RESEARCH_CLAIM: NOT_VALIDATED /
-# AGENTGUARD_SPECIFIC_DIFFERENTIATION_THESIS: FALSIFIED_WITHIN_PROTOCOL (see
+# DECISIONLOCK_SPECIFIC_DIFFERENTIATION_THESIS: FALSIFIED_WITHIN_PROTOCOL (see
 # docs/research/FREEZE_V2_RESULT_ADJUDICATION.md), so it is excluded from the
 # wheel and sdist rather than shipped as unreferenced product code. It remains
 # importable from a source checkout or an editable install, which is how
 # tests/research exercises it.
-exclude = ["agentguard.research*"]
+exclude = ["decisionlock.research*"]
 [tool.setuptools.package-data]
-agentguard = ["py.typed", "resources/*.yaml", "resources/*.json", "resources/policy_packs/*.yaml"]
+decisionlock = ["py.typed", "resources/*.yaml", "resources/*.json", "resources/policy_packs/*.yaml"]
 
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers --import-mode=importlib"
@@ -83,12 +83,12 @@ select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.coverage.run]
 branch = true
-source = ["agentguard"]
-# agentguard.research is excluded from the distribution (see
+source = ["decisionlock"]
+# decisionlock.research is excluded from the distribution (see
 # tool.setuptools.packages.find.exclude) and is not under the product quality
 # gate. Its tests still run; they just do not consume the shipped-package
 # coverage budget.
-omit = ["*/agentguard/research/*"]
+omit = ["*/decisionlock/research/*"]
 
 [tool.coverage.report]
 fail_under = 80
@@ -98,4 +98,4 @@ skip_covered = false
 [tool.mypy]
 python_version = "3.11"
 strict = true
-packages = ["agentguard"]
+packages = ["decisionlock"]

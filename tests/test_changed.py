@@ -6,7 +6,7 @@ from typing import Any
 
 from pytest import MonkeyPatch
 
-from agentguard.changed import ChangedConfigError, changed_paths, filter_config_paths
+from decisionlock.changed import ChangedConfigError, changed_paths, filter_config_paths
 
 
 def test_filter_config_paths_selects_existing_mcp_configs(tmp_path: Path) -> None:
@@ -39,7 +39,7 @@ def test_changed_paths_uses_git_diff_name_only(monkeypatch: MonkeyPatch, tmp_pat
         calls.append(argv)
         return SimpleNamespace(returncode=0, stdout="mcp.json\nREADME.md\n", stderr="")
 
-    monkeypatch.setattr("agentguard.changed.subprocess.run", fake_run)
+    monkeypatch.setattr("decisionlock.changed.subprocess.run", fake_run)
 
     paths = changed_paths("origin/main", "HEAD", tmp_path)
 
@@ -61,7 +61,7 @@ def test_changed_paths_raises_clear_error(monkeypatch: MonkeyPatch, tmp_path: Pa
     def fake_run(argv: list[str], **kwargs: Any) -> SimpleNamespace:
         return SimpleNamespace(returncode=128, stdout="", stderr="bad revision")
 
-    monkeypatch.setattr("agentguard.changed.subprocess.run", fake_run)
+    monkeypatch.setattr("decisionlock.changed.subprocess.run", fake_run)
 
     try:
         changed_paths("missing", "HEAD", tmp_path)

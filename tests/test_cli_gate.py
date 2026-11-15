@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pytest import CaptureFixture, MonkeyPatch
 
-from agentguard.cli import main
+from decisionlock.cli import main
 
 
 def test_gate_fails_when_config_crosses_risk_threshold(
@@ -31,7 +31,7 @@ def test_gate_fails_when_config_crosses_risk_threshold(
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "AgentGuard gate failed" in captured.err
+    assert "DecisionLock gate failed" in captured.err
     assert "Highest risk: **critical**" in captured.out
 
 
@@ -68,7 +68,7 @@ def test_gate_uses_changed_config_paths(
         encoding="utf-8",
     )
 
-    monkeypatch.setattr("agentguard.cli.changed_config_paths", lambda base, head: [config])
+    monkeypatch.setattr("decisionlock.cli.changed_config_paths", lambda base, head: [config])
 
     exit_code = main(["gate", "--changed-from", "origin/main", "--fail-on-risk", "critical"])
     captured = capsys.readouterr()
@@ -79,7 +79,7 @@ def test_gate_uses_changed_config_paths(
 
 def test_scan_writes_report_output_file(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
     config = tmp_path / "mcp.json"
-    report = tmp_path / "reports" / "agentguard.md"
+    report = tmp_path / "reports" / "decisionlock.md"
     config.write_text(
         '{"mcpServers":{"fs":{"command":"npx","args":["server-filesystem","."]}}}',
         encoding="utf-8",
@@ -90,13 +90,13 @@ def test_scan_writes_report_output_file(tmp_path: Path, capsys: CaptureFixture[s
 
     assert exit_code == 0
     assert captured.out == ""
-    assert "AgentGuard Scan Report" in report.read_text(encoding="utf-8")
+    assert "DecisionLock Scan Report" in report.read_text(encoding="utf-8")
 
 
 def test_gate_writes_findings_json_and_summary(tmp_path: Path) -> None:
     config = tmp_path / "mcp.json"
-    findings = tmp_path / "agentguard-findings.json"
-    summary = tmp_path / "agentguard-summary.md"
+    findings = tmp_path / "decisionlock-findings.json"
+    summary = tmp_path / "decisionlock-summary.md"
     config.write_text(
         '{"mcpServers":{"github":{"command":"docker","args":["run","github"],'
         '"env":{"GITHUB_TOKEN":"redacted"}}}}',
@@ -121,6 +121,6 @@ def test_gate_writes_findings_json_and_summary(tmp_path: Path) -> None:
     payload = json.loads(findings.read_text(encoding="utf-8"))
 
     assert exit_code == 1
-    assert payload["schema_version"] == "agentguard.findings.v1"
+    assert payload["schema_version"] == "decisionlock.findings.v1"
     assert payload["summary"]["highest_risk"] == "critical"
-    assert "# AgentGuard CI Summary" in summary.read_text(encoding="utf-8")
+    assert "# DecisionLock CI Summary" in summary.read_text(encoding="utf-8")

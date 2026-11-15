@@ -10,4 +10,4 @@ with tempfile.TemporaryDirectory() as td:
     py = v / "bin/python"
     pip = v / "bin/pip"
     subprocess.check_call([str(pip), "install", "--no-deps", str(wheel)])
-    subprocess.check_call([str(py), "-m", "agentguard", "--version"])
+    subprocess.check_call([str(py), "-m", "decisionlock", "--version"])

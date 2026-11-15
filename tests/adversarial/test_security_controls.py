@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.domain import CredentialRequest, ProvenanceLabel
-from agentguard.engine.execution import ExecutionGuardError, preflight_execution
-from agentguard.engine.policy import evaluate_policy
-from agentguard.engine.receipts import issue_decision_receipt
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.domain import CredentialRequest, ProvenanceLabel
+from decisionlock.engine.execution import ExecutionGuardError, preflight_execution
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.engine.receipts import issue_decision_receipt
 
 
 def grant_for(intent, policy, signer):

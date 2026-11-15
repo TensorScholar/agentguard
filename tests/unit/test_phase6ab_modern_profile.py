@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agentguard.adapters.protocols.mcp.modern import (
+from decisionlock.adapters.protocols.mcp.modern import (
     CLIENT_CAPABILITIES_META_KEY,
     MODERN_HEADER_MISMATCH,
     MODERN_PROTOCOL_PROFILE,

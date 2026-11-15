@@ -1,10 +1,10 @@
 cff-version: 1.2.0
-title: AgentGuard
+title: DecisionLock
 type: software
 version: 0.2.0rc4
 authors:
   - family-names: Atashi
     given-names: Mohammad
-repository-code: https://github.com/TensorScholar/agentguard
+repository-code: https://github.com/TensorScholar/decisionlock
 license: MIT
 message: Cite this software using these metadata.

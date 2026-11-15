@@ -4,17 +4,17 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.crypto import Ed25519Signer
-from agentguard.domain import CredentialRequest
-from agentguard.engine.credentials import (
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.adapters.crypto import Ed25519Signer
+from decisionlock.domain import CredentialRequest
+from decisionlock.engine.credentials import (
     CredentialVerificationError,
     attest_credential_grant,
     validate_credential_request,
     verify_credential_grant,
 )
-from agentguard.engine.policy import evaluate_policy
-from agentguard.engine.receipts import issue_decision_receipt
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.engine.receipts import issue_decision_receipt
 
 
 def setup(intent, policy, signer):

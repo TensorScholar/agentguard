@@ -6,9 +6,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.application import AgentGuardService
-from agentguard.domain import (
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import (
     ApprovalReceipt,
     AuditEvent,
     AuditEventType,
@@ -40,7 +40,7 @@ def test_delegation_rejects_naive_expiry() -> None:
 
 
 def test_all_security_artifacts_reject_naive_timestamps(intent, policy, signer, verifier, state):
-    service = AgentGuardService(signer, verifier, state)
+    service = DecisionLockService(signer, verifier, state)
     receipt = service.authorize(intent, policy)
     _reject_naive(DecisionReceipt, receipt, "issued_at")
     _reject_naive(DecisionReceipt, receipt, "not_before")

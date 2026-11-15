@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.research.authorization_lineage import preflight
-from agentguard.research.authorization_lineage.analysis import (
+from decisionlock.research.authorization_lineage import preflight
+from decisionlock.research.authorization_lineage.analysis import (
     ConfirmatoryCorpusError,
     manifest_sha256,
     summarize,
     validate_confirmatory_corpus,
     validate_confirmatory_manifest,
 )
-from agentguard.research.authorization_lineage.models import (
+from decisionlock.research.authorization_lineage.models import (
     APPLICABLE_STRATA,
     AnalyzedTrial,
     Arm,
@@ -24,12 +24,12 @@ from agentguard.research.authorization_lineage.models import (
     TrialObservation,
     TrialSpec,
 )
-from agentguard.research.authorization_lineage.preflight import (
+from decisionlock.research.authorization_lineage.preflight import (
     ConfirmatoryPreflightError,
     preflight_digest,
     run_confirmatory_preflight,
 )
-from agentguard.research.authorization_lineage.trace import HarnessInvalidReason
+from decisionlock.research.authorization_lineage.trace import HarnessInvalidReason
 
 
 def _synthetic_manifest() -> tuple[TrialSpec, ...]:
@@ -244,7 +244,7 @@ def _patch_preflight_environment(
     head: str,
     demo_version: str = "1.0",
     status_output: str = "",
-    agentguard_source: Path | None = None,
+    decisionlock_source: Path | None = None,
     sys_paths: tuple[Path, ...] | None = None,
 ) -> None:
     clarification = repo_root / "clarification.json"
@@ -275,11 +275,11 @@ def _patch_preflight_environment(
             return demo_version
         raise AssertionError(name)
 
-    expected_source = agentguard_source or repo_root / "src" / "agentguard" / "__init__.py"
+    expected_source = decisionlock_source or repo_root / "src" / "decisionlock" / "__init__.py"
     expected_paths = sys_paths or (repo_root, repo_root / "src", Path(preflight.sys.prefix))
     monkeypatch.setattr(preflight, "_git", fake_git)
     monkeypatch.setattr(preflight, "_command", fake_command)
-    monkeypatch.setattr(preflight, "_agentguard_source", lambda: expected_source.resolve())
+    monkeypatch.setattr(preflight, "_decisionlock_source", lambda: expected_source.resolve())
     monkeypatch.setattr(
         preflight, "_runtime_sys_path", lambda: tuple(path.resolve() for path in expected_paths)
     )
@@ -361,7 +361,7 @@ def test_confirmatory_preflight_rejects_package_provenance_drift(tmp_path, monke
         monkeypatch,
         repo_root=tmp_path,
         head=expected,
-        agentguard_source=tmp_path / "elsewhere" / "agentguard" / "__init__.py",
+        decisionlock_source=tmp_path / "elsewhere" / "decisionlock" / "__init__.py",
     )
     with pytest.raises(ConfirmatoryPreflightError, match="package provenance drift"):
         run_confirmatory_preflight(

@@ -8,12 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
-from agentguard.adapters.broker import MockCredentialBroker
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
-from agentguard.adapters.executor import DeterministicFakeExecutor
-from agentguard.adapters.storage.sqlite import SQLiteState
-from agentguard.application import AgentGuardService, ExecutionPersistenceError
-from agentguard.domain import (
+from decisionlock.adapters.broker import MockCredentialBroker
+from decisionlock.adapters.crypto import Ed25519Signer, Ed25519Verifier
+from decisionlock.adapters.executor import DeterministicFakeExecutor
+from decisionlock.adapters.storage.sqlite import SQLiteState
+from decisionlock.application import DecisionLockService, ExecutionPersistenceError
+from decisionlock.domain import (
     AuditEventType,
     CapabilityScope,
     CredentialGrant,
@@ -21,19 +21,19 @@ from agentguard.domain import (
     ExecutionState,
     ExecutionStatus,
 )
-from agentguard.engine.canonical import digest
-from agentguard.engine.execution import (
+from decisionlock.engine.canonical import digest
+from decisionlock.engine.execution import (
     ExecutionGuardError,
     preflight_execution,
     validate_execution_authority,
 )
-from agentguard.engine.policy import evaluate_policy
-from agentguard.engine.receipts import issue_decision_receipt
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.engine.receipts import issue_decision_receipt
 
 
 def _credential_flow(intent, policy, signer, verifier, state):
     broker = MockCredentialBroker()
-    service = AgentGuardService(signer, verifier, state, broker.verifier)
+    service = DecisionLockService(signer, verifier, state, broker.verifier)
     receipt = service.authorize(intent, policy)
     ceiling = receipt.credential_ceiling
     assert ceiling is not None
@@ -120,7 +120,7 @@ def test_policy_digest_mismatch_does_not_consume_protected_execution(
     authority_signer = Ed25519Signer.generate("authority-ed25519")
     authority_verifier = Ed25519Verifier({authority_signer.key_id: authority_signer.public_key()})
     broker = MockCredentialBroker()
-    service = AgentGuardService(
+    service = DecisionLockService(
         signer,
         verifier,
         state,
@@ -408,7 +408,7 @@ def test_recovery_marks_stranded_dispatching_unknown_without_redispatch(
     state.mark_execution_dispatching(verified)
 
     reopened = SQLiteState(path)
-    recovery_service = AgentGuardService(signer, verifier, reopened, broker.verifier)
+    recovery_service = DecisionLockService(signer, verifier, reopened, broker.verifier)
     executor = DeterministicFakeExecutor()
     recovered = recovery_service.recover_incomplete_executions()
 
@@ -545,7 +545,7 @@ def _reserve_with_expired_authorization(intent, policy, signer, verifier, state,
     )
     with patch.object(state, "_transaction_now", return_value=live_at):
         assert state.reserve_execution(verified, live_at) is None
-    service = AgentGuardService(signer, verifier, state, broker.verifier)
+    service = DecisionLockService(signer, verifier, state, broker.verifier)
     return service, receipt, grant, verified
 
 
@@ -648,8 +648,8 @@ def test_dispatch_lock_wait_rechecks_authorization_after_lock(
                 return value.replace(tzinfo=None)
             return value.astimezone(tz)
 
-    monkeypatch.setattr("agentguard.application.service.datetime", ControlledDateTime)
-    monkeypatch.setattr("agentguard.adapters.storage.sqlite.state.datetime", ControlledDateTime)
+    monkeypatch.setattr("decisionlock.application.service.datetime", ControlledDateTime)
+    monkeypatch.setattr("decisionlock.adapters.storage.sqlite.state.datetime", ControlledDateTime)
 
     attempted_dispatch = Event()
     original_mark = state.mark_execution_dispatching
@@ -688,8 +688,8 @@ def test_mcp_proxy_startup_does_not_recover_dispatching_execution(
 ):
     import sys
 
-    from agentguard.adapters.protocols.mcp.protected import MCPProtectedStdioProxy
-    from agentguard.domain import Principal
+    from decisionlock.adapters.protocols.mcp.protected import MCPProtectedStdioProxy
+    from decisionlock.domain import Principal
 
     path = tmp_path / "mcp_recovery.sqlite"
     state = SQLiteState(path)
@@ -708,7 +708,7 @@ def test_mcp_proxy_startup_does_not_recover_dispatching_execution(
     state.mark_execution_dispatching(verified)
 
     reopened_state = SQLiteState(path)
-    new_service = AgentGuardService(signer, verifier, reopened_state, broker.verifier)
+    new_service = DecisionLockService(signer, verifier, reopened_state, broker.verifier)
     principal = Principal(agent_id="test-agent", workload_id="workload-1", tenant_id="tenant-1")
     proxy = MCPProtectedStdioProxy(
         new_service,
@@ -739,7 +739,7 @@ def test_http_startup_does_not_recover_dispatching_execution(
 
     import yaml
 
-    from agentguard import http_cli
+    from decisionlock import http_cli
 
     state_path = tmp_path / "http_state.sqlite"
     provider_path = tmp_path / "http_provider.sqlite"
@@ -774,7 +774,7 @@ def test_http_startup_does_not_recover_dispatching_execution(
         sys,
         "argv",
         [
-            "agentguard-mcp-http",
+            "decisionlock-mcp-http",
             "--server-id",
             "test-server",
             "--upstream-url",
@@ -811,7 +811,7 @@ def test_reconcile_worker_startup_does_not_recover_dispatching_execution(
     import json
     import sys
 
-    from agentguard import reconcile_worker_cli
+    from decisionlock import reconcile_worker_cli
 
     state_path = tmp_path / "worker_state.sqlite"
     provider_path = tmp_path / "worker_provider.sqlite"
@@ -854,7 +854,7 @@ def test_reconcile_worker_startup_does_not_recover_dispatching_execution(
         sys,
         "argv",
         [
-            "agentguard-reconcile-worker",
+            "decisionlock-reconcile-worker",
             "--server-id",
             "test-server",
             "--upstream-url",
@@ -914,7 +914,7 @@ def test_explicit_recovery_converts_stranded_dispatching_to_unknown(
     assert state.get_execution("exec_explicit_recovery").state == ExecutionState.DISPATCHING
 
     reopened = SQLiteState(path)
-    recovery_service = AgentGuardService(signer, verifier, reopened, broker.verifier)
+    recovery_service = DecisionLockService(signer, verifier, reopened, broker.verifier)
     recovered = recovery_service.recover_incomplete_executions()
     assert len(recovered) == 1
     assert recovered[0].execution_id == "exec_explicit_recovery"

@@ -5,19 +5,19 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from agentguard.adapters.protocols.mcp.http_gateway_types import (
+from decisionlock.adapters.protocols.mcp.http_gateway_types import (
     HTTPExchangeResponse,
     UpstreamTransportError,
 )
-from agentguard.adapters.protocols.mcp.modern import MCPHTTPServerBinding
-from agentguard.adapters.reconciliation import (
+from decisionlock.adapters.protocols.mcp.modern import MCPHTTPServerBinding
+from decisionlock.adapters.reconciliation import (
     MCPHTTPProviderStatusProfile,
     MCPHTTPProviderStatusReconciler,
     ProviderReconciliationStoreError,
     SQLiteProviderEffectRepository,
 )
-from agentguard.application import ProviderBoundExecutionReconciler, ProviderReconciliationError
-from agentguard.domain import (
+from decisionlock.application import ProviderBoundExecutionReconciler, ProviderReconciliationError
+from decisionlock.domain import (
     EvidenceTrustLevel,
     ExecutionAttemptIdentity,
     ExecutionRecord,
@@ -29,8 +29,8 @@ from agentguard.domain import (
     ProviderReconciliationEvidence,
     ReconciliationStatus,
 )
-from agentguard.engine.canonical import digest
-from agentguard.engine.provider_contracts import external_effect_binding_digest
+from decisionlock.engine.canonical import digest
+from decisionlock.engine.provider_contracts import external_effect_binding_digest
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 
@@ -334,7 +334,7 @@ def test_mcp_provider_status_transport_failure_stays_unknown() -> None:
     ).reconcile(binding)
 
     assert evidence.status == ReconciliationStatus.STILL_UNKNOWN
-    assert evidence.trust_level == EvidenceTrustLevel.AGENTGUARD_SIGNED
+    assert evidence.trust_level == EvidenceTrustLevel.DECISIONLOCK_SIGNED
     assert evidence.binding_digest == external_effect_binding_digest(binding)
     assert evidence.error_code == "provider_status.transport_unavailable"
     assert evidence.evidence_digest == digest(
@@ -363,7 +363,7 @@ def test_mcp_provider_status_transport_failure_stays_unknown() -> None:
 def test_mcp_provider_status_malformed_evidence_never_confirms(mode: str, error_code: str) -> None:
     evidence = _run_status(mode)
     assert evidence.status == ReconciliationStatus.STILL_UNKNOWN
-    assert evidence.trust_level == EvidenceTrustLevel.AGENTGUARD_SIGNED
+    assert evidence.trust_level == EvidenceTrustLevel.DECISIONLOCK_SIGNED
     assert evidence.error_code == error_code
 
 

@@ -12,7 +12,7 @@ import hashlib
 
 import pytest
 
-from agentguard.research.authorization_lineage.analysis import (
+from decisionlock.research.authorization_lineage.analysis import (
     build_confirmatory_manifest,
     manifest_sha256,
     master_seed,

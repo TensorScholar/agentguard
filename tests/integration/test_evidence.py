@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
-from agentguard.adapters.evidence import EvidenceVerificationError, build_bundle, verify_bundle
-from agentguard.engine.canonical import canonical_bytes
+from decisionlock.adapters.crypto import Ed25519Signer, Ed25519Verifier
+from decisionlock.adapters.evidence import EvidenceVerificationError, build_bundle, verify_bundle
+from decisionlock.engine.canonical import canonical_bytes
 
 
 def test_evidence_bundle_round_trip(tmp_path):

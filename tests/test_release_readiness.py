@@ -3,7 +3,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from agentguard import __version__
+from decisionlock import __version__
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,7 +36,7 @@ def test_project_urls_expose_trust_documents() -> None:
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     urls = pyproject["project"]["urls"]
 
-    assert urls["Repository"].endswith("/TensorScholar/agentguard")
+    assert urls["Repository"].endswith("/TensorScholar/decisionlock")
     assert urls["Changelog"].endswith("/CHANGELOG.md")
     assert urls["Security"].endswith("/.github/SECURITY.md")
 
@@ -44,17 +44,19 @@ def test_project_urls_expose_trust_documents() -> None:
 def test_runtime_entrypoints_are_packaged() -> None:
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     scripts = pyproject["project"]["scripts"]
-    assert scripts["agentguard"] == "agentguard.cli:entrypoint"
-    assert scripts["agentguard-mcp-http"] == "agentguard.http_cli:entrypoint"
-    assert scripts["agentguard-reconcile"] == "agentguard.reconcile_cli:entrypoint"
-    assert scripts["agentguard-reconcile-worker"] == "agentguard.reconcile_worker_cli:entrypoint"
+    assert scripts["decisionlock"] == "decisionlock.cli:entrypoint"
+    assert scripts["decisionlock-mcp-http"] == "decisionlock.http_cli:entrypoint"
+    assert scripts["decisionlock-reconcile"] == "decisionlock.reconcile_cli:entrypoint"
+    assert (
+        scripts["decisionlock-reconcile-worker"] == "decisionlock.reconcile_worker_cli:entrypoint"
+    )
 
 
 def test_release_docs_follow_runtime_version() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     deployment = (REPO_ROOT / "docs" / "production-deployment.md").read_text(encoding="utf-8")
     assert f"v{__version__}" in readme
-    assert f"agentguard:{__version__}" in deployment
+    assert f"decisionlock:{__version__}" in deployment
 
 
 def test_dependency_audit_exception_is_retired() -> None:
@@ -65,10 +67,12 @@ def test_dependency_audit_exception_is_retired() -> None:
 
 
 def test_github_action_uploads_findings_and_summary() -> None:
-    workflow = (REPO_ROOT / ".github" / "workflows" / "agentguard.yml").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github" / "workflows" / "decisionlock.yml").read_text(
+        encoding="utf-8"
+    )
 
-    assert "agentguard-findings.json" in workflow
-    assert "agentguard-summary.md" in workflow
+    assert "decisionlock-findings.json" in workflow
+    assert "decisionlock-summary.md" in workflow
     assert "GITHUB_STEP_SUMMARY" in workflow
 
 

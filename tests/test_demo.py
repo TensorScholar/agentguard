@@ -4,8 +4,8 @@ from pathlib import Path
 
 from pytest import CaptureFixture
 
-from agentguard.cli import main
-from agentguard.demo import write_demo
+from decisionlock.cli import main
+from decisionlock.demo import write_demo
 
 
 def test_write_demo_creates_expected_files(tmp_path: Path) -> None:

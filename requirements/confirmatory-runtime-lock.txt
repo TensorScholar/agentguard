@@ -1,6 +1,6 @@
 # AG-LINEAGE-PREREG-v1.0 confirmatory runtime lock.
 # Captured from exact-head DEV validation run 34759661143 on 2026-09-13.
-# This file pins all transitive packages required by agentguard[http].
+# This file pins all transitive packages required by decisionlock[http].
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1

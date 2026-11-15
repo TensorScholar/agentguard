@@ -1,6 +1,6 @@
-"""Local fake MCP provider for the AgentGuard happy-path demo.
+"""Local fake MCP provider for the DecisionLock happy-path demo.
 
-Standard library only. Not part of the AgentGuard package and not installed by it.
+Standard library only. Not part of the DecisionLock package and not installed by it.
 
 It exists to make two things runnable that otherwise a new user cannot see:
 
@@ -8,12 +8,12 @@ It exists to make two things runnable that otherwise a new user cannot see:
    the happy path has an actual upstream to execute against.
 2. A genuinely ambiguous outcome. ``--ambiguous`` makes the provider **commit the
    refund to its own durable ledger and then never respond**, which is what a real
-   lost-connection-after-send looks like. AgentGuard cannot tell whether the
+   lost-connection-after-send looks like. DecisionLock cannot tell whether the
    effect committed and must record ``UNKNOWN``.
 
 The provider keeps its own ledger in ``--ledger``. The reconciler reads it back
 through the ``refund.status`` tool, so the confirmation in the demo comes from the
-provider's own state rather than from anything AgentGuard asserts.
+provider's own state rather than from anything DecisionLock asserts.
 
 This is a demo harness, not a model of a real payment provider. See README.md for
 exactly what the demo proves and what it does not.
@@ -149,7 +149,7 @@ class Handler(BaseHTTPRequestHandler):
             name = params.get("name")
             arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
             if name == "refund.create":
-                # Key on the JSON-RPC request id. AgentGuard sets that to its
+                # Key on the JSON-RPC request id. DecisionLock sets that to its
                 # execution id on a protected dispatch, so this is the handle the
                 # provider status tool can be queried with later. The client's own
                 # requestId is retained as an opaque application field only.
@@ -236,7 +236,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fake MCP provider for the AgentGuard demo")
+    parser = argparse.ArgumentParser(description="Fake MCP provider for the DecisionLock demo")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9010)
     parser.add_argument("--ledger", type=Path, default=Path("provider-ledger.jsonl"))

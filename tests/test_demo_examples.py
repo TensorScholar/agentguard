@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentguard.discovery import scan_configs
-from agentguard.gate import scan_report_fails_gate
-from agentguard.models import Capability, RiskLevel
+from decisionlock.discovery import scan_configs
+from decisionlock.gate import scan_report_fails_gate
+from decisionlock.models import Capability, RiskLevel
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

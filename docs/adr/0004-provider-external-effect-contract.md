@@ -12,17 +12,17 @@ Those phases must not independently invent provider identity, external-operation
 
 ## Decision
 
-AgentGuard freezes a provider-neutral external-effect contract before implementing 6C or 6D.
+DecisionLock freezes a provider-neutral external-effect contract before implementing 6C or 6D.
 
 The contract is represented by immutable strict domain value objects and canonical SHA-256 digests.
 
 ### Provider identity
 
-`ProviderIdentity` identifies the external authority capable of realizing an effect. It requires a provider id and at least one concrete provider scope: an account identity or a bound endpoint digest. AgentGuard tenant identity may additionally be carried, but is not sufficient by itself to identify an external provider authority.
+`ProviderIdentity` identifies the external authority capable of realizing an effect. It requires a provider id and at least one concrete provider scope: an account identity or a bound endpoint digest. DecisionLock tenant identity may additionally be carried, but is not sufficient by itself to identify an external provider authority.
 
 ### External operation identity
 
-`ExternalOperationIdentity` is an AgentGuard-stable logical operation id plus operation kind and operation name. It is assigned independently of any provider-generated request/operation id so it exists before dispatch and remains stable across evidence collection.
+`ExternalOperationIdentity` is an DecisionLock-stable logical operation id plus operation kind and operation name. It is assigned independently of any provider-generated request/operation id so it exists before dispatch and remains stable across evidence collection.
 
 ### Credential binding
 
@@ -44,7 +44,7 @@ Supported mechanisms at contract-freeze time are:
 
 - `none`
 - `caller_supplied_key`
-- `agentguard_generated_key`
+- `decisionlock_generated_key`
 
 Replay dispositions are:
 
@@ -76,7 +76,7 @@ Changing a security-relevant component changes the binding digest.
 
 `ProviderEvidence` contains digest-only evidence metadata and MUST reference the exact `ExternalEffectBinding` digest. Provider response bodies, raw credentials, and provider secrets are outside the contract.
 
-`ProviderReconciliationEvidence` adds a reconciliation conclusion. `confirmed_succeeded` and `confirmed_failed` require `provider_verified` evidence. AgentGuard-signed or merely correlated evidence cannot upgrade an ambiguous execution to a confirmed outcome.
+`ProviderReconciliationEvidence` adds a reconciliation conclusion. `confirmed_succeeded` and `confirmed_failed` require `provider_verified` evidence. DecisionLock-signed or merely correlated evidence cannot upgrade an ambiguous execution to a confirmed outcome.
 
 The pre-existing generic `ReconciliationEvidence` remains compatibility infrastructure. Phase 6D should adapt provider-specific evidence into the frozen provider-effect contract before resolving durable execution state.
 
@@ -88,8 +88,8 @@ The pre-existing generic `ReconciliationEvidence` remains compatibility infrastr
 4. Absence of proven idempotency never implies retry safety.
 5. Provider evidence is useless for state resolution unless it binds to the exact external-effect digest.
 6. Confirmed external outcomes require provider-verified evidence.
-7. Provider-generated operation identifiers are evidence/correlation data, not substitutes for AgentGuard's pre-dispatch logical operation identity.
-8. Contract digests use AgentGuard canonicalization and are deterministic across set ordering.
+7. Provider-generated operation identifiers are evidence/correlation data, not substitutes for DecisionLock's pre-dispatch logical operation identity.
+8. Contract digests use DecisionLock canonicalization and are deterministic across set ordering.
 
 ## Non-goals
 

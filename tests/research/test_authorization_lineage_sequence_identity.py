@@ -4,12 +4,12 @@ import hashlib
 
 import pytest
 
-from agentguard.research.authorization_lineage.confirmatory import (
+from decisionlock.research.authorization_lineage.confirmatory import (
     ConfirmatoryEvidenceError,
     observation_payload,
     validate_block_records,
 )
-from agentguard.research.authorization_lineage.models import (
+from decisionlock.research.authorization_lineage.models import (
     Arm,
     ProviderStratum,
     Schedule,

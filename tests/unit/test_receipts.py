@@ -4,9 +4,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from agentguard.domain import DelegationContext, Effect, ProvenanceLabel
-from agentguard.engine.policy import evaluate_policy
-from agentguard.engine.receipts import (
+from decisionlock.domain import DelegationContext, Effect, ProvenanceLabel
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.engine.receipts import (
     ReceiptVerificationError,
     issue_decision_receipt,
     verify_decision_receipt,
@@ -41,7 +41,7 @@ def test_malformed_signature_encoding_is_rejected(intent, policy, signer, verifi
 
 
 def test_wrong_key_rejected(intent, policy, signer):
-    from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
+    from decisionlock.adapters.crypto import Ed25519Signer, Ed25519Verifier
 
     other = Ed25519Signer.generate()
     with pytest.raises(ReceiptVerificationError):

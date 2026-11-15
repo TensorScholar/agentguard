@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.research.authorization_lineage.canonical import (
+from decisionlock.research.authorization_lineage.canonical import (
     CanonicalStudySession,
     ConfirmatorySessionError,
     ConfirmatoryStudyInvalidError,
@@ -25,7 +25,7 @@ from agentguard.research.authorization_lineage.canonical import (
     manifest_identity_sha256,
     trial_identity_sha256,
 )
-from agentguard.research.authorization_lineage.models import (
+from decisionlock.research.authorization_lineage.models import (
     APPLICABLE_STRATA,
     Arm,
     ProviderStratum,
@@ -33,7 +33,7 @@ from agentguard.research.authorization_lineage.models import (
     TrialObservation,
     TrialSpec,
 )
-from agentguard.research.authorization_lineage.trace import (
+from decisionlock.research.authorization_lineage.trace import (
     HarnessInvalidReason,
     TrialTraceRecorder,
     invalid_observation,
@@ -310,7 +310,7 @@ def _production_session(
     *,
     boundary_report: dict[str, object] | None = None,
 ) -> tuple[CanonicalStudySession, tuple[TrialSpec, TrialSpec, TrialSpec]]:
-    import agentguard.research.authorization_lineage.canonical as canonical
+    import decisionlock.research.authorization_lineage.canonical as canonical
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -527,7 +527,7 @@ def test_manifest_identity_changes_when_any_scientific_identity_field_changes():
 def test_finalization_machine_failure_after_interpretable_state_is_study_level(
     tmp_path, monkeypatch
 ):
-    import agentguard.research.authorization_lineage.canonical as canonical
+    import decisionlock.research.authorization_lineage.canonical as canonical
 
     session, block = _session(tmp_path)
     real_hash_tree = canonical._hash_tree
@@ -570,7 +570,7 @@ def test_cross_study_attempt_ledger_stitching_is_rejected(tmp_path):
 def test_strict_analysis_has_no_arbitrary_evidence_or_sequence_root_api():
     import inspect
 
-    from agentguard.research.authorization_lineage.analysis import analyze_confirmatory_study
+    from decisionlock.research.authorization_lineage.analysis import analyze_confirmatory_study
 
     parameters = inspect.signature(analyze_confirmatory_study).parameters
     assert "evidence_root" not in parameters
@@ -628,7 +628,7 @@ def test_dev_session_allows_injectable_runner(tmp_path):
 def test_real_study_execution_id_is_deterministic_and_not_caller_overridable(tmp_path, monkeypatch):
     import inspect
 
-    from agentguard.research.authorization_lineage.analysis import create_confirmatory_session
+    from decisionlock.research.authorization_lineage.analysis import create_confirmatory_session
 
     report = _preflight()
     session, _ = _production_session(tmp_path, monkeypatch)
@@ -637,7 +637,7 @@ def test_real_study_execution_id_is_deterministic_and_not_caller_overridable(tmp
         candidate_git_tree=str(report["actual_git_tree"]),
         manifest_sha256=manifest_identity_sha256(session.manifest),
         preflight_digest_value=__import__(
-            "agentguard.research.authorization_lineage.preflight", fromlist=["preflight_digest"]
+            "decisionlock.research.authorization_lineage.preflight", fromlist=["preflight_digest"]
         ).preflight_digest(report),
         clarification_sha256=str(report["clarification_sha256"]),
     )
@@ -707,13 +707,13 @@ def test_confirmatory_report_caller_cannot_supply_analysis_payload():
 
 
 def test_confirmatory_report_has_no_caller_factory_bypass():
-    from agentguard.research.authorization_lineage.canonical import ConfirmatoryReport
+    from decisionlock.research.authorization_lineage.canonical import ConfirmatoryReport
 
     assert not hasattr(ConfirmatoryReport, "_from_canonical")
 
 
 def test_partial_manifest_cannot_register_real_confirmatory_session(tmp_path, monkeypatch):
-    import agentguard.research.authorization_lineage.canonical as canonical
+    import decisionlock.research.authorization_lineage.canonical as canonical
 
     repo = tmp_path / "repo-partial"
     repo.mkdir()
@@ -731,7 +731,7 @@ def test_partial_manifest_cannot_register_real_confirmatory_session(tmp_path, mo
 
 
 def test_confirmatory_report_cannot_be_constructed_by_dev_caller():
-    from agentguard.research.authorization_lineage.canonical import ConfirmatoryReport
+    from decisionlock.research.authorization_lineage.canonical import ConfirmatoryReport
 
     with pytest.raises(ConfirmatorySessionError, match="validated CanonicalStudySession"):
         ConfirmatoryReport(

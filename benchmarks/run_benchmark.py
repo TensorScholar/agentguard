@@ -9,11 +9,11 @@ from pathlib import Path
 
 import yaml
 
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
-from agentguard.adapters.storage.sqlite import SQLiteState
-from agentguard.domain import ActionIntent, PolicyDocument
-from agentguard.engine.policy import evaluate_policy
-from agentguard.engine.receipts import issue_decision_receipt, verify_decision_receipt
+from decisionlock.adapters.crypto import Ed25519Signer, Ed25519Verifier
+from decisionlock.adapters.storage.sqlite import SQLiteState
+from decisionlock.domain import ActionIntent, PolicyDocument
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.engine.receipts import issue_decision_receipt, verify_decision_receipt
 
 ROOT = Path(__file__).parents[1]
 
@@ -36,11 +36,11 @@ def measure(fn, iterations: int) -> dict[str, float]:
 
 def main():
     intent = ActionIntent.model_validate_json(
-        (ROOT / "src/agentguard/resources/demo-intent.json").read_text()
+        (ROOT / "src/decisionlock/resources/demo-intent.json").read_text()
     )
     policy = PolicyDocument.model_validate_json(
         json.dumps(
-            yaml.safe_load((ROOT / "src/agentguard/resources/default_policy_v2.yaml").read_text())
+            yaml.safe_load((ROOT / "src/decisionlock/resources/default_policy_v2.yaml").read_text())
         )
     )
     signer = Ed25519Signer.generate()

@@ -17,18 +17,18 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HOME=/home/agentguard
+    HOME=/home/decisionlock
 
-RUN groupadd --system --gid 10001 agentguard \
-    && useradd --system --uid 10001 --gid agentguard --create-home --home-dir /home/agentguard agentguard
+RUN groupadd --system --gid 10001 decisionlock \
+    && useradd --system --uid 10001 --gid decisionlock --create-home --home-dir /home/decisionlock decisionlock
 
 COPY --from=builder /wheels /wheels
-RUN WHEEL="$(find /wheels -type f -name 'agentguard-*.whl' -print -quit)" \
+RUN WHEEL="$(find /wheels -type f -name 'decisionlock-*.whl' -print -quit)" \
     && test -n "$WHEEL" \
     && python -m pip install "${WHEEL}[http]" \
     && rm -rf /wheels
 
 USER 10001:10001
 WORKDIR /workspace
-ENTRYPOINT ["agentguard"]
+ENTRYPOINT ["decisionlock"]
 CMD ["--help"]

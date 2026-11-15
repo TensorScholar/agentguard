@@ -6,17 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from agentguard.adapters.storage.sqlite import (
+from decisionlock.adapters.storage.sqlite import (
     ReconciliationLeaseError,
 )
-from agentguard.adapters.storage.sqlite import (
+from decisionlock.adapters.storage.sqlite import (
     SQLiteFencedReconciliationState as _SQLiteFencedReconciliationState,
 )
-from agentguard.application.reconciliation_worker import (
+from decisionlock.application.reconciliation_worker import (
     ReconciliationWorker,
     ReconciliationWorkerConfig,
 )
-from agentguard.domain import (
+from decisionlock.domain import (
     EvidenceTrustLevel,
     ExecutionAttemptIdentity,
     ExecutionRecord,
@@ -27,7 +27,7 @@ from agentguard.domain import (
     ReconciliationEvidence,
     ReconciliationStatus,
 )
-from agentguard.ports.reconciliation_work import ReconciliationLease
+from decisionlock.ports.reconciliation_work import ReconciliationLease
 
 NOW = datetime(2026, 9, 2, 20, 0, tzinfo=UTC)
 

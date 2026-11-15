@@ -4,11 +4,11 @@ from pathlib import Path
 
 from pytest import CaptureFixture
 
-from agentguard.cli import main
+from decisionlock.cli import main
 
 
 def test_init_writes_default_policy(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
-    output = tmp_path / ".agentguard" / "policy.yaml"
+    output = tmp_path / ".decisionlock" / "policy.yaml"
 
     exit_code = main(["init", "--output", str(output)])
     captured = capsys.readouterr()

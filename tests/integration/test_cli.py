@@ -5,9 +5,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from agentguard import __version__
-from agentguard.adapters.evidence import EvidenceVerificationError
-from agentguard.cli.app import app
+from decisionlock import __version__
+from decisionlock.adapters.evidence import EvidenceVerificationError
+from decisionlock.cli.app import app
 
 runner = CliRunner()
 
@@ -43,7 +43,7 @@ def test_verify_execution_is_non_consuming_preflight(tmp_path):
     workspace = tmp_path / "workspace"
     assert runner.invoke(app, ["init", "--output", str(workspace)]).exit_code == 0
 
-    request = root / "src/agentguard/resources/demo-intent.json"
+    request = root / "src/decisionlock/resources/demo-intent.json"
     policy = workspace / "policy.yaml"
     receipt = tmp_path / "receipt.json"
     ledger = tmp_path / "authorization.sqlite"
@@ -131,7 +131,7 @@ def test_cli_signed_evidence_checkpoint_and_posture(tmp_path):
         app,
         [
             "authorize",
-            str(root / "src/agentguard/resources/demo-intent.json"),
+            str(root / "src/decisionlock/resources/demo-intent.json"),
             str(workspace / "policy.yaml"),
             "--key",
             str(workspace / "decision-private.pem"),
@@ -148,7 +148,7 @@ def test_cli_signed_evidence_checkpoint_and_posture(tmp_path):
         app,
         [
             "evidence-build",
-            str(root / "src/agentguard/resources/demo-intent.json"),
+            str(root / "src/decisionlock/resources/demo-intent.json"),
             str(receipt),
             "--output",
             str(evidence),
@@ -232,14 +232,14 @@ def test_cli_simulate_audit_verify_and_refuse_overwrite(tmp_path):
 
     traces = tmp_path / "traces.jsonl"
     valid = json.loads(
-        (root / "src/agentguard/resources/demo-intent.json").read_text(encoding="utf-8")
+        (root / "src/decisionlock/resources/demo-intent.json").read_text(encoding="utf-8")
     )
     traces.write_text(json.dumps(valid) + "\nnot-json\n", encoding="utf-8")
     simulation = runner.invoke(
         app,
         [
             "simulate",
-            str(root / "src/agentguard/resources/default_policy_v2.yaml"),
+            str(root / "src/decisionlock/resources/default_policy_v2.yaml"),
             str(traces),
         ],
     )
@@ -258,7 +258,7 @@ def test_evidence_verify_signature_semantics(tmp_path):
     other = tmp_path / "other"
     assert runner.invoke(app, ["init", "--output", str(other)]).exit_code == 0
 
-    request = root / "src/agentguard/resources/demo-intent.json"
+    request = root / "src/decisionlock/resources/demo-intent.json"
     policy = workspace / "policy.yaml"
     receipt = tmp_path / "receipt.json"
     ledger = tmp_path / "audit.sqlite"

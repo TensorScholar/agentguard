@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from agentguard.engine.canonical import CanonicalizationError, canonical_bytes, digest
+from decisionlock.engine.canonical import CanonicalizationError, canonical_bytes, digest
 
 
 def test_object_key_order_is_deterministic():

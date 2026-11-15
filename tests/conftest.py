@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
-from agentguard.adapters.storage.sqlite import SQLiteState
-from agentguard.domain import ActionIntent, PolicyDocument
+from decisionlock.adapters.crypto import Ed25519Signer, Ed25519Verifier
+from decisionlock.adapters.storage.sqlite import SQLiteState
+from decisionlock.domain import ActionIntent, PolicyDocument
 
 ROOT = Path(__file__).parents[1]
 
@@ -38,13 +38,13 @@ def assert_private_file() -> Callable[[Path], bytes]:
 @pytest.fixture
 def intent() -> ActionIntent:
     return ActionIntent.model_validate_json(
-        (ROOT / "src/agentguard/resources/demo-intent.json").read_text()
+        (ROOT / "src/decisionlock/resources/demo-intent.json").read_text()
     )
 
 
 @pytest.fixture
 def policy() -> PolicyDocument:
-    raw = yaml.safe_load((ROOT / "src/agentguard/resources/default_policy_v2.yaml").read_text())
+    raw = yaml.safe_load((ROOT / "src/decisionlock/resources/default_policy_v2.yaml").read_text())
     return PolicyDocument.model_validate_json(json.dumps(raw))
 
 

@@ -1,6 +1,6 @@
 # Architecture
 
-AgentGuard is a provider-neutral modular monolith using ports and adapters. The deterministic domain and policy engine have no dependency on SQLite, HTTP, MCP, Typer, OpenTelemetry, or a credential provider. External systems enter through typed ports; adapters own protocol parsing, storage, signing, credential resolution, and provider I/O.
+DecisionLock is a provider-neutral modular monolith using ports and adapters. The deterministic domain and policy engine have no dependency on SQLite, HTTP, MCP, Typer, OpenTelemetry, or a credential provider. External systems enter through typed ports; adapters own protocol parsing, storage, signing, credential resolution, and provider I/O.
 
 ## Current execution model
 
@@ -49,7 +49,7 @@ Policy v2 is deterministic and default-deny. Signed decision receipts bind the n
 
 Delegated authority is represented by signed attenuating `AuthorityGrant` chains and bounded `CapabilityLease` objects. A protected execution atomically claims the decision nonce and applicable consumable authority in the same reservation transaction. Revocation cascades to active descendants. `require_authority=True` enables deployments that require an authority reference on every protected action; workload identity proofing remains an external control.
 
-Field-integrity constraints use signed provenance statements and exact-value typed release receipts. Causal execution ancestry is explicitly declared and persisted as secret-minimized identifiers/digests; AgentGuard does not infer undeclared external dependencies.
+Field-integrity constraints use signed provenance statements and exact-value typed release receipts. Causal execution ancestry is explicitly declared and persisted as secret-minimized identifiers/digests; DecisionLock does not infer undeclared external dependencies.
 
 High-impact staged execution separates durable prepare from commit. Commit re-runs security checks inside its bounded window before entering the normal protected execution path. Staging classifications are control semantics, not generic provider undo.
 
@@ -62,17 +62,17 @@ A `DecisionReceipt` is a signed, expiry-bounded, single-use, policy-contingent *
 - **Single-use reservation boundary.** Exactly one concurrent admission wins via the atomic `reserve_execution` transaction, which claims the decision nonce (keyed by nonce *and* decision id), the capability lease use, and typed releases together with the durable `RESERVED` record. Losers fail closed with `decision_receipt.replayed`. At-most-once therefore rests on the shared transactional state adapter (single-host SQLite; cross-host is out of contract).
 - **Serialized dispatch admission.** Receipt expiry is checked at validation and reservation, then enforced again by the durable state adapter during the atomic `RESERVED → DISPATCHING` transition. The adapter acquires the SQLite write lock first, samples fresh UTC time inside that serialized transaction, verifies the stored reserved-authority digest against the supplied `VerifiedExecution`, and rejects authorization or field-integrity expiry at that fresh admission time. The committed `dispatching_at` is the exact timestamp returned to the service and recorded as execution start. This establishes local dispatch-admission validity; it does not prove network delivery or provider effect before expiry.
 - **Non-consuming preflight.** `validate_execution_authority` (`verify-execution` CLI, `guard_execution`) answers "would admit now" without consuming the nonce or mutating lifecycle state. A passing preflight is point-in-time only: nonce, lease, release, policy, and expiry state may change before the real admission, so preflight success must never be treated as execution permission.
-- **RESERVED and recovery lifecycle.** A `RESERVED` record means "authority claimed, no dispatch begun." It is resumable via `resume_reserved_execution`, which fully revalidates authority against current time, policy, and bindings (a stale record whose authorization expired fails closed). `RESERVED` remains resumable and is not automatically dispatched. Process startup does not automatically terminalize `DISPATCHING` records because AgentGuard cannot establish executor liveness from shared SQLite state alone. Explicit controlled recovery (`recover_incomplete_executions`) may classify `DISPATCHING` records as `UNKNOWN` only after executor quiescence or termination has been established outside the SQLite state. `UNKNOWN` remains the correct representation when external-effect outcome is ambiguous, and recovery never re-dispatches executions.
+- **RESERVED and recovery lifecycle.** A `RESERVED` record means "authority claimed, no dispatch begun." It is resumable via `resume_reserved_execution`, which fully revalidates authority against current time, policy, and bindings (a stale record whose authorization expired fails closed). `RESERVED` remains resumable and is not automatically dispatched. Process startup does not automatically terminalize `DISPATCHING` records because DecisionLock cannot establish executor liveness from shared SQLite state alone. Explicit controlled recovery (`recover_incomplete_executions`) may classify `DISPATCHING` records as `UNKNOWN` only after executor quiescence or termination has been established outside the SQLite state. `UNKNOWN` remains the correct representation when external-effect outcome is ambiguous, and recovery never re-dispatches executions.
 
 ## Protected MCP profiles
 
 ### Protected stdio
 
-`agentguard mcp-proxy-v2` is an ENFORCE-only protected stdio profile layered on the execution-integrity boundary. Its initial interoperability profile is bounded to MCP `2025-03-26`; unsupported/custom methods and JSON-RPC batches fail closed.
+`decisionlock mcp-proxy-v2` is an ENFORCE-only protected stdio profile layered on the execution-integrity boundary. Its initial interoperability profile is bounded to MCP `2025-03-26`; unsupported/custom methods and JSON-RPC batches fail closed.
 
 Each subprocess receives a unique server-instance identity. Tool schemas become usable only after validated `tools/list` observations for that instance, complete pagination, freshness checks, list-change invalidation, and a final observed digest check. This closes adapter-visible inventory races without claiming that hidden provider semantics cannot change behind an unchanged schema.
 
-Protected `tools/call` is reconstructed from the verified server/tool/arguments and dispatched through `AgentGuardService.execute_protected()`. The downstream request id is the AgentGuard execution id, allowing transport responses to correlate with the durable execution record.
+Protected `tools/call` is reconstructed from the verified server/tool/arguments and dispatched through `DecisionLockService.execute_protected()`. The downstream request id is the DecisionLock execution id, allowing transport responses to correlate with the durable execution record.
 
 ### Protected Streamable HTTP
 
@@ -89,15 +89,15 @@ Loopback is the default service boundary. A non-loopback listener is accepted on
 
 ## Production credential authority
 
-Phase 6 separates authorization from provider secret material. `CredentialAuthorityProfile` binds an AgentGuard credential profile to an exact provider identity, tenant, audience, scopes, endpoint digest, source binding, and injection shape.
+Phase 6 separates authorization from provider secret material. `CredentialAuthorityProfile` binds an DecisionLock credential profile to an exact provider identity, tenant, audience, scopes, endpoint digest, source binding, and injection shape.
 
 The included production-profile source resolves an explicitly named environment secret only when credential material is needed. Durable grants/profile state retain binding metadata and digests, not the provider secret. Brokered grants remain bounded by the signed decision and are independently verified before use. Revocation is durable.
 
-This is a provider-neutral authority boundary, not a claim that AgentGuard includes every provider's native token-minting or secret-management service.
+This is a provider-neutral authority boundary, not a claim that DecisionLock includes every provider's native token-minting or secret-management service.
 
 ## Provider/external-effect contract
 
-Before side-effecting dispatch on the configured provider path, AgentGuard persists an `ExternalEffectBinding` that correlates the execution, decision, intent digest, provider identity, endpoint/effect identity, attempt lineage, idempotency mechanism, and replay policy without persisting raw provider credentials.
+Before side-effecting dispatch on the configured provider path, DecisionLock persists an `ExternalEffectBinding` that correlates the execution, decision, intent digest, provider identity, endpoint/effect identity, attempt lineage, idempotency mechanism, and replay policy without persisting raw provider credentials.
 
 The contract distinguishes:
 
@@ -114,15 +114,15 @@ An execution that reached ambiguous provider I/O remains durably `UNKNOWN`. Reco
 
 Provider evidence carries an explicit trust level:
 
-- `AGENTGUARD_SIGNED` — AgentGuard-authenticated observation;
+- `DECISIONLOCK_SIGNED` — DecisionLock-authenticated observation;
 - `PROVIDER_CORRELATED` — correlated provider operation evidence without a trusted provider truth assertion;
 - `PROVIDER_VERIFIED` — evidence from a reconciler whose provider verification contract is independently trusted.
 
-Only `PROVIDER_VERIFIED` evidence may confirm an `UNKNOWN` execution as succeeded or failed. Conflicting confirming evidence becomes an explicit `CONFLICT` rather than last-write-wins. Provider operation identifiers are persisted as digests. Provider result hashing (`agentguard.engine.provider_results`) is isolated from signing canonicalization, validating and normalizing the JSON domain to accept finite IEEE-754 floating-point values while rejecting non-finite values (`NaN`, `Infinity`).
+Only `PROVIDER_VERIFIED` evidence may confirm an `UNKNOWN` execution as succeeded or failed. Conflicting confirming evidence becomes an explicit `CONFLICT` rather than last-write-wins. Provider operation identifiers are persisted as digests. Provider result hashing (`decisionlock.engine.provider_results`) is isolated from signing canonicalization, validating and normalizing the JSON domain to accept finite IEEE-754 floating-point values while rejecting non-finite values (`NaN`, `Infinity`).
 
 ### Terminal resolution exclusion and operator recheck
 
-Automatic background reconciliation workers exclude executions with authoritative terminal resolutions (`CONFIRMED_SUCCEEDED`, `CONFIRMED_FAILED`, `CONFLICT`) from candidate scheduling, preventing completed work from consuming worker capacity. Explicit operator reconciliation (`agentguard-reconcile`) retains the ability to re-check `CONFIRMED_SUCCEEDED` and `CONFIRMED_FAILED` resolutions via `claim_reconciliation_lease(..., allow_terminal_recheck=True)` to synthesize `CONFLICT` if contradictory provider evidence emerges. Once `CONFLICT` is reached, it remains permanently terminal and cannot be rechecked. Non-terminal resolutions (`STILL_UNKNOWN`, `UNSUPPORTED`) remain eligible for ongoing reconciliation.
+Automatic background reconciliation workers exclude executions with authoritative terminal resolutions (`CONFIRMED_SUCCEEDED`, `CONFIRMED_FAILED`, `CONFLICT`) from candidate scheduling, preventing completed work from consuming worker capacity. Explicit operator reconciliation (`decisionlock-reconcile`) retains the ability to re-check `CONFIRMED_SUCCEEDED` and `CONFIRMED_FAILED` resolutions via `claim_reconciliation_lease(..., allow_terminal_recheck=True)` to synthesize `CONFLICT` if contradictory provider evidence emerges. Once `CONFLICT` is reached, it remains permanently terminal and cannot be rechecked. Non-terminal resolutions (`STILL_UNKNOWN`, `UNSUPPORTED`) remain eligible for ongoing reconciliation.
 
 ## Single-host multi-process reconciliation
 

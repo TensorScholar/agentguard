@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from agentguard.domain import (
+from decisionlock.domain import (
     EvidenceTrustLevel,
     ExecutionAttemptIdentity,
     ExternalEffectBinding,
@@ -18,7 +18,7 @@ from agentguard.domain import (
     ReplayDisposition,
     VerifiedCredentialAuthority,
 )
-from agentguard.engine.provider_contracts import (
+from decisionlock.engine.provider_contracts import (
     credential_binding_digest,
     credential_binding_from_verified_authority,
     execution_attempt_identity_digest,
@@ -108,7 +108,7 @@ def test_idempotency_key_contract_fails_closed() -> None:
         IdempotencyBinding(idempotency_key_digest=_sha("f"))
 
     with pytest.raises(ValueError, match="requires_key_digest"):
-        IdempotencyBinding(mechanism=IdempotencyMechanism.AGENTGUARD_GENERATED_KEY)
+        IdempotencyBinding(mechanism=IdempotencyMechanism.DECISIONLOCK_GENERATED_KEY)
 
     with pytest.raises(ValueError, match="same_key_requires_key_mechanism"):
         IdempotencyBinding(replay_disposition=ReplayDisposition.SAME_IDEMPOTENCY_KEY_ONLY)

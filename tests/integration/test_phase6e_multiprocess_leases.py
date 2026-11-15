@@ -6,7 +6,7 @@ from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from agentguard.adapters.storage.sqlite import SQLiteFencedReconciliationState
+from decisionlock.adapters.storage.sqlite import SQLiteFencedReconciliationState
 
 NOW = datetime(2026, 9, 2, 21, 0, tzinfo=UTC)
 

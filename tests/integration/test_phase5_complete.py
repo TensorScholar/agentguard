@@ -5,10 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from agentguard.adapters.crypto import Ed25519Signer, Ed25519Verifier
-from agentguard.adapters.executor import DeterministicFakeExecutor
-from agentguard.application import AgentGuardService
-from agentguard.domain import (
+from decisionlock.adapters.crypto import Ed25519Signer, Ed25519Verifier
+from decisionlock.adapters.executor import DeterministicFakeExecutor
+from decisionlock.application import DecisionLockService
+from decisionlock.domain import (
     CausalConstraint,
     Effect,
     FieldIntegrityConstraint,
@@ -20,16 +20,16 @@ from agentguard.domain import (
     ReversibilityMode,
     StagingRequirement,
 )
-from agentguard.engine.attestation import verify_execution_attestation
-from agentguard.engine.execution import ExecutionGuardError, validate_execution_authority
-from agentguard.engine.field_integrity import (
+from decisionlock.engine.attestation import verify_execution_attestation
+from decisionlock.engine.execution import ExecutionGuardError, validate_execution_authority
+from decisionlock.engine.field_integrity import (
     FieldIntegrityError,
     issue_field_provenance_statement,
     issue_field_release,
     validate_field_integrity,
 )
-from agentguard.engine.policy import evaluate_policy
-from agentguard.engine.policy_intelligence import (
+from decisionlock.engine.policy import evaluate_policy
+from decisionlock.engine.policy_intelligence import (
     analyze_authority,
     analyze_policy_counterfactuals,
     derive_minimal_authority,
@@ -101,7 +101,7 @@ def _field_material(intent):
 
 
 def _service(signer, verifier, state, provenance_verifier=None, release_verifier=None):
-    return AgentGuardService(
+    return DecisionLockService(
         signer,
         verifier,
         state,
@@ -318,7 +318,7 @@ def test_5e_expiry_is_rechecked_at_external_boundary(
                 return expires_at.replace(tzinfo=None)
             return expires_at.astimezone(tz)
 
-    monkeypatch.setattr("agentguard.adapters.storage.sqlite.state.datetime", ControlledDateTime)
+    monkeypatch.setattr("decisionlock.adapters.storage.sqlite.state.datetime", ControlledDateTime)
     with pytest.raises(RuntimeError, match="field_integrity.expired_before_dispatch"):
         state.mark_execution_dispatching(verified)
 
@@ -885,7 +885,7 @@ def test_5g_cross_tenant_parent_fails_closed(intent, policy, signer, verifier, s
 def test_5g_causal_graph_reconstructs_declared_ancestry_without_raw_arguments(
     intent, policy, signer, verifier, state
 ):
-    from agentguard.engine.causal import build_causal_execution_graph
+    from decisionlock.engine.causal import build_causal_execution_graph
 
     service = _service(signer, verifier, state)
     base_policy = _policy_with_bounded_rule(policy)

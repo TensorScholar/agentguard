@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentguard.discovery import scan_configs
-from agentguard.render import (
+from decisionlock.discovery import scan_configs
+from decisionlock.render import (
     FINDINGS_SCHEMA_VERSION,
     render_findings_summary_markdown,
     scan_report_to_findings,
@@ -51,7 +51,7 @@ def test_findings_json_redacts_secret_like_args(tmp_path: Path) -> None:
             {
                 "mcpServers": {
                     "unsafe": {
-                        "command": "agentguard-token-test",
+                        "command": "decisionlock-token-test",
                         "args": ["--api-key", synthetic_token],
                     }
                 }
@@ -76,6 +76,6 @@ def test_findings_summary_markdown_is_compact(tmp_path: Path) -> None:
 
     output = render_findings_summary_markdown(scan_configs([config]))
 
-    assert "# AgentGuard CI Summary" in output
+    assert "# DecisionLock CI Summary" in output
     assert "Highest risk: **high**" in output
     assert "| high | 1 |" in output

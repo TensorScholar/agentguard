@@ -43,10 +43,10 @@ requested scopes are not **exactly equal** to the profile's scopes, issuance fai
 That equality is deliberate and is the honest part of this design:
 
 > `adapters/broker/production.py:250-252` — *"A static/external secret is not attenuated merely because
-> a caller asks for fewer scopes. Exact equality prevents AgentGuard from claiming least privilege it
+> a caller asks for fewer scopes. Exact equality prevents DecisionLock from claiming least privilege it
 > cannot technically enforce at the provider."*
 
-Because the underlying secret is a single environment variable, AgentGuard **cannot** attenuate it.
+Because the underlying secret is a single environment variable, DecisionLock **cannot** attenuate it.
 Rather than claim least-privilege it cannot enforce, it refuses to grant unless the requested scope is
 exactly what the profile declares. If you want a narrower credential, you must configure a narrower
 secret. That is a real limit, stated in the code rather than papered over.
@@ -98,19 +98,19 @@ header with a secret.
 
 ---
 
-## The documented happy path: `agentguard-mcp-http`
+## The documented happy path: `decisionlock-mcp-http`
 
 The production credential authority is reachable from the Streamable HTTP gateway. It is the only
 supported path that both resolves secrets late *and* executes through a protected proxy.
 
-`agentguard init` writes the signing key the gateway expects, so no manual key generation is needed:
+`decisionlock init` writes the signing key the gateway expects, so no manual key generation is needed:
 
 ```bash
-export PAYMENTS_API_TOKEN='...'          # the secret; never written to disk by AgentGuard
+export PAYMENTS_API_TOKEN='...'          # the secret; never written to disk by DecisionLock
 
-agentguard-mcp-http \
+decisionlock-mcp-http \
   --policy examples/harness/policy.yaml \
-  --key .agentguard/demo/private.pem \
+  --key .decisionlock/demo/private.pem \
   --server-id customer-operations \
   --upstream-url https://payments.internal/mcp \
   --tenant-id acme \
@@ -119,7 +119,7 @@ agentguard-mcp-http \
   --credential-scope refund:create \
   --credential-header-name Authorization \
   --credential-header-scheme Bearer \
-  --access-token-env AGENTGUARD_HTTP_ACCESS_TOKEN \
+  --access-token-env DECISIONLOCK_HTTP_ACCESS_TOKEN \
   --provenance authenticated_user_input \
   --provenance-verified
 ```
@@ -172,13 +172,13 @@ identifiable without reading source:
 | `credential.handle_forbidden` | A `brokered_execution` grant carried secret material. |
 
 A **missing** `--credential-key` file is caught at startup with an actionable message naming
-`agentguard init`.
+`decisionlock init`.
 
 ---
 
 ## The mock broker is not production
 
-`agentguard broker-demo` uses `adapters/broker/mock.py`. It exists to exercise grant signing and
+`decisionlock broker-demo` uses `adapters/broker/mock.py`. It exists to exercise grant signing and
 ceiling enforcement **without a secret source**, in demos and contract tests.
 
 > `docs/limitations.md` — *"The preserved mock broker is for demos/contract testing and must not be
@@ -195,7 +195,7 @@ Stated as known limits, not hidden gaps:
 
 | Missing | Consequence | Phase |
 |---|---|---|
-| **Audience proof** | AgentGuard binds a *declared* audience to a decision; it does not cryptographically prove the provider will accept that audience for that token. A misconfigured profile can claim an audience the provider does not enforce. | 2 |
+| **Audience proof** | DecisionLock binds a *declared* audience to a decision; it does not cryptographically prove the provider will accept that audience for that token. A misconfigured profile can claim an audience the provider does not enforce. | 2 |
 | **Native downscoping / token minting** | No provider-native short-lived or audience-restricted token minting. To narrow a credential you must configure a narrower secret, because a single env var cannot be attenuated. | 2 |
 | **Vault / KMS / HSM integration** | The source is one environment variable. No rotation, no hardware key custody, no short-lived secret issuance. | 2 |
 | **Revocation semantics** | Profile revocation is durable state, but there is no upstream revocation call — a leaked secret stays valid at the provider until it expires. | 2 |
@@ -209,15 +209,15 @@ Stated as known limits, not hidden gaps:
 
 ```bash
 # Grant signing and ceiling enforcement without a secret source (mock, contract test only)
-agentguard broker-demo examples/scoped-refund/request.json decision.json --output grant.json
+decisionlock broker-demo examples/scoped-refund/request.json decision.json --output grant.json
 
 # Preflight the grant against the decision — ceiling, audience, tenant, TTL.
 # Does NOT execute and does NOT consume the nonce.
-agentguard verify-execution examples/scoped-refund/request.json decision.json \
+decisionlock verify-execution examples/scoped-refund/request.json decision.json \
   examples/scoped-refund/policy.yaml --grant grant.json
 
 # Confirm no secret reached the evidence bundle
-agentguard evidence-verify evidence/ --public-key .agentguard/demo/public.pem --require-signature
+decisionlock evidence-verify evidence/ --public-key .decisionlock/demo/public.pem --require-signature
 grep -R "$PAYMENTS_API_TOKEN" evidence/ && echo "LEAK" || echo "no secret in bundle"
 ```
 
